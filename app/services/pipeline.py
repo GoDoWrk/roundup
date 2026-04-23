@@ -31,8 +31,19 @@ def run_pipeline(session: Session, settings: Settings) -> PipelineRunResult:
     ingest_result = ingest_entries(session, entries)
     update_ingest_metrics(session, ingest_result.ingested, ingest_result.deduplicated)
 
-    clusters_created, clusters_updated = cluster_new_articles(session, settings)
-    update_cluster_metrics(session, clusters_created, clusters_updated)
+    cluster_result = cluster_new_articles(session, settings)
+    update_cluster_metrics(
+        session,
+        cluster_result.created_count,
+        cluster_result.updated_count,
+        candidates_evaluated=cluster_result.candidates_evaluated,
+        signal_rejected=cluster_result.signal_rejected,
+        attach_decisions=cluster_result.attach_decisions,
+        new_decisions=cluster_result.new_decisions,
+        low_confidence_new=cluster_result.low_confidence_new,
+        validation_rejected=cluster_result.validation_rejected,
+        timeline_deduplicated=cluster_result.timeline_deduplicated,
+    )
 
     session.commit()
 
@@ -40,8 +51,8 @@ def run_pipeline(session: Session, settings: Settings) -> PipelineRunResult:
         fetched=fetched,
         ingested=ingest_result.ingested,
         deduplicated=ingest_result.deduplicated,
-        clusters_created=clusters_created,
-        clusters_updated=clusters_updated,
+        clusters_created=cluster_result.created_count,
+        clusters_updated=cluster_result.updated_count,
     )
 
     logger.info(

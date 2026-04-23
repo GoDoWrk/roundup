@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import Article, Cluster
+from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
 from app.services.clustering import cluster_new_articles
+
+
+def _settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "database_url": "sqlite+pysqlite:///:memory:",
+        "miniflux_api_token": "token",
+        "cluster_min_sources_for_api": 1,
+    }
+    base.update(overrides)
+    return Settings(**base)
 
 
 def _article(
@@ -16,13 +27,14 @@ def _article(
     keywords: list[str],
     entities: list[str],
     published_at: datetime,
+    publisher: str = "Example News",
 ) -> Article:
     return Article(
         external_id=None,
         title=title,
         url=f"https://example.com/{dedupe_hash}",
         canonical_url=f"https://example.com/{dedupe_hash}",
-        publisher="Example News",
+        publisher=publisher,
         published_at=published_at,
         content_text=title,
         raw_payload={"title": title},
@@ -33,7 +45,7 @@ def _article(
     )
 
 
-def test_cluster_new_articles_attaches_related_coverage(db_session: Session) -> None:
+def test_near_duplicate_titles_attach_to_same_cluster(db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     db_session.add(
         _article(
@@ -48,23 +60,22 @@ def test_cluster_new_articles_attaches_related_coverage(db_session: Session) -> 
     db_session.add(
         _article(
             dedupe_hash="a2",
-            title="Transit Plan Approved by City Council",
-            normalized_title="transit plan approved by city council",
-            keywords=["transit", "plan", "city", "council"],
+            title="City Council Approves New Transit Plan",
+            normalized_title="city council approves new transit plan",
+            keywords=["city", "council", "transit", "plan"],
             entities=["City Council"],
             published_at=now - timedelta(hours=1),
         )
     )
     db_session.commit()
 
-    settings = Settings(database_url="sqlite+pysqlite:///:memory:", miniflux_api_token="token")
-    created, updated = cluster_new_articles(db_session, settings)
+    result = cluster_new_articles(db_session, _settings())
     db_session.commit()
 
-    cluster_count = db_session.query(Cluster).count()
-    assert created == 1
-    assert updated == 2
-    assert cluster_count == 1
+    assert result.created_count == 1
+    assert result.updated_count == 2
+    assert result.attach_decisions == 1
+    assert db_session.query(Cluster).count() == 1
 
 
 def test_cluster_new_articles_creates_separate_clusters_for_unrelated_coverage(db_session: Session) -> None:
@@ -91,10 +102,99 @@ def test_cluster_new_articles_creates_separate_clusters_for_unrelated_coverage(d
     )
     db_session.commit()
 
-    settings = Settings(database_url="sqlite+pysqlite:///:memory:", miniflux_api_token="token")
-    created, _ = cluster_new_articles(db_session, settings)
+    result = cluster_new_articles(db_session, _settings())
     db_session.commit()
 
-    cluster_count = db_session.query(Cluster).count()
-    assert created == 2
-    assert cluster_count == 2
+    assert result.created_count == 2
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_article_attaches_to_existing_cluster_on_subsequent_run(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="c1",
+            title="State Agency Announces Water Conservation Plan",
+            normalized_title="state agency announces water conservation plan",
+            keywords=["state", "agency", "water", "conservation", "plan"],
+            entities=["State Agency"],
+            published_at=now - timedelta(hours=3),
+            publisher="Regional Daily",
+        )
+    )
+    db_session.commit()
+
+    first = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+    assert first.created_count == 1
+
+    db_session.add(
+        _article(
+            dedupe_hash="c2",
+            title="State Agency Expands Water Conservation Plan",
+            normalized_title="state agency expands water conservation plan",
+            keywords=["state", "agency", "water", "conservation", "plan"],
+            entities=["State Agency"],
+            published_at=now - timedelta(hours=1),
+            publisher="Metro Chronicle",
+        )
+    )
+    db_session.commit()
+
+    second = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert second.created_count == 0
+    assert second.attach_decisions == 1
+    assert db_session.query(Cluster).count() == 1
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    assert len(links) == 2
+    assert links[-1].heuristic_breakdown["decision"] == "attach_existing_cluster"
+
+
+def test_timeline_deduplicates_repetitive_same_publisher_updates(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="d1",
+            title="Mayor Announces Transit Expansion",
+            normalized_title="mayor announces transit expansion",
+            keywords=["mayor", "transit", "expansion"],
+            entities=["Mayor"],
+            published_at=now - timedelta(hours=3),
+            publisher="City Wire",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="d2",
+            title="Mayor Announces Transit Expansion Plan",
+            normalized_title="mayor announces transit expansion plan",
+            keywords=["mayor", "transit", "expansion"],
+            entities=["Mayor"],
+            published_at=now - timedelta(hours=2, minutes=30),
+            publisher="City Wire",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="d3",
+            title="Commuter Group Reacts to Transit Expansion",
+            normalized_title="commuter group reacts to transit expansion",
+            keywords=["commuter", "group", "transit", "expansion"],
+            entities=["Commuter Group"],
+            published_at=now - timedelta(hours=1),
+            publisher="Regional Journal",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.timeline_deduplicated >= 1
+    cluster = db_session.scalars(select(Cluster)).first()
+    assert cluster is not None
+    event_count = db_session.query(ClusterTimelineEvent).filter(ClusterTimelineEvent.cluster_id == cluster.id).count()
+    assert event_count < 3

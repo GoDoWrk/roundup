@@ -5,7 +5,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.models import Cluster
+from app.db.models import Cluster, ClusterArticle
 from app.db.session import get_db_session
 from app.schemas.cluster import ClusterListResponse, StoryCluster
 from app.services.serialization import build_story_cluster
@@ -22,9 +22,21 @@ def list_clusters(
 ) -> ClusterListResponse:
     settings = get_settings()
     final_limit = min(limit, settings.api_max_limit)
+    source_count_subquery = (
+        select(func.count())
+        .select_from(ClusterArticle)
+        .where(ClusterArticle.cluster_id == Cluster.id)
+        .scalar_subquery()
+    )
 
-    base = select(Cluster).where(Cluster.validation_error.is_(None))
-    count_stmt = select(func.count()).select_from(Cluster).where(Cluster.validation_error.is_(None))
+    base = select(Cluster).where(
+        Cluster.validation_error.is_(None),
+        source_count_subquery >= settings.cluster_min_sources_for_api,
+    )
+    count_stmt = select(func.count()).select_from(Cluster).where(
+        Cluster.validation_error.is_(None),
+        source_count_subquery >= settings.cluster_min_sources_for_api,
+    )
     if status:
         base = base.where(Cluster.status == status)
         count_stmt = count_stmt.where(Cluster.status == status)
@@ -46,7 +58,9 @@ def list_clusters(
 
 @router.get("/{cluster_id}", response_model=StoryCluster)
 def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> StoryCluster:
+    settings = get_settings()
     cluster = db.get(Cluster, cluster_id)
-    if cluster is None or cluster.validation_error is not None:
+    source_count = len(cluster.source_links) if cluster is not None else 0
+    if cluster is None or cluster.validation_error is not None or source_count < settings.cluster_min_sources_for_api:
         raise HTTPException(status_code=404, detail="Cluster not found")
     return build_story_cluster(db, cluster)

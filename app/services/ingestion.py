@@ -20,9 +20,14 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
     ingested = 0
     deduplicated = 0
     inserted: list[NormalizedArticle] = []
+    seen_hashes: set[str] = set()
 
     for entry in entries:
         normalized = normalize_miniflux_entry(entry)
+        if normalized.dedupe_hash in seen_hashes:
+            deduplicated += 1
+            continue
+
         exists = session.scalar(select(Article.id).where(Article.dedupe_hash == normalized.dedupe_hash))
         if exists:
             deduplicated += 1
@@ -43,6 +48,7 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             dedupe_hash=normalized.dedupe_hash,
         )
         session.add(article)
+        seen_hashes.add(normalized.dedupe_hash)
         ingested += 1
         inserted.append(normalized)
 

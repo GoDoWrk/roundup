@@ -43,6 +43,32 @@ class ClusterListResponse(BaseModel):
     items: list[StoryCluster]
 
 
+class ClusterDebugThresholds(BaseModel):
+    score_threshold: float
+    title_signal_threshold: float
+    entity_overlap_threshold: int
+    keyword_overlap_threshold: int
+    min_sources_for_api: int
+
+
+class ClusterDebugScoreBreakdown(BaseModel):
+    average_similarity_score: float
+    average_title_similarity: float
+    average_entity_jaccard: float
+    average_keyword_jaccard: float
+    average_time_proximity: float
+
+
+class ClusterDebugExplanation(BaseModel):
+    grouping_reason: str
+    thresholds: ClusterDebugThresholds
+    threshold_results: dict[str, bool]
+    top_shared_entities: list[str]
+    top_shared_keywords: list[str]
+    score_breakdown: ClusterDebugScoreBreakdown
+    decision_counts: dict[str, int]
+
+
 class ClusterDebugItem(BaseModel):
     cluster_id: str
     status: str
@@ -51,6 +77,7 @@ class ClusterDebugItem(BaseModel):
     validation_error: str | None
     headline: str
     summary: str
+    debug_explanation: ClusterDebugExplanation
 
 
 class ClusterDebugResponse(BaseModel):

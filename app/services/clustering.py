@@ -14,7 +14,7 @@ from app.services.enrichment import (
     build_headline,
     build_status,
     build_summary,
-    build_timeline_event_text,
+    build_timeline_events,
     build_what_changed,
     build_why_it_matters,
 )
@@ -28,6 +28,38 @@ class FeatureVector:
     keywords: set[str]
     entities: set[str]
     published_at: datetime
+
+
+@dataclass(frozen=True)
+class CandidateEvaluation:
+    cluster: Cluster
+    title_similarity: float
+    entity_jaccard: float
+    keyword_jaccard: float
+    time_proximity: float
+    entity_overlap: int
+    keyword_overlap: int
+    score: float
+    signal_gate_passed: bool
+
+
+@dataclass(frozen=True)
+class RebuildResult:
+    validation_failed: bool
+    timeline_deduplicated: int
+
+
+@dataclass
+class ClusteringRunResult:
+    created_count: int
+    updated_count: int
+    candidates_evaluated: int
+    signal_rejected: int
+    attach_decisions: int
+    new_decisions: int
+    low_confidence_new: int
+    validation_rejected: int
+    timeline_deduplicated: int
 
 
 def _jaccard(left: set[str], right: set[str]) -> float:
@@ -53,15 +85,6 @@ def _time_proximity(article_time: datetime, cluster_time: datetime, window_hours
     return 1.0 - (delta_hours / max(window_hours, 1))
 
 
-def compute_similarity(article: FeatureVector, cluster: FeatureVector, window_hours: int) -> float:
-    score = 0.0
-    score += 0.45 * _title_similarity(article.title, cluster.title)
-    score += 0.25 * _jaccard(article.entities, cluster.entities)
-    score += 0.20 * _jaccard(article.keywords, cluster.keywords)
-    score += 0.10 * _time_proximity(article.published_at, cluster.published_at, window_hours)
-    return round(score, 4)
-
-
 def _article_features(article: Article) -> FeatureVector:
     return FeatureVector(
         title=article.normalized_title,
@@ -78,6 +101,61 @@ def _cluster_features(cluster: Cluster) -> FeatureVector:
         entities=set(cluster.entities),
         published_at=cluster.last_updated,
     )
+
+
+def _evaluate_candidate(
+    cluster: Cluster,
+    article: FeatureVector,
+    cluster_features: FeatureVector,
+    settings: Settings,
+) -> CandidateEvaluation:
+    title_similarity = _title_similarity(article.title, cluster_features.title)
+    entity_jaccard = _jaccard(article.entities, cluster_features.entities)
+    keyword_jaccard = _jaccard(article.keywords, cluster_features.keywords)
+    time_proximity = _time_proximity(article.published_at, cluster_features.published_at, settings.cluster_time_window_hours)
+
+    entity_overlap = len(article.entities.intersection(cluster_features.entities))
+    keyword_overlap = len(article.keywords.intersection(cluster_features.keywords))
+
+    score = round(
+        0.45 * title_similarity
+        + 0.25 * entity_jaccard
+        + 0.20 * keyword_jaccard
+        + 0.10 * time_proximity,
+        4,
+    )
+
+    signal_gate_passed = (
+        title_similarity >= settings.cluster_min_title_signal
+        or entity_overlap >= settings.cluster_min_entity_overlap
+        or keyword_overlap >= settings.cluster_min_keyword_overlap
+    )
+
+    return CandidateEvaluation(
+        cluster=cluster,
+        title_similarity=round(title_similarity, 4),
+        entity_jaccard=round(entity_jaccard, 4),
+        keyword_jaccard=round(keyword_jaccard, 4),
+        time_proximity=round(time_proximity, 4),
+        entity_overlap=entity_overlap,
+        keyword_overlap=keyword_overlap,
+        score=score,
+        signal_gate_passed=signal_gate_passed,
+    )
+
+
+def _is_better_candidate(candidate: CandidateEvaluation, incumbent: CandidateEvaluation | None, epsilon: float) -> bool:
+    if incumbent is None:
+        return True
+
+    if candidate.score > incumbent.score + epsilon:
+        return True
+    if incumbent.score > candidate.score + epsilon:
+        return False
+
+    candidate_rank = (candidate.entity_overlap, candidate.keyword_overlap, candidate.cluster.last_updated, candidate.cluster.id)
+    incumbent_rank = (incumbent.entity_overlap, incumbent.keyword_overlap, incumbent.cluster.last_updated, incumbent.cluster.id)
+    return candidate_rank > incumbent_rank
 
 
 def _load_unclustered_articles(session: Session) -> list[Article]:
@@ -100,7 +178,72 @@ def _load_candidate_clusters(session: Session, article: Article, settings: Setti
     return list(session.scalars(stmt).all())
 
 
-def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> None:
+def _build_heuristic_breakdown(
+    *,
+    decision: str,
+    decision_reason: str,
+    candidate_count: int,
+    settings: Settings,
+    evaluation: CandidateEvaluation | None,
+) -> dict:
+    if evaluation is None:
+        components = {
+            "title_similarity": 0.0,
+            "entity_jaccard": 0.0,
+            "keyword_jaccard": 0.0,
+            "time_proximity": 0.0,
+        }
+        overlap_counts = {
+            "entity_overlap": 0,
+            "keyword_overlap": 0,
+        }
+        selected_score = 0.0
+        selected_cluster_id = None
+        signal_gate_passed = False
+    else:
+        components = {
+            "title_similarity": evaluation.title_similarity,
+            "entity_jaccard": evaluation.entity_jaccard,
+            "keyword_jaccard": evaluation.keyword_jaccard,
+            "time_proximity": evaluation.time_proximity,
+        }
+        overlap_counts = {
+            "entity_overlap": evaluation.entity_overlap,
+            "keyword_overlap": evaluation.keyword_overlap,
+        }
+        selected_score = evaluation.score
+        selected_cluster_id = evaluation.cluster.id
+        signal_gate_passed = evaluation.signal_gate_passed
+
+    thresholds = {
+        "score_threshold": settings.cluster_score_threshold,
+        "title_signal_threshold": settings.cluster_min_title_signal,
+        "entity_overlap_threshold": settings.cluster_min_entity_overlap,
+        "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
+    }
+
+    thresholds_met = {
+        "score_threshold_met": selected_score >= settings.cluster_score_threshold,
+        "title_signal_met": components["title_similarity"] >= settings.cluster_min_title_signal,
+        "entity_overlap_met": overlap_counts["entity_overlap"] >= settings.cluster_min_entity_overlap,
+        "keyword_overlap_met": overlap_counts["keyword_overlap"] >= settings.cluster_min_keyword_overlap,
+        "signal_gate_passed": signal_gate_passed,
+    }
+
+    return {
+        "decision": decision,
+        "decision_reason": decision_reason,
+        "candidate_count": candidate_count,
+        "selected_cluster_id": selected_cluster_id,
+        "selected_score": round(selected_score, 4),
+        "components": components,
+        "overlap_counts": overlap_counts,
+        "thresholds": thresholds,
+        "thresholds_met": thresholds_met,
+    }
+
+
+def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> RebuildResult:
     articles_stmt: Select[tuple[Article]] = (
         select(Article)
         .join(ClusterArticle, ClusterArticle.article_id == Article.id)
@@ -109,7 +252,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     )
     articles = list(session.scalars(articles_stmt).all())
     if not articles:
-        return
+        return RebuildResult(validation_failed=True, timeline_deduplicated=0)
 
     first_seen = min(article.published_at for article in articles)
     last_updated = max(article.published_at for article in articles)
@@ -142,24 +285,49 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
         emerging_source_count=settings.cluster_emerging_source_count,
     )
 
+    timeline_entries, dedup_count = build_timeline_events(
+        articles,
+        dedupe_window_hours=settings.timeline_dedupe_window_hours,
+        dedupe_title_similarity=settings.timeline_dedupe_title_similarity,
+    )
+
     session.query(ClusterTimelineEvent).filter(ClusterTimelineEvent.cluster_id == cluster.id).delete()
-    for article in articles:
+    for item in timeline_entries:
         event = ClusterTimelineEvent(
             cluster_id=cluster.id,
-            timestamp=article.published_at,
-            event=build_timeline_event_text(article),
-            source_url=article.url,
-            source_title=article.title,
+            timestamp=item.timestamp,
+            event=item.event,
+            source_url=item.source_url,
+            source_title=item.source_title,
         )
         session.add(event)
 
-    validation = validate_cluster_record(cluster)
+    validation = validate_cluster_record(
+        cluster,
+        source_count=len(articles),
+        min_sources=settings.cluster_min_sources_for_api,
+        min_headline_words=settings.cluster_min_headline_words,
+        min_detail_words=settings.cluster_min_detail_words,
+    )
     cluster.validation_error = validation.error
+    return RebuildResult(validation_failed=not validation.is_valid, timeline_deduplicated=dedup_count)
 
 
-def _attach_article_to_cluster(session: Session, cluster: Cluster, article: Article, score: float) -> None:
-    link = ClusterArticle(cluster_id=cluster.id, article_id=article.id, similarity_score=score)
+def _attach_article_to_cluster(
+    session: Session,
+    cluster: Cluster,
+    article: Article,
+    score: float,
+    heuristic_breakdown: dict,
+) -> None:
+    link = ClusterArticle(
+        cluster_id=cluster.id,
+        article_id=article.id,
+        similarity_score=score,
+        heuristic_breakdown=heuristic_breakdown,
+    )
     session.add(link)
+    session.flush()
 
 
 def _create_cluster(session: Session, article: Article) -> Cluster:
@@ -182,32 +350,94 @@ def _create_cluster(session: Session, article: Article) -> Cluster:
     return cluster
 
 
-def cluster_new_articles(session: Session, settings: Settings) -> tuple[int, int]:
+def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunResult:
     created_count = 0
     updated_count = 0
+    candidates_evaluated = 0
+    signal_rejected = 0
+    attach_decisions = 0
+    new_decisions = 0
+    low_confidence_new = 0
+    timeline_deduplicated = 0
+    invalid_cluster_ids: set[str] = set()
+
     pending = _load_unclustered_articles(session)
 
     for article in pending:
         article_features = _article_features(article)
         candidates = _load_candidate_clusters(session, article, settings)
 
-        best_cluster: Cluster | None = None
-        best_score = 0.0
+        best_evaluation: CandidateEvaluation | None = None
 
-        for cluster in candidates:
-            cluster_features = _cluster_features(cluster)
-            score = compute_similarity(article_features, cluster_features, settings.cluster_time_window_hours)
-            if score > best_score:
-                best_score = score
-                best_cluster = cluster
+        for candidate_cluster in candidates:
+            candidates_evaluated += 1
+            cluster_features = _cluster_features(candidate_cluster)
+            evaluation = _evaluate_candidate(candidate_cluster, article_features, cluster_features, settings)
 
-        if best_cluster is None or best_score < settings.cluster_score_threshold:
-            best_cluster = _create_cluster(session, article)
+            if not evaluation.signal_gate_passed:
+                signal_rejected += 1
+                continue
+
+            if _is_better_candidate(evaluation, best_evaluation, settings.cluster_tie_break_epsilon):
+                best_evaluation = evaluation
+
+        decision_reason = ""
+        chosen_score = 1.0
+
+        if best_evaluation is None:
+            cluster = _create_cluster(session, article)
             created_count += 1
-            best_score = 1.0
+            new_decisions += 1
+            decision_reason = "no_candidate_passed_signal_gate"
+            breakdown = _build_heuristic_breakdown(
+                decision="create_new_cluster",
+                decision_reason=decision_reason,
+                candidate_count=len(candidates),
+                settings=settings,
+                evaluation=None,
+            )
+        elif best_evaluation.score < settings.cluster_score_threshold:
+            cluster = _create_cluster(session, article)
+            created_count += 1
+            new_decisions += 1
+            low_confidence_new += 1
+            decision_reason = "best_candidate_below_score_threshold"
+            breakdown = _build_heuristic_breakdown(
+                decision="create_new_cluster",
+                decision_reason=decision_reason,
+                candidate_count=len(candidates),
+                settings=settings,
+                evaluation=best_evaluation,
+            )
+        else:
+            cluster = best_evaluation.cluster
+            chosen_score = best_evaluation.score
+            attach_decisions += 1
+            decision_reason = "attached_to_existing_cluster"
+            breakdown = _build_heuristic_breakdown(
+                decision="attach_existing_cluster",
+                decision_reason=decision_reason,
+                candidate_count=len(candidates),
+                settings=settings,
+                evaluation=best_evaluation,
+            )
 
-        _attach_article_to_cluster(session, best_cluster, article, best_score)
-        _rebuild_cluster(session, best_cluster, settings)
+        _attach_article_to_cluster(session, cluster, article, chosen_score, breakdown)
+        rebuild_result = _rebuild_cluster(session, cluster, settings)
+        if rebuild_result.validation_failed:
+            invalid_cluster_ids.add(cluster.id)
+
         updated_count += 1
+        timeline_deduplicated += rebuild_result.timeline_deduplicated
 
-    return created_count, updated_count
+    return ClusteringRunResult(
+        created_count=created_count,
+        updated_count=updated_count,
+        candidates_evaluated=candidates_evaluated,
+        signal_rejected=signal_rejected,
+        attach_decisions=attach_decisions,
+        new_decisions=new_decisions,
+        low_confidence_new=low_confidence_new,
+        validation_rejected=len(invalid_cluster_ids),
+        timeline_deduplicated=timeline_deduplicated,
+    )

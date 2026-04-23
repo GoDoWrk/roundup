@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import PipelineStats
@@ -28,10 +27,29 @@ def update_ingest_metrics(session: Session, ingested: int, deduplicated: int) ->
     stats.last_ingest_time = utcnow()
 
 
-def update_cluster_metrics(session: Session, created: int, updated: int) -> None:
+def update_cluster_metrics(
+    session: Session,
+    created: int,
+    updated: int,
+    *,
+    candidates_evaluated: int = 0,
+    signal_rejected: int = 0,
+    attach_decisions: int = 0,
+    new_decisions: int = 0,
+    low_confidence_new: int = 0,
+    validation_rejected: int = 0,
+    timeline_deduplicated: int = 0,
+) -> None:
     stats = get_or_create_pipeline_stats(session)
     stats.clusters_created_total += created
     stats.clusters_updated_total += updated
+    stats.cluster_candidates_evaluated_total += candidates_evaluated
+    stats.cluster_signal_rejected_total += signal_rejected
+    stats.cluster_attach_decisions_total += attach_decisions
+    stats.cluster_new_decisions_total += new_decisions
+    stats.cluster_low_confidence_new_total += low_confidence_new
+    stats.cluster_validation_rejected_total += validation_rejected
+    stats.cluster_timeline_events_deduplicated_total += timeline_deduplicated
     stats.last_cluster_time = utcnow()
 
 
@@ -53,6 +71,27 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP clusters_updated_total Total number of updated clusters",
         "# TYPE clusters_updated_total counter",
         f"clusters_updated_total {stats.clusters_updated_total}",
+        "# HELP cluster_candidates_evaluated_total Total candidate cluster comparisons evaluated",
+        "# TYPE cluster_candidates_evaluated_total counter",
+        f"cluster_candidates_evaluated_total {stats.cluster_candidates_evaluated_total}",
+        "# HELP cluster_signal_rejected_total Total candidate clusters rejected by minimum signal gate",
+        "# TYPE cluster_signal_rejected_total counter",
+        f"cluster_signal_rejected_total {stats.cluster_signal_rejected_total}",
+        "# HELP cluster_attach_decisions_total Total decisions to attach an article to an existing cluster",
+        "# TYPE cluster_attach_decisions_total counter",
+        f"cluster_attach_decisions_total {stats.cluster_attach_decisions_total}",
+        "# HELP cluster_new_decisions_total Total decisions to create a new cluster",
+        "# TYPE cluster_new_decisions_total counter",
+        f"cluster_new_decisions_total {stats.cluster_new_decisions_total}",
+        "# HELP cluster_low_confidence_new_total Total new clusters created because candidate score was below threshold",
+        "# TYPE cluster_low_confidence_new_total counter",
+        f"cluster_low_confidence_new_total {stats.cluster_low_confidence_new_total}",
+        "# HELP cluster_validation_rejected_total Total cluster rebuilds rejected by validation",
+        "# TYPE cluster_validation_rejected_total counter",
+        f"cluster_validation_rejected_total {stats.cluster_validation_rejected_total}",
+        "# HELP cluster_timeline_events_deduplicated_total Total timeline events removed by near-duplicate collapse",
+        "# TYPE cluster_timeline_events_deduplicated_total counter",
+        f"cluster_timeline_events_deduplicated_total {stats.cluster_timeline_events_deduplicated_total}",
         "# HELP last_ingest_time Unix timestamp for the last ingest run",
         "# TYPE last_ingest_time gauge",
         f"last_ingest_time {ingest_ts}",

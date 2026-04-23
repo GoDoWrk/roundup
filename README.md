@@ -8,7 +8,7 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests a
 - Deduplicates using a stable hash.
 - Clusters related articles with deterministic heuristics (no LLM clustering).
 - Enriches strict cluster fields with deterministic fallback text.
-- Exposes validated clusters from API endpoints.
+- Exposes validated clusters from API endpoints (minimum 3 sources + quality checks).
 - Exposes debug and Prometheus metrics endpoints.
 
 ## Stack
@@ -60,11 +60,19 @@ Use this sequence to validate the first success state:
    - `what_changed`
    - `why_it_matters`
 4. Hit `/debug/clusters` and verify any invalid clusters show validation reasons.
+   - Each debug cluster now includes a `debug_explanation` object with threshold checks, shared terms, and score breakdown context.
 5. Hit `/metrics` and confirm required metrics exist:
    - `articles_ingested_total`
    - `articles_deduplicated_total`
    - `clusters_created_total`
    - `clusters_updated_total`
+   - `cluster_candidates_evaluated_total`
+   - `cluster_signal_rejected_total`
+   - `cluster_attach_decisions_total`
+   - `cluster_new_decisions_total`
+   - `cluster_low_confidence_new_total`
+   - `cluster_validation_rejected_total`
+   - `cluster_timeline_events_deduplicated_total`
    - `last_ingest_time`
    - `last_cluster_time`
 
@@ -84,6 +92,7 @@ Weighted score for each article->cluster candidate:
 - Publication time proximity: 0.10
 
 If the best score is below threshold, a new cluster is created.
+Candidates must also pass a minimum-signal gate (title/entity/keyword overlap).
 
 ## Notes
 - This v1 intentionally avoids a polished frontend.
