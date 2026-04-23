@@ -6,3 +6,7 @@ __pycache__/
 .coverage
 htmlcov/
 postgres_data/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/tsconfig.tsbuildinfo

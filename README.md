@@ -10,6 +10,7 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests a
 - Enriches strict cluster fields with deterministic fallback text.
 - Exposes validated clusters from API endpoints (minimum 3 sources + quality checks).
 - Exposes debug and Prometheus metrics endpoints.
+- Includes a thin React/Vite inspection frontend for cluster/operator debugging.
 
 ## Stack
 - FastAPI
@@ -25,6 +26,7 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests a
 - `alembic/` - DB migration setup.
 - `scripts/run_pipeline_once.py` - manual pipeline run utility.
 - `docs/architecture.md` - architecture rationale.
+- `frontend/` - read-only inspection interface (clusters, detail, metrics).
 
 ## Quick start
 1. Copy env template.
@@ -40,6 +42,8 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests a
    ```bash
    curl http://localhost:8000/health
    ```
+5. Open the inspector UI:
+   - `http://localhost:8081`
 
 ## Required endpoints
 - `GET /health`
@@ -49,6 +53,8 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests a
 - `GET /api/clusters/{cluster_id}`
 - `GET /debug/articles`
 - `GET /debug/clusters`
+
+The inspector frontend consumes these live endpoints only; no mock data is used.
 
 ## Pipeline verification checklist
 Use this sequence to validate the first success state:
@@ -83,6 +89,13 @@ Use this sequence to validate the first success state:
 - Run migrations: `make migrate`
 - Run one pipeline pass: `make run-once`
 - Run tests: `make test`
+- Run frontend tests: `make frontend-test`
+
+## Inspector UI
+- `/` cluster list view for API-eligible clusters plus debug-only invalid cluster panel.
+- `/clusters/:clusterId` full cluster detail (or debug-only fallback if filtered from API).
+- `/metrics` basic pipeline metrics parsed from Prometheus text.
+- Optional 15-second auto-refresh on metrics page plus manual refresh controls.
 
 ## Deterministic clustering rules (v1)
 Weighted score for each article->cluster candidate:

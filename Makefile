@@ -1,4 +1,4 @@
-.PHONY: up down logs test migrate run-once fmt
+.PHONY: up down logs test frontend-test migrate run-once fmt
 
 up:
 	docker compose up --build
@@ -7,7 +7,7 @@ down:
 	docker compose down -v
 
 logs:
-	docker compose logs -f api worker
+	docker compose logs -f api worker inspector
 
 migrate:
 	docker compose run --rm api alembic upgrade head
@@ -17,3 +17,6 @@ run-once:
 
 test:
 	pytest -q
+
+frontend-test:
+	cd frontend && npm test
