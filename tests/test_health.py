@@ -7,4 +7,6 @@ def test_health_endpoint(client) -> None:
     payload = response.json()
     assert payload["status"] in {"ok", "degraded"}
     assert payload["db"] == "ok"
+    assert "miniflux_reachable" in payload
+    assert "miniflux_usable" in payload
     assert "timestamp" in payload

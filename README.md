@@ -6,15 +6,17 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests n
 - FastAPI API with typed cluster/article/debug responses.
 - Postgres persistence with Alembic migrations.
 - Worker scheduler for recurring ingestion + clustering.
+- Built-in Miniflux provisioning and feed seeding on first startup.
 - Deterministic clustering/enrichment/validation (no LLM requirement).
 - Prometheus-style metrics plus debug endpoints.
-- Read-only inspection frontend at `http://localhost:8081`.
+- Read-only inspection frontend at `http://localhost:8080`.
 
 ## Repository structure
 - `app/` API, services, models, config, startup checks.
 - `alembic/` migration history.
 - `frontend/` React/Vite inspection interface.
-- `data/sample_miniflux_entries.json` optional offline dev ingestion data.
+- `data/miniflux_seed_feeds.json` default Miniflux starter feeds imported at bootstrap.
+- `data/sample_miniflux_entries.json` demo-mode ingestion data.
 - `tests/` backend test coverage.
 - `docs/architecture.md` architecture notes.
 - `OPERATIONS.md` day-to-day runbook to verify pipeline health.
@@ -22,25 +24,37 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests n
 ## Environment and startup checks
 Copy `.env.example` to `.env`.
 
-Worker startup requires one ingestion source:
-1. Live Miniflux: `MINIFLUX_URL` + `MINIFLUX_API_KEY`.
-2. Offline sample data: `SAMPLE_MINIFLUX_DATA_PATH`.
+Default mode is live Miniflux:
+- `DEMO_MODE=false`
+- `MINIFLUX_URL` points to the internal service (`http://miniflux:8080`)
+- `MINIFLUX_API_KEY_FILE` is written automatically by the bootstrap service
 
-If neither is configured, worker startup fails fast with a clear error message.
+Demo mode is explicit:
+- Set `DEMO_MODE=true`
+- Keep `SAMPLE_MINIFLUX_DATA_PATH` set to a valid JSON file
+
+If live Miniflux is required and credentials are missing, worker startup fails fast with a clear error.
 
 Key ingestion settings:
 - `MINIFLUX_URL`
-- `MINIFLUX_API_KEY`
+- `MINIFLUX_API_KEY` (optional manual override)
+- `MINIFLUX_API_KEY_FILE` (auto-generated in Docker flow)
 - `MINIFLUX_FETCH_LIMIT`
 - `MINIFLUX_TIMEOUT_SECONDS`
-- `SAMPLE_MINIFLUX_DATA_PATH`
+- `DEMO_MODE`
 
 ## Docker and migration flow
 `docker-compose.yml` now uses a dedicated migration service:
 1. `db` starts and passes healthcheck.
-2. `migrate` runs `alembic upgrade head` once.
-3. `api` and `worker` start only after migration success.
-4. `inspector` starts after API healthcheck passes.
+2. `miniflux-db` and `miniflux` start and pass healthchecks.
+3. `miniflux-bootstrap` runs once:
+   - verifies admin credentials
+   - creates/reuses a Miniflux API key
+   - writes key to shared file for Roundup
+   - imports curated starter feeds
+4. `migrate` runs `alembic upgrade head` once.
+5. `api` and `worker` start only after migrate + bootstrap succeed.
+6. `inspector` starts after API healthcheck passes.
 
 This avoids migration race conditions between API and worker containers.
 
@@ -57,8 +71,26 @@ This avoids migration race conditions between API and worker containers.
    ```bash
    curl http://localhost:8000/health
    ```
-4. Open inspector:
-   - `http://localhost:8081`
+4. Trigger one immediate pipeline run (optional):
+   ```bash
+   docker compose exec api python scripts/run_pipeline_once.py
+   ```
+5. Check clusters:
+   ```bash
+   curl http://localhost:8000/api/clusters
+   ```
+6. Open inspector:
+   - `http://localhost:8080`
+
+## Automatic Miniflux provisioning
+On a fresh stack, `miniflux-bootstrap` provisions Miniflux with minimal input:
+- waits until Miniflux is reachable
+- authenticates with `MINIFLUX_ADMIN_USERNAME` and `MINIFLUX_ADMIN_PASSWORD`
+- creates/reuses API key and saves it to `MINIFLUX_API_KEY_FILE`
+- imports feeds from `MINIFLUX_BOOTSTRAP_FEEDS_FILE` (default curated file in `data/`)
+- requests an initial refresh
+
+If bootstrap fails, `api` and `worker` do not start, and logs show a clear failure reason.
 
 ## Required API endpoints
 - `GET /health`

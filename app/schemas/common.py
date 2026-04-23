@@ -8,6 +8,8 @@ class HealthResponse(BaseModel):
     app: str
     db: str
     miniflux_configured: bool
+    miniflux_reachable: bool
+    miniflux_usable: bool
     timestamp: datetime
 
 

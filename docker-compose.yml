@@ -16,6 +16,64 @@ services:
       timeout: 5s
       retries: 5
 
+  miniflux-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MINIFLUX_DB_USER:-miniflux}
+      POSTGRES_PASSWORD: ${MINIFLUX_DB_PASSWORD:-miniflux}
+      POSTGRES_DB: ${MINIFLUX_DB_NAME:-miniflux}
+    volumes:
+      - miniflux_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${MINIFLUX_DB_USER:-miniflux} -d ${MINIFLUX_DB_NAME:-miniflux}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+  miniflux:
+    image: miniflux/miniflux:2.2.19
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${MINIFLUX_DB_USER:-miniflux}:${MINIFLUX_DB_PASSWORD:-miniflux}@miniflux-db:5432/${MINIFLUX_DB_NAME:-miniflux}?sslmode=disable
+      RUN_MIGRATIONS: 1
+      CREATE_ADMIN: 1
+      ADMIN_USERNAME: ${MINIFLUX_ADMIN_USERNAME:-roundup_admin}
+      ADMIN_PASSWORD: ${MINIFLUX_ADMIN_PASSWORD:-roundup_admin_change_me}
+      POLLING_FREQUENCY: ${MINIFLUX_POLLING_FREQUENCY:-15}
+    depends_on:
+      miniflux-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/miniflux", "-healthcheck", "auto"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  miniflux-bootstrap:
+    build: .
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      MINIFLUX_URL: ${MINIFLUX_URL:-http://miniflux:8080}
+      MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
+      MINIFLUX_BOOTSTRAP_FEEDS_FILE: ${MINIFLUX_BOOTSTRAP_FEEDS_FILE:-/app/data/miniflux_seed_feeds.json}
+      MINIFLUX_BOOTSTRAP_DEFAULT_CATEGORY: ${MINIFLUX_BOOTSTRAP_DEFAULT_CATEGORY:-Roundup Starter Feeds}
+      MINIFLUX_API_KEY_DESCRIPTION: ${MINIFLUX_API_KEY_DESCRIPTION:-Roundup ingestion API key}
+    command: python scripts/bootstrap_miniflux.py
+    restart: "no"
+    volumes:
+      - miniflux_bootstrap:/miniflux-bootstrap
+    depends_on:
+      miniflux:
+        condition: service_healthy
+
   migrate:
     build: .
     working_dir: /app
@@ -36,6 +94,7 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
+      MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
@@ -55,6 +114,10 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      miniflux-bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - miniflux_bootstrap:/miniflux-bootstrap:ro
 
   worker:
     build: .
@@ -64,12 +127,17 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
+      MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
     command: python -m app.scheduler
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      miniflux-bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - miniflux_bootstrap:/miniflux-bootstrap:ro
 
   inspector:
     build:
@@ -89,3 +157,5 @@ services:
 
 volumes:
   postgres_data:
+  miniflux_postgres_data:
+  miniflux_bootstrap:

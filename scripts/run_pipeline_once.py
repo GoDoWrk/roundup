@@ -54,7 +54,7 @@ def _prune_orphan_clusters(session: Session) -> int:
 
 def reset_sample_mode_state_if_needed(session: Session, settings: Settings) -> None:
     sample_path = settings.sample_data_path
-    if sample_path is None or settings.has_miniflux_credentials:
+    if sample_path is None or settings.has_miniflux_credentials or not settings.demo_mode:
         return
 
     sample_urls = _collect_sample_canonical_urls(sample_path)

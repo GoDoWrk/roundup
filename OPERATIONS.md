@@ -10,9 +10,12 @@ docker compose up --build
 
 Expected startup order:
 1. `db` healthy
-2. `migrate` completes
-3. `api` and `worker` start
-4. `inspector` starts
+2. `miniflux-db` healthy
+3. `miniflux` healthy
+4. `miniflux-bootstrap` completes
+5. `migrate` completes
+6. `api` and `worker` start
+7. `inspector` starts
 
 ## 2) Confirm API health
 ```bash
@@ -21,12 +24,18 @@ curl http://localhost:8000/health
 Expected:
 - `status` is `ok` or `degraded`
 - `db` is `ok`
+- `miniflux_reachable` is `true`
+- `miniflux_usable` is `true`
 
 ## 3) Confirm ingestion source
-If Miniflux is unavailable, ensure `.env` has:
-- `SAMPLE_MINIFLUX_DATA_PATH=./data/sample_miniflux_entries.json`
+Default mode should be live Miniflux:
+- `DEMO_MODE=false`
+- `MINIFLUX_URL=http://miniflux:8080`
+- bootstrap should write `/miniflux-bootstrap/miniflux_api_key` and set runtime token automatically
 
-Worker startup will fail fast if neither Miniflux credentials nor sample data path is configured.
+Demo mode is explicit only:
+- set `DEMO_MODE=true`
+- keep `SAMPLE_MINIFLUX_DATA_PATH` configured
 
 ## 4) Verify pipeline activity
 Open metrics:
@@ -57,14 +66,18 @@ Expected:
 - Debug API includes rejected clusters with validation/debug context.
 
 ## 6) Visual inspection UI
-Open `http://localhost:8081`:
+Open `http://localhost:8080`:
 - Cluster list: check headline/summary quality and source counts.
 - Cluster detail: check timeline and source ordering.
 - Metrics page: confirm timestamps update.
 
 ## 7) Common failure patterns
 - Worker exits at startup:
-  - Missing Miniflux credentials and missing sample path.
+  - Missing Miniflux token/config with `DEMO_MODE=false`.
+- API/worker never start and `miniflux-bootstrap` exits:
+  - invalid `MINIFLUX_ADMIN_USERNAME`/`MINIFLUX_ADMIN_PASSWORD`
+  - Miniflux service not reachable
+  - feed seed file missing or invalid
 - `ingest_source_failures_total` rising:
   - Miniflux API unreachable or invalid response.
 - `articles_malformed_total` rising:

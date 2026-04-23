@@ -37,10 +37,16 @@ def _load_entries_from_sample(path: Path) -> list[dict]:
 def _resolve_entries(settings: Settings) -> tuple[list[dict], str, bool]:
     sample_path = settings.sample_data_path
 
+    if settings.demo_mode:
+        if sample_path is not None:
+            return _load_entries_from_sample(sample_path), "sample", False
+        logger.error("demo_mode_enabled_but_sample_path_missing set SAMPLE_MINIFLUX_DATA_PATH")
+        return [], "none", True
+
     if settings.has_miniflux_credentials:
         client = MinifluxClient(
             base_url=settings.miniflux_base_url,
-            api_token=settings.miniflux_api_token,
+            api_token=settings.miniflux_api_token_resolved,
             timeout_seconds=settings.miniflux_timeout_seconds,
         )
         try:
@@ -50,16 +56,11 @@ def _resolve_entries(settings: Settings) -> tuple[list[dict], str, bool]:
             return entries, "miniflux", False
         except MinifluxClientError as exc:
             logger.error("miniflux_fetch_failed error=%s", exc)
-            logger.warning(
-                "miniflux_configured_so_sample_fallback_disabled set MINIFLUX_URL and MINIFLUX_API_KEY correctly to restore live ingestion"
-            )
+            logger.error("miniflux_ingestion_failed_no_sample_fallback demo_mode=%s", settings.demo_mode)
             return [], "miniflux_error", True
 
-    if sample_path is not None:
-        return _load_entries_from_sample(sample_path), "sample", False
-
     logger.error(
-        "no_ingestion_source_configured set MINIFLUX_URL + MINIFLUX_API_KEY or SAMPLE_MINIFLUX_DATA_PATH"
+        "no_ingestion_source_configured set MINIFLUX_URL + MINIFLUX_API_KEY(_FILE), or set DEMO_MODE=true with SAMPLE_MINIFLUX_DATA_PATH"
     )
     return [], "none", True
 

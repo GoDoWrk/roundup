@@ -7,6 +7,8 @@ Roundup v1 is intentionally backend-first and deterministic. The objective is a 
 - **FastAPI API service**: exposes health, metrics, public cluster/article APIs, and debug visibility.
 - **Worker service**: runs the interval scheduler and executes ingestion + clustering pipeline.
 - **Postgres**: source of truth for articles, clusters, timeline events, and persistent pipeline counters.
+- **Miniflux stack**: built-in `miniflux-db` + `miniflux` services for real feed aggregation.
+- **Miniflux bootstrap job**: one-shot provisioning that verifies admin auth, creates/reuses an API key, imports seed feeds, and writes the token file consumed by API/worker.
 
 ## Pipeline shape
 1. Pull entries from Miniflux (`/v1/entries`).
@@ -28,3 +30,4 @@ Roundup v1 is intentionally backend-first and deterministic. The objective is a 
 - `.env` driven configuration.
 - Clear migration path via Alembic.
 - Minimal dependencies and typed Python code.
+- First run provisions Miniflux automatically with curated starter feeds to reduce manual setup.

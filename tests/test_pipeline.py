@@ -21,6 +21,7 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
         "database_url": "sqlite+pysqlite:///:memory:",
         "miniflux_base_url": "http://miniflux.local",
         "miniflux_api_token": "token",
+        "demo_mode": False,
         "sample_miniflux_data_path": str(tmp_path / "sample.json"),
         "cluster_min_sources_for_api": 1,
     }
@@ -115,6 +116,7 @@ def test_pipeline_uses_sample_source_when_miniflux_not_configured(db_session: Se
     settings = _settings(
         tmp_path,
         miniflux_api_token="",
+        demo_mode=True,
         sample_miniflux_data_path=str(sample_path),
     )
 
@@ -201,6 +203,7 @@ def test_sample_mode_reset_removes_only_sample_articles_and_reingests(
     settings = _settings(
         tmp_path,
         miniflux_api_token="",
+        demo_mode=True,
         sample_miniflux_data_path=str(sample_path),
         cluster_min_sources_for_api=3,
     )

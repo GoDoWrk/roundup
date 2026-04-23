@@ -15,7 +15,7 @@ def test_worker_startup_check_fails_without_miniflux_or_sample() -> None:
         sample_miniflux_data_path=None,
     )
 
-    with pytest.raises(RuntimeError, match="Worker startup requires either live Miniflux credentials"):
+    with pytest.raises(RuntimeError, match="Set MINIFLUX_API_KEY or MINIFLUX_API_KEY_FILE"):
         run_startup_checks("worker", settings=settings)
 
 
@@ -26,10 +26,36 @@ def test_worker_startup_check_accepts_sample_path(tmp_path: Path) -> None:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         miniflux_api_token="",
+        demo_mode=True,
         sample_miniflux_data_path=str(sample_path),
     )
 
     run_startup_checks("worker", settings=settings)
+
+
+def test_worker_startup_check_fails_demo_mode_without_sample_path() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        demo_mode=True,
+        sample_miniflux_data_path=None,
+    )
+
+    with pytest.raises(RuntimeError, match="DEMO_MODE=true requires SAMPLE_MINIFLUX_DATA_PATH"):
+        run_startup_checks("worker", settings=settings)
+
+
+def test_worker_startup_check_accepts_miniflux_api_key_file(tmp_path: Path) -> None:
+    token_file = tmp_path / "token.txt"
+    token_file.write_text("from-file-token", encoding="utf-8")
+
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        MINIFLUX_URL="http://miniflux.local",
+        MINIFLUX_API_KEY_FILE=str(token_file),
+    )
+
+    run_startup_checks("worker", settings=settings)
+    assert settings.miniflux_api_token_resolved == "from-file-token"
 
 
 def test_api_startup_check_does_not_require_miniflux() -> None:

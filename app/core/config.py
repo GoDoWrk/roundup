@@ -24,8 +24,17 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("MINIFLUX_API_KEY", "MINIFLUX_API_TOKEN", "miniflux_api_token"),
     )
+    miniflux_api_token_file: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MINIFLUX_API_KEY_FILE",
+            "MINIFLUX_API_TOKEN_FILE",
+            "miniflux_api_token_file",
+        ),
+    )
     miniflux_fetch_limit: int = 100
     miniflux_timeout_seconds: int = 20
+    demo_mode: bool = False
     sample_miniflux_data_path: str | None = None
 
     scheduler_interval_seconds: int = 600
@@ -64,8 +73,27 @@ class Settings(BaseSettings):
         return normalized or None
 
     @property
+    def miniflux_api_token_resolved(self) -> str:
+        direct = self.miniflux_api_token.strip()
+        if direct:
+            return direct
+
+        secret_file = (self.miniflux_api_token_file or "").strip()
+        if not secret_file:
+            return ""
+
+        path = Path(secret_file)
+        if not path.exists() or not path.is_file():
+            return ""
+
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    @property
     def has_miniflux_credentials(self) -> bool:
-        return bool(self.miniflux_base_url.strip() and self.miniflux_api_token.strip())
+        return bool(self.miniflux_base_url.strip() and self.miniflux_api_token_resolved)
 
     @property
     def sample_data_path(self) -> Path | None:
@@ -92,14 +120,20 @@ class Settings(BaseSettings):
             )
 
         if mode == "worker":
-            if self.miniflux_api_token.strip() and not self.miniflux_base_url.strip():
-                errors.append("MINIFLUX_URL is required when MINIFLUX_API_KEY is set.")
+            if self.demo_mode:
+                if sample_path is None:
+                    errors.append(
+                        "DEMO_MODE=true requires SAMPLE_MINIFLUX_DATA_PATH to be set to a valid JSON file."
+                    )
+                return errors
 
-            if not self.has_miniflux_credentials and sample_path is None:
+            if not self.miniflux_base_url.strip():
+                errors.append("MINIFLUX_URL must be set when DEMO_MODE is false.")
+
+            if not self.miniflux_api_token_resolved:
                 errors.append(
-                    "Worker startup requires either live Miniflux credentials "
-                    "(MINIFLUX_URL + MINIFLUX_API_KEY) or SAMPLE_MINIFLUX_DATA_PATH "
-                    "for offline development."
+                    "Set MINIFLUX_API_KEY or MINIFLUX_API_KEY_FILE before starting worker mode "
+                    "(DEMO_MODE=false requires live Miniflux credentials)."
                 )
 
         return errors

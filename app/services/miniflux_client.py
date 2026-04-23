@@ -26,6 +26,35 @@ class MinifluxClient:
     api_token: str
     timeout_seconds: int = 20
 
+    def _headers(self) -> dict[str, str]:
+        return {
+            "X-Auth-Token": self.api_token,
+        }
+
+    def check_service_reachable(self) -> bool:
+        if not self.base_url.strip():
+            return False
+
+        endpoint = f"{self.base_url.rstrip('/')}/healthcheck"
+        try:
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.get(endpoint)
+                return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def check_credentials(self) -> bool:
+        if not self.base_url.strip() or not self.api_token.strip():
+            return False
+
+        endpoint = f"{self.base_url.rstrip('/')}/v1/me"
+        try:
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.get(endpoint, headers=self._headers())
+                return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
     def fetch_entries(self, limit: int = 100) -> list[dict]:
         if not self.api_token.strip():
             raise MinifluxConfigError(
@@ -43,13 +72,10 @@ class MinifluxClient:
             "status": "unread",
             "limit": limit,
         }
-        headers = {
-            "X-Auth-Token": self.api_token,
-        }
 
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
-                response = client.get(endpoint, params=params, headers=headers)
+                response = client.get(endpoint, params=params, headers=self._headers())
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
