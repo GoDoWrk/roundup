@@ -39,4 +39,31 @@ describe("toClusterListRows", () => {
     expect(rows[0].sourceCount).toBe(1);
     expect(rows[0].summaryPreview.length).toBeGreaterThan(0);
   });
+
+  it("uses ASCII truncation for summary previews", () => {
+    const payload: ClusterListResponse = {
+      total: 1,
+      limit: 50,
+      offset: 0,
+      items: [
+        {
+          cluster_id: "cluster-2",
+          headline: "Headline",
+          summary: "x".repeat(300),
+          what_changed: "changed",
+          why_it_matters: "matters",
+          timeline: [],
+          sources: [],
+          first_seen: "2026-04-22T00:00:00Z",
+          last_updated: "2026-04-22T02:00:00Z",
+          score: 0.712,
+          status: "active"
+        }
+      ]
+    };
+
+    const rows = toClusterListRows(payload);
+    expect(rows[0].summaryPreview.endsWith("...")).toBe(true);
+    expect(rows[0].summaryPreview.includes("…")).toBe(false);
+  });
 });

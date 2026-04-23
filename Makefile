@@ -1,4 +1,4 @@
-.PHONY: up down logs test frontend-test migrate run-once fmt
+.PHONY: up down logs test frontend-test migrate run-once purge-demo-data fmt
 
 up:
 	docker compose up --build
@@ -14,6 +14,9 @@ migrate:
 
 run-once:
 	docker compose run --rm worker python -m scripts.run_pipeline_once
+
+purge-demo-data:
+	docker compose exec api python scripts/purge_demo_data.py
 
 test:
 	pytest -q

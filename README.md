@@ -129,6 +129,7 @@ If bootstrap fails, `api` and `worker` do not start, and logs show a clear failu
 - `make logs` follow service logs.
 - `make migrate` run migrations manually.
 - `make run-once` run one worker pipeline cycle.
+- `make purge-demo-data` remove demo-seeded `demo.roundup.local` rows and orphaned clusters.
 - `make test` run backend tests.
 - `make frontend-test` run frontend tests.
 

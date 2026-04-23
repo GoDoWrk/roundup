@@ -1,4 +1,4 @@
-import type { ClusterListResponse } from "../types";
+ï»¿import type { ClusterListResponse } from "../types";
 
 export interface ClusterListRow {
   clusterId: string;
@@ -15,7 +15,7 @@ function preview(text: string, maxLength: number): string {
   if (trimmed.length <= maxLength) {
     return trimmed;
   }
-  return `${trimmed.slice(0, maxLength - 1)}…`;
+  return `${trimmed.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
 export function toClusterListRows(payload: ClusterListResponse): ClusterListRow[] {
