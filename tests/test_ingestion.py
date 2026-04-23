@@ -46,3 +46,17 @@ def test_ingestion_deduplicates_against_existing_records(db_session: Session) ->
     assert first.ingested == 1
     assert second.ingested == 0
     assert second.deduplicated == 1
+
+
+def test_ingestion_skips_malformed_entry_without_failing_batch(db_session: Session) -> None:
+    entries = [
+        _entry(1, "Valid article", "https://example.com/valid", "2026-04-22T11:00:00Z"),
+        _entry(2, "Broken article", "https://example.com/broken", "not-a-date"),
+    ]
+
+    result = ingest_entries(db_session, entries)
+    db_session.commit()
+
+    assert result.ingested == 1
+    assert result.malformed == 1
+    assert len(result.errors) == 1

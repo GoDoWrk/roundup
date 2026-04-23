@@ -1,51 +1,64 @@
 # Roundup
 
-Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests articles from Miniflux, deduplicates them, clusters related coverage into strict story objects, and serves those objects through typed APIs.
+Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests news entries, deduplicates them, clusters related coverage into strict story objects, and exposes those objects through typed APIs and a thin inspection UI.
 
-## What v1 does
-- Pulls articles from Miniflux only.
-- Normalizes and stores raw + derived article features.
-- Deduplicates using a stable hash.
-- Clusters related articles with deterministic heuristics (no LLM clustering).
-- Enriches strict cluster fields with deterministic fallback text.
-- Exposes validated clusters from API endpoints (minimum 3 sources + quality checks).
-- Exposes debug and Prometheus metrics endpoints.
-- Includes a thin React/Vite inspection frontend for cluster/operator debugging.
-
-## Stack
-- FastAPI
-- PostgreSQL
-- SQLAlchemy + Alembic
-- Docker Compose
+## Core capabilities
+- FastAPI API with typed cluster/article/debug responses.
+- Postgres persistence with Alembic migrations.
+- Worker scheduler for recurring ingestion + clustering.
+- Deterministic clustering/enrichment/validation (no LLM requirement).
+- Prometheus-style metrics plus debug endpoints.
+- Read-only inspection frontend at `http://localhost:8081`.
 
 ## Repository structure
-- `app/main.py` - FastAPI entrypoint and `/metrics`.
-- `app/api/routes/` - health, public API, and debug endpoints.
-- `app/services/` - ingestion, normalization, clustering, enrichment, validation, metrics, pipeline.
-- `app/db/models.py` - SQLAlchemy models.
-- `alembic/` - DB migration setup.
-- `scripts/run_pipeline_once.py` - manual pipeline run utility.
-- `docs/architecture.md` - architecture rationale.
-- `frontend/` - read-only inspection interface (clusters, detail, metrics).
+- `app/` API, services, models, config, startup checks.
+- `alembic/` migration history.
+- `frontend/` React/Vite inspection interface.
+- `data/sample_miniflux_entries.json` optional offline dev ingestion data.
+- `tests/` backend test coverage.
+- `docs/architecture.md` architecture notes.
+- `OPERATIONS.md` day-to-day runbook to verify pipeline health.
+
+## Environment and startup checks
+Copy `.env.example` to `.env`.
+
+Worker startup requires one ingestion source:
+1. Live Miniflux: `MINIFLUX_BASE_URL` + `MINIFLUX_API_TOKEN`.
+2. Offline sample data: `SAMPLE_MINIFLUX_DATA_PATH`.
+
+If neither is configured, worker startup fails fast with a clear error message.
+
+Key ingestion settings:
+- `MINIFLUX_FETCH_LIMIT`
+- `MINIFLUX_TIMEOUT_SECONDS`
+- `SAMPLE_MINIFLUX_DATA_PATH`
+
+## Docker and migration flow
+`docker-compose.yml` now uses a dedicated migration service:
+1. `db` starts and passes healthcheck.
+2. `migrate` runs `alembic upgrade head` once.
+3. `api` and `worker` start only after migration success.
+4. `inspector` starts after API healthcheck passes.
+
+This avoids migration race conditions between API and worker containers.
 
 ## Quick start
-1. Copy env template.
+1. Create env file:
    ```bash
    cp .env.example .env
    ```
-2. Update `.env` with your Miniflux URL and API token.
-3. Start services.
+2. Start stack:
    ```bash
    docker compose up --build
    ```
-4. Verify health.
+3. Check API health:
    ```bash
    curl http://localhost:8000/health
    ```
-5. Open the inspector UI:
+4. Open inspector:
    - `http://localhost:8081`
 
-## Required endpoints
+## Required API endpoints
 - `GET /health`
 - `GET /metrics`
 - `GET /api/articles`
@@ -54,60 +67,33 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests a
 - `GET /debug/articles`
 - `GET /debug/clusters`
 
-The inspector frontend consumes these live endpoints only; no mock data is used.
-
-## Pipeline verification checklist
-Use this sequence to validate the first success state:
-1. Confirm worker is running and no startup errors in logs.
-2. Hit `/debug/articles` and confirm Miniflux articles are ingested.
-3. Hit `/api/clusters` and confirm clusters are returned with all required fields:
-   - `headline`
-   - `summary`
-   - `what_changed`
-   - `why_it_matters`
-4. Hit `/debug/clusters` and verify any invalid clusters show validation reasons.
-   - Each debug cluster now includes a `debug_explanation` object with threshold checks, shared terms, and score breakdown context.
-5. Hit `/metrics` and confirm required metrics exist:
-   - `articles_ingested_total`
-   - `articles_deduplicated_total`
-   - `clusters_created_total`
-   - `clusters_updated_total`
-   - `cluster_candidates_evaluated_total`
-   - `cluster_signal_rejected_total`
-   - `cluster_attach_decisions_total`
-   - `cluster_new_decisions_total`
-   - `cluster_low_confidence_new_total`
-   - `cluster_validation_rejected_total`
-   - `cluster_timeline_events_deduplicated_total`
-   - `last_ingest_time`
-   - `last_cluster_time`
+## Metrics to verify
+- `articles_ingested_total`
+- `articles_deduplicated_total`
+- `articles_malformed_total`
+- `ingest_source_failures_total`
+- `clusters_created_total`
+- `clusters_updated_total`
+- `cluster_candidates_evaluated_total`
+- `cluster_signal_rejected_total`
+- `cluster_attach_decisions_total`
+- `cluster_new_decisions_total`
+- `cluster_low_confidence_new_total`
+- `cluster_validation_rejected_total`
+- `cluster_timeline_events_deduplicated_total`
+- `last_ingest_time`
+- `last_cluster_time`
 
 ## Local commands
-- Start stack: `make up`
-- Stop stack: `make down`
-- Tail logs: `make logs`
-- Run migrations: `make migrate`
-- Run one pipeline pass: `make run-once`
-- Run tests: `make test`
-- Run frontend tests: `make frontend-test`
+- `make up` start full stack.
+- `make down` stop stack.
+- `make logs` follow service logs.
+- `make migrate` run migrations manually.
+- `make run-once` run one worker pipeline cycle.
+- `make test` run backend tests.
+- `make frontend-test` run frontend tests.
 
-## Inspector UI
-- `/` cluster list view for API-eligible clusters plus debug-only invalid cluster panel.
-- `/clusters/:clusterId` full cluster detail (or debug-only fallback if filtered from API).
-- `/metrics` basic pipeline metrics parsed from Prometheus text.
-- Optional 15-second auto-refresh on metrics page plus manual refresh controls.
-
-## Deterministic clustering rules (v1)
-Weighted score for each article->cluster candidate:
-- Title similarity: 0.45
-- Named entity overlap: 0.25
-- Keyword overlap: 0.20
-- Publication time proximity: 0.10
-
-If the best score is below threshold, a new cluster is created.
-Candidates must also pass a minimum-signal gate (title/entity/keyword overlap).
-
-## Notes
-- This v1 intentionally avoids a polished frontend.
-- No auth, personalization, notifications, or social integration.
-- LLM summarization is not required for operation.
+## Inspection UI routes
+- `/` cluster list + debug-only invalid cluster panel.
+- `/clusters/:clusterId` full cluster detail or debug fallback if filtered from main API.
+- `/metrics` parsed pipeline metrics with optional auto-refresh.

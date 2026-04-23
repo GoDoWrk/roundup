@@ -7,10 +7,10 @@ down:
 	docker compose down -v
 
 logs:
-	docker compose logs -f api worker inspector
+	docker compose logs -f api worker inspector migrate
 
 migrate:
-	docker compose run --rm api alembic upgrade head
+	docker compose run --rm migrate
 
 run-once:
 	docker compose run --rm worker python -m scripts.run_pipeline_once

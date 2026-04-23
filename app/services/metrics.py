@@ -20,10 +20,19 @@ def get_or_create_pipeline_stats(session: Session) -> PipelineStats:
     return stats
 
 
-def update_ingest_metrics(session: Session, ingested: int, deduplicated: int) -> None:
+def update_ingest_metrics(
+    session: Session,
+    ingested: int,
+    deduplicated: int,
+    *,
+    malformed: int = 0,
+    source_failures: int = 0,
+) -> None:
     stats = get_or_create_pipeline_stats(session)
     stats.articles_ingested_total += ingested
     stats.articles_deduplicated_total += deduplicated
+    stats.articles_malformed_total += malformed
+    stats.ingest_source_failures_total += source_failures
     stats.last_ingest_time = utcnow()
 
 
@@ -65,6 +74,12 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP articles_deduplicated_total Total number of deduplicated articles",
         "# TYPE articles_deduplicated_total counter",
         f"articles_deduplicated_total {stats.articles_deduplicated_total}",
+        "# HELP articles_malformed_total Total number of malformed articles skipped during ingestion",
+        "# TYPE articles_malformed_total counter",
+        f"articles_malformed_total {stats.articles_malformed_total}",
+        "# HELP ingest_source_failures_total Total number of ingestion source fetch failures",
+        "# TYPE ingest_source_failures_total counter",
+        f"ingest_source_failures_total {stats.ingest_source_failures_total}",
         "# HELP clusters_created_total Total number of created clusters",
         "# TYPE clusters_created_total counter",
         f"clusters_created_total {stats.clusters_created_total}",

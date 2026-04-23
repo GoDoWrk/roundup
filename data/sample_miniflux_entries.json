@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1001,
+    "title": "City Council Approves Transit Expansion Plan",
+    "url": "https://example.com/news/transit-expansion",
+    "published_at": "2026-04-22T12:00:00Z",
+    "content": "City Council approved a transit expansion proposal and released funding details.",
+    "feed": {"title": "Metro Daily"},
+    "author": "Reporter A"
+  },
+  {
+    "id": 1002,
+    "title": "Regional Leaders React to Transit Expansion Funding",
+    "url": "https://example.com/news/transit-funding-reaction",
+    "published_at": "2026-04-22T14:30:00Z",
+    "content": "Regional transportation leaders responded to the approved transit expansion funding package.",
+    "feed": {"title": "Regional Wire"},
+    "author": "Reporter B"
+  },
+  {
+    "id": 1003,
+    "title": "Transit Agencies Publish First Implementation Timeline",
+    "url": "https://example.com/news/transit-timeline",
+    "published_at": "2026-04-22T17:10:00Z",
+    "content": "Transit agencies published expected implementation milestones after the vote.",
+    "feed": {"title": "Transport Bulletin"},
+    "author": "Reporter C"
+  }
+]

@@ -1,4 +1,8 @@
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
+
+from pydantic import Field, field_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,6 +19,8 @@ class Settings(BaseSettings):
     miniflux_base_url: str = "http://miniflux:8080"
     miniflux_api_token: str = ""
     miniflux_fetch_limit: int = 100
+    miniflux_timeout_seconds: int = 20
+    sample_miniflux_data_path: str | None = None
 
     scheduler_interval_seconds: int = 600
 
@@ -37,6 +43,55 @@ class Settings(BaseSettings):
     api_max_limit: int = 200
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+
+    @field_validator("sample_miniflux_data_path")
+    @classmethod
+    def _normalize_sample_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @property
+    def has_miniflux_credentials(self) -> bool:
+        return bool(self.miniflux_base_url.strip() and self.miniflux_api_token.strip())
+
+    @property
+    def sample_data_path(self) -> Path | None:
+        if not self.sample_miniflux_data_path:
+            return None
+        return Path(self.sample_miniflux_data_path)
+
+    def validate_startup(self, mode: Literal["api", "worker"]) -> list[str]:
+        errors: list[str] = []
+
+        if not self.database_url.strip():
+            errors.append("DATABASE_URL must be set.")
+
+        if self.miniflux_fetch_limit <= 0:
+            errors.append("MINIFLUX_FETCH_LIMIT must be greater than 0.")
+        if self.miniflux_timeout_seconds <= 0:
+            errors.append("MINIFLUX_TIMEOUT_SECONDS must be greater than 0.")
+
+        sample_path = self.sample_data_path
+        if sample_path is not None and not sample_path.exists():
+            errors.append(
+                "SAMPLE_MINIFLUX_DATA_PATH points to a missing file: "
+                f"{sample_path}. Provide a valid JSON file or clear the variable."
+            )
+
+        if mode == "worker":
+            if self.miniflux_api_token.strip() and not self.miniflux_base_url.strip():
+                errors.append("MINIFLUX_BASE_URL is required when MINIFLUX_API_TOKEN is set.")
+
+            if not self.has_miniflux_credentials and sample_path is None:
+                errors.append(
+                    "Worker startup requires either live Miniflux credentials "
+                    "(MINIFLUX_BASE_URL + MINIFLUX_API_TOKEN) or SAMPLE_MINIFLUX_DATA_PATH "
+                    "for offline development."
+                )
+
+        return errors
 
 
 @lru_cache(maxsize=1)

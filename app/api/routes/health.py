@@ -26,6 +26,6 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
         status="ok" if db_status == "ok" else "degraded",
         app=settings.app_name,
         db=db_status,
-        miniflux_configured=bool(settings.miniflux_api_token),
+        miniflux_configured=settings.has_miniflux_credentials,
         timestamp=datetime.now(timezone.utc),
     )

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -9,27 +11,70 @@ from app.core.config import Settings
 from app.services.clustering import cluster_new_articles
 from app.services.ingestion import ingest_entries
 from app.services.metrics import update_cluster_metrics, update_ingest_metrics
-from app.services.miniflux_client import MinifluxClient
+from app.services.miniflux_client import MinifluxClient, MinifluxClientError
+from app.services.sample_data import load_sample_entries
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PipelineRunResult:
+    ingestion_source: str
     fetched: int
     ingested: int
     deduplicated: int
+    malformed: int
     clusters_created: int
     clusters_updated: int
 
 
-def run_pipeline(session: Session, settings: Settings) -> PipelineRunResult:
-    client = MinifluxClient(base_url=settings.miniflux_base_url, api_token=settings.miniflux_api_token)
-    entries = client.fetch_entries(limit=settings.miniflux_fetch_limit)
+def _load_entries_from_sample(path: Path) -> list[dict]:
+    entries = load_sample_entries(path)
+    logger.warning("sample_data_fallback_in_use path=%s entries=%s", path, len(entries))
+    return entries
+
+
+def _resolve_entries(settings: Settings) -> tuple[list[dict], str, bool]:
+    sample_path = settings.sample_data_path
+
+    if settings.has_miniflux_credentials:
+        client = MinifluxClient(
+            base_url=settings.miniflux_base_url,
+            api_token=settings.miniflux_api_token,
+            timeout_seconds=settings.miniflux_timeout_seconds,
+        )
+        try:
+            return client.fetch_entries(limit=settings.miniflux_fetch_limit), "miniflux", False
+        except MinifluxClientError as exc:
+            logger.error("miniflux_fetch_failed error=%s", exc)
+            if sample_path is not None:
+                return _load_entries_from_sample(sample_path), "sample_fallback", True
+            return [], "miniflux_error", True
+
+    if sample_path is not None:
+        return _load_entries_from_sample(sample_path), "sample", False
+
+    logger.error(
+        "no_ingestion_source_configured set MINIFLUX_BASE_URL + MINIFLUX_API_TOKEN or SAMPLE_MINIFLUX_DATA_PATH"
+    )
+    return [], "none", True
+
+
+def run_pipeline(session: Session, settings: Settings, *, run_id: str = "manual") -> PipelineRunResult:
+    started = time.monotonic()
+    logger.info("pipeline_run_started run_id=%s", run_id)
+
+    entries, ingestion_source, source_failure = _resolve_entries(settings)
     fetched = len(entries)
 
     ingest_result = ingest_entries(session, entries)
-    update_ingest_metrics(session, ingest_result.ingested, ingest_result.deduplicated)
+    update_ingest_metrics(
+        session,
+        ingest_result.ingested,
+        ingest_result.deduplicated,
+        malformed=ingest_result.malformed,
+        source_failures=1 if source_failure else 0,
+    )
 
     cluster_result = cluster_new_articles(session, settings)
     update_cluster_metrics(
@@ -48,19 +93,32 @@ def run_pipeline(session: Session, settings: Settings) -> PipelineRunResult:
     session.commit()
 
     result = PipelineRunResult(
+        ingestion_source=ingestion_source,
         fetched=fetched,
         ingested=ingest_result.ingested,
         deduplicated=ingest_result.deduplicated,
+        malformed=ingest_result.malformed,
         clusters_created=cluster_result.created_count,
         clusters_updated=cluster_result.updated_count,
     )
 
+    duration = time.monotonic() - started
     logger.info(
-        "pipeline_run fetched=%s ingested=%s deduplicated=%s clusters_created=%s clusters_updated=%s",
+        "pipeline_run_finished run_id=%s source=%s fetched=%s ingested=%s deduplicated=%s malformed=%s "
+        "clusters_created=%s clusters_updated=%s source_failure=%s duration_seconds=%.2f",
+        run_id,
+        result.ingestion_source,
         result.fetched,
         result.ingested,
         result.deduplicated,
+        result.malformed,
         result.clusters_created,
         result.clusters_updated,
+        source_failure,
+        duration,
     )
+
+    if ingest_result.errors:
+        logger.warning("pipeline_run_malformed_entries run_id=%s count=%s", run_id, len(ingest_result.errors))
+
     return result

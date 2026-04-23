@@ -108,6 +108,8 @@ class PipelineStats(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     articles_ingested_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     articles_deduplicated_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    articles_malformed_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ingest_source_failures_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     clusters_created_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     clusters_updated_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cluster_candidates_evaluated_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

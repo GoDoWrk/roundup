@@ -8,6 +8,7 @@ from app.api.routes.clusters import router as clusters_router
 from app.api.routes.debug import router as debug_router
 from app.api.routes.health import router as health_router
 from app.core.logging import configure_logging
+from app.core.startup_checks import run_startup_checks
 from app.db.session import get_db_session
 from app.services.metrics import metrics_as_prometheus_text
 
@@ -19,6 +20,11 @@ app.include_router(health_router)
 app.include_router(articles_router)
 app.include_router(clusters_router)
 app.include_router(debug_router)
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    run_startup_checks("api")
 
 
 @app.get("/metrics", include_in_schema=False)
