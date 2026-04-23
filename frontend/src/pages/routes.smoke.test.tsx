@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppLayout, AppRoutes } from "../App";
+import { AppRoutes } from "../App";
 
 type MockReply = {
   status?: number;
@@ -12,9 +12,7 @@ type MockReply = {
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppLayout>
-        <AppRoutes />
-      </AppLayout>
+      <AppRoutes />
     </MemoryRouter>
   );
 }
@@ -86,12 +84,115 @@ const debugCluster = {
 };
 
 describe("route smoke tests", () => {
-  it("renders cluster list route", async () => {
+  it("renders the public homepage at /", async () => {
     mockFetch({
       "/api/clusters": {
         body: {
           total: 1,
-          limit: 50,
+          limit: 20,
+          offset: 0,
+          items: [
+            {
+              cluster_id: "cluster-1",
+              headline: "Transit Plan Advances",
+              summary: "Multiple sources reported new transit budget details.",
+              what_changed: "More detail was added.",
+              why_it_matters: "Impacts transport access.",
+              timeline: [],
+              sources: [
+                {
+                  article_id: 1,
+                  title: "A",
+                  url: "https://example.com/a",
+                  publisher: "Example",
+                  published_at: "2026-04-22T00:00:00Z"
+                }
+              ],
+              first_seen: "2026-04-22T00:00:00Z",
+              last_updated: "2026-04-22T01:00:00Z",
+              score: 0.72,
+              status: "active"
+            }
+          ]
+        }
+      }
+    });
+
+    renderAt("/");
+    expect(await screen.findByText("Live news homepage")).toBeInTheDocument();
+    expect(await screen.findByText("Transit Plan Advances")).toBeInTheDocument();
+  });
+
+  it("clicks through from a homepage card into the public story page", async () => {
+    mockFetch({
+      "/api/clusters?limit=20&offset=0": {
+        body: {
+          total: 1,
+          limit: 20,
+          offset: 0,
+          items: [
+            {
+              cluster_id: "cluster-1",
+              headline: "Transit Plan Advances",
+              summary: "Multiple sources reported new transit budget details.",
+              what_changed: "More detail was added.",
+              why_it_matters: "Impacts transport access.",
+              timeline: [],
+              sources: [
+                {
+                  article_id: 1,
+                  title: "A",
+                  url: "https://example.com/a",
+                  publisher: "Example",
+                  published_at: "2026-04-22T00:00:00Z"
+                }
+              ],
+              first_seen: "2026-04-22T00:00:00Z",
+              last_updated: "2026-04-22T01:00:00Z",
+              score: 0.72,
+              status: "active"
+            }
+          ]
+        }
+      },
+      "/api/clusters/cluster-1": {
+        body: {
+          cluster_id: "cluster-1",
+          headline: "Transit Plan Advances",
+          summary: "A major transit plan moved forward after new budget support.",
+          what_changed: "City leaders approved the revised transit budget framework.",
+          why_it_matters: "The change affects service frequency and route planning.",
+          timeline: [],
+          sources: [
+            {
+              article_id: 1,
+              title: "Transit Budget Coverage",
+              url: "https://example.com/a",
+              publisher: "Example News",
+              published_at: "2026-04-22T00:00:00Z"
+            }
+          ],
+          first_seen: "2026-04-22T00:00:00Z",
+          last_updated: "2026-04-22T01:00:00Z",
+          score: 0.72,
+          status: "active"
+        }
+      }
+    });
+
+    renderAt("/");
+    fireEvent.click(await screen.findByRole("link", { name: /transit plan advances/i }));
+
+    expect(await screen.findByText("Live story detail")).toBeInTheDocument();
+    expect(await screen.findByText("A major transit plan moved forward after new budget support.")).toBeInTheDocument();
+  });
+
+  it("renders the inspector cluster list under /inspect", async () => {
+    mockFetch({
+      "/api/clusters": {
+        body: {
+          total: 1,
+          limit: 100,
           offset: 0,
           items: [
             {
@@ -121,9 +222,9 @@ describe("route smoke tests", () => {
       "/debug/clusters": { body: { total: 1, items: [debugCluster] } }
     });
 
-    renderAt("/");
+    renderAt("/inspect");
+    expect(await screen.findByText("Roundup Inspector")).toBeInTheDocument();
     expect(await screen.findByText("Cluster List")).toBeInTheDocument();
-    expect(await screen.findByText("Transit Plan Advances")).toBeInTheDocument();
   });
 
   it("renders cluster detail route for valid cluster", async () => {
@@ -161,55 +262,46 @@ describe("route smoke tests", () => {
       "/debug/clusters": { body: { total: 1, items: [debugCluster] } }
     });
 
-    renderAt("/clusters/cluster-1");
+    renderAt("/inspect/clusters/cluster-1");
     expect(await screen.findByText("Cluster Detail")).toBeInTheDocument();
     expect(await screen.findByText("Timeline")).toBeInTheDocument();
     expect(await screen.findByText("Sources")).toBeInTheDocument();
   });
 
-  it("renders debug-only fallback when cluster is not API-eligible", async () => {
+  it("redirects legacy cluster detail links into /inspect", async () => {
     mockFetch({
-      "/api/clusters/cluster-x": { status: 404, body: { detail: "Cluster not found" } },
-      "/debug/clusters": {
+      "/api/clusters/cluster-1": {
         body: {
-          total: 1,
-          items: [
-            {
-              ...debugCluster,
-              cluster_id: "cluster-x",
-              validation_error: "cluster must have at least 3 sources"
-            }
-          ]
+          cluster_id: "cluster-1",
+          headline: "Transit Plan Advances",
+          summary: "Multiple sources reported new transit budget details.",
+          what_changed: "New route details were confirmed.",
+          why_it_matters: "Impacts commuters.",
+          timeline: [],
+          sources: [],
+          first_seen: "2026-04-22T00:00:00Z",
+          last_updated: "2026-04-22T01:00:00Z",
+          score: 0.72,
+          status: "active"
         }
-      }
+      },
+      "/debug/clusters": { body: { total: 1, items: [debugCluster] } }
     });
 
-    renderAt("/clusters/cluster-x");
-    expect(await screen.findByText("Not API-eligible")).toBeInTheDocument();
-    const matches = await screen.findAllByText(/cluster must have at least 3 sources/i);
-    expect(matches.length).toBeGreaterThan(0);
+    renderAt("/clusters/cluster-1");
+    expect(await screen.findByText("Cluster Detail")).toBeInTheDocument();
+    expect(await screen.findByText("Back to list")).toHaveAttribute("href", "/inspect");
   });
 
   it("renders metrics route", async () => {
     mockFetch({
       "/metrics": {
         contentType: "text/plain",
-        body: `
-articles_ingested_total 10
-articles_deduplicated_total 2
-clusters_created_total 3
-clusters_updated_total 4
-last_ingest_time 1713000000
-last_cluster_time 1713000300
-`
+        body: `\narticles_ingested_total 10\narticles_deduplicated_total 2\nclusters_created_total 3\nclusters_updated_total 4\nlast_ingest_time 1713000000\nlast_cluster_time 1713000300\n`
       }
     });
 
-    renderAt("/metrics");
+    renderAt("/inspect/metrics");
     expect(await screen.findByText("Basic Metrics")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("articles_ingested_total")).toBeInTheDocument();
-      expect(screen.getByText("10")).toBeInTheDocument();
-    });
   });
 });

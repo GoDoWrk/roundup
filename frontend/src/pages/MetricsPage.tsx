@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+ï»¿import { useCallback, useEffect, useState } from "react";
 import { fetchMetricsText } from "../api/client";
 import type { ParsedMetrics } from "../types";
 import { formatTimestamp } from "../utils/format";
@@ -54,7 +54,7 @@ export function MetricsPage() {
       <div className="controls">
         <h2 style={{ margin: 0 }}>Basic Metrics</h2>
         <button onClick={() => void load()} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh"}
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
         <label>
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
@@ -65,7 +65,7 @@ export function MetricsPage() {
       <p className="muted">Parsed from live `/metrics` Prometheus text output.</p>
 
       {error && <p className="error">{error}</p>}
-      {!error && loading && <p>Loading metrics…</p>}
+      {!error && loading && <p>Loading metrics...</p>}
 
       {!error && metrics && (
         <table className="table">
@@ -91,6 +91,26 @@ export function MetricsPage() {
             <tr>
               <td>clusters_updated_total</td>
               <td>{valueDisplay(metrics.clusters_updated_total)}</td>
+            </tr>
+            <tr>
+              <td>clusters_promoted_total</td>
+              <td>{valueDisplay(metrics.clusters_promoted_total)}</td>
+            </tr>
+            <tr>
+              <td>clusters_hidden_total</td>
+              <td>{valueDisplay(metrics.clusters_hidden_total)}</td>
+            </tr>
+            <tr>
+              <td>clusters_active_total</td>
+              <td>{valueDisplay(metrics.clusters_active_total)}</td>
+            </tr>
+            <tr>
+              <td>cluster_promotion_attempts_total</td>
+              <td>{valueDisplay(metrics.cluster_promotion_attempts_total)}</td>
+            </tr>
+            <tr>
+              <td>cluster_promotion_failures_total</td>
+              <td>{valueDisplay(metrics.cluster_promotion_failures_total)}</td>
             </tr>
             <tr>
               <td>last_ingest_time</td>

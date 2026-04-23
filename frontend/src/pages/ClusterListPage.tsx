@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+ï»¿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchClusterList, fetchDebugClusters } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
@@ -17,7 +17,10 @@ export function ClusterListPage() {
     setError(null);
 
     try {
-      const [clusterList, debug] = await Promise.all([fetchClusterList(), fetchDebugClusters()]);
+      const [clusterList, debug] = await Promise.all([
+        fetchClusterList({ limit: 100, offset: 0 }),
+        fetchDebugClusters()
+      ]);
       setClusters(clusterList);
       setDebugClusters(debug.items);
     } catch (err) {
@@ -32,8 +35,23 @@ export function ClusterListPage() {
   }, [load]);
 
   const apiRows = useMemo(() => (clusters ? toClusterListRows(clusters) : []), [clusters]);
+  const debugById = useMemo(
+    () => new Map(debugClusters.map((item) => [item.cluster_id, item] as const)),
+    [debugClusters]
+  );
   const apiIds = new Set(apiRows.map((row) => row.clusterId));
   const invalidRows = debugClusters.filter((item) => item.validation_error || !apiIds.has(item.cluster_id));
+
+  function isRecentlyPromoted(promotedAt: string | null): boolean {
+    if (!promotedAt) {
+      return false;
+    }
+    const parsed = Date.parse(promotedAt);
+    if (Number.isNaN(parsed)) {
+      return false;
+    }
+    return Date.now() - parsed <= 24 * 60 * 60 * 1000;
+  }
 
   return (
     <div>
@@ -41,13 +59,13 @@ export function ClusterListPage() {
         <div className="controls">
           <h2 style={{ margin: 0 }}>Cluster List</h2>
           <button onClick={() => void load()} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh"}
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
         <p className="muted">Shows clusters currently eligible from the main API.</p>
 
         {error && <p className="error">{error}</p>}
-        {!error && loading && <p>Loading clusters…</p>}
+        {!error && loading && <p>Loading clusters...</p>}
         {!error && !loading && apiRows.length === 0 && <p>No API-eligible clusters found.</p>}
 
         {!error && !loading && apiRows.length > 0 && (
@@ -59,30 +77,43 @@ export function ClusterListPage() {
                 <th>First Seen</th>
                 <th>Last Updated</th>
                 <th>Score</th>
+                <th>Promotion</th>
                 <th>Summary Preview</th>
               </tr>
             </thead>
             <tbody>
-              {apiRows.map((row) => (
-                <tr key={row.clusterId}>
-                  <td>
-                    <Link to={`/clusters/${row.clusterId}`}>{row.headline}</Link>
-                    <div>
-                      <QualityBadges text={row.headline} />
-                    </div>
-                  </td>
-                  <td>{row.sourceCount}</td>
-                  <td>{formatTimestamp(row.firstSeen)}</td>
-                  <td>{formatTimestamp(row.lastUpdated)}</td>
-                  <td>{formatScore(row.score)}</td>
-                  <td>
-                    <span>{row.summaryPreview}</span>
-                    <div>
-                      <QualityBadges text={row.summaryPreview} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {apiRows.map((row) => {
+                const debugRow = debugById.get(row.clusterId);
+                return (
+                  <tr key={row.clusterId}>
+                    <td>
+                    <Link to={`/inspect/clusters/${row.clusterId}`}>{row.headline}</Link>
+                      <div>
+                        <QualityBadges text={row.headline} />
+                      </div>
+                    </td>
+                    <td>{row.sourceCount}</td>
+                    <td>{formatTimestamp(row.firstSeen)}</td>
+                    <td>{formatTimestamp(row.lastUpdated)}</td>
+                    <td>{formatScore(row.score)}</td>
+                    <td>
+                      {!debugRow?.promoted_at && <span className="muted">no recent promotion</span>}
+                      {debugRow?.promoted_at &&
+                        (isRecentlyPromoted(debugRow.promoted_at) ? (
+                          <span className="quality-ok">recently promoted</span>
+                        ) : (
+                          <span className="muted">promoted {formatTimestamp(debugRow.promoted_at)}</span>
+                        ))}
+                    </td>
+                    <td>
+                      <span>{row.summaryPreview}</span>
+                      <div>
+                        <QualityBadges text={row.summaryPreview} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -101,7 +132,8 @@ export function ClusterListPage() {
                 <th>Cluster</th>
                 <th>Status</th>
                 <th>Score</th>
-                <th>Source Count</th>
+                <th>Sources / Threshold</th>
+                <th>Promotion</th>
                 <th>Validation Error</th>
                 <th>Summary</th>
               </tr>
@@ -114,7 +146,20 @@ export function ClusterListPage() {
                   </td>
                   <td>{row.status}</td>
                   <td>{formatScore(row.score)}</td>
-                  <td>{row.source_count}</td>
+                  <td>
+                    {row.source_count} / {row.visibility_threshold}
+                  </td>
+                  <td>
+                    {row.promoted_at ? (
+                      isRecentlyPromoted(row.promoted_at) ? (
+                        <span className="quality-ok">recently promoted</span>
+                      ) : (
+                        <span className="muted">promoted {formatTimestamp(row.promoted_at)}</span>
+                      )
+                    ) : (
+                      <span className="muted">{row.promotion_eligible ? "eligible, awaiting publish" : "not promoted"}</span>
+                    )}
+                  </td>
                   <td>{row.validation_error || "(none provided)"}</td>
                   <td>
                     <span>{row.summary || "(blank summary)"}</span>

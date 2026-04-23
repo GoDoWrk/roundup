@@ -17,7 +17,9 @@ Roundup v1 is intentionally backend-first and deterministic. The objective is a 
 4. Cluster unclustered articles using deterministic weighted heuristics.
 5. Enrich strict cluster fields with deterministic templates.
 6. Validate required cluster text fields and mark invalid clusters.
-7. Expose only valid clusters in `/api/clusters`, with invalid state visible in `/debug/clusters`.
+7. Keep below-threshold or invalid clusters in hidden/debug-only state.
+8. Promote the same cluster object to visible API state after it reaches source threshold and passes validation.
+9. Expose only valid visible clusters in `/api/clusters`, with hidden lifecycle state visible in `/debug/clusters`.
 
 ## Determinism and observability choices
 - No LLM dependency for clustering or required enrichment fields.

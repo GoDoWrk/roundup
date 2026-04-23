@@ -15,8 +15,10 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function fetchClusterList(): Promise<ClusterListResponse> {
-  return fetchJson<ClusterListResponse>("/api/clusters?limit=100&offset=0");
+export async function fetchClusterList(options: { limit?: number; offset?: number } = {}): Promise<ClusterListResponse> {
+  const limit = options.limit ?? 100;
+  const offset = options.offset ?? 0;
+  return fetchJson<ClusterListResponse>(`/api/clusters?limit=${limit}&offset=${offset}`);
 }
 
 export async function fetchClusterDetail(clusterId: string): Promise<StoryCluster | null> {

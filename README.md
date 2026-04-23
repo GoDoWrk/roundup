@@ -115,6 +115,11 @@ If bootstrap fails, `api` and `worker` do not start, and logs show a clear failu
 - `cluster_low_confidence_new_total`
 - `cluster_validation_rejected_total`
 - `cluster_timeline_events_deduplicated_total`
+- `clusters_promoted_total`
+- `clusters_hidden_total`
+- `clusters_active_total`
+- `cluster_promotion_attempts_total`
+- `cluster_promotion_failures_total`
 - `last_ingest_time`
 - `last_cluster_time`
 
@@ -127,7 +132,21 @@ If bootstrap fails, `api` and `worker` do not start, and logs show a clear failu
 - `make test` run backend tests.
 - `make frontend-test` run frontend tests.
 
-## Inspection UI routes
-- `/` cluster list + debug-only invalid cluster panel.
-- `/clusters/:clusterId` full cluster detail or debug fallback if filtered from main API.
-- `/metrics` parsed pipeline metrics with optional auto-refresh.
+Promotion lifecycle demo (local deterministic check):
+- `docker compose exec api python scripts/demo_cluster_promotion.py`
+- output shows phase 1 (hidden), phase 2 (hidden), phase 3 (promoted) for the same `cluster_id`.
+
+Hidden to active promotion visibility in `/debug/clusters`:
+- `visibility_threshold`
+- `promotion_eligible`
+- `promoted_at`
+- `previous_status`
+- `promotion_reason`
+- `promotion_explanation`
+
+## Frontend routes
+- `/` public homepage with live story cards from `/api/clusters`.
+- `/story/:clusterId` public story detail view with structured live cluster data.
+- `/inspect` cluster list + debug-only invalid cluster panel.
+- `/inspect/clusters/:clusterId` full cluster detail or debug fallback if filtered from main API.
+- `/inspect/metrics` parsed pipeline metrics with optional auto-refresh.

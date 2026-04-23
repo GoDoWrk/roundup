@@ -64,6 +64,17 @@ curl http://localhost:8000/debug/clusters
 Expected:
 - Main API shows only validated clusters.
 - Debug API includes rejected clusters with validation/debug context.
+- Hidden clusters should show `source_count`, `visibility_threshold`, and promotion fields.
+- When a hidden cluster crosses threshold with valid enrichment, the same `cluster_id` should show `status=active` and a non-null `promoted_at`.
+
+Optional deterministic lifecycle check:
+```bash
+docker compose exec api python scripts/demo_cluster_promotion.py
+```
+Expected phases:
+- phase 1 hidden (1 source)
+- phase 2 hidden (2 sources, threshold 3)
+- phase 3 promoted active (same cluster_id, first_seen preserved)
 
 ## 6) Visual inspection UI
 Open `http://localhost:8080`:

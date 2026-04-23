@@ -134,17 +134,27 @@ def debug_articles(db: Session = Depends(get_db_session)) -> ArticleDebugRespons
 
 @router.get("/clusters", response_model=ClusterDebugResponse)
 def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugResponse:
+    settings = get_settings()
     stmt: Select[tuple[Cluster]] = select(Cluster).order_by(Cluster.last_updated.desc(), Cluster.id.asc())
     rows = list(db.scalars(stmt).all())
 
     items: list[ClusterDebugItem] = []
     for cluster in rows:
+        source_count = len(cluster.source_links)
+        visibility_threshold = settings.cluster_min_sources_for_api
+        promotion_eligible = source_count >= visibility_threshold and cluster.validation_error is None
         items.append(
             ClusterDebugItem(
                 cluster_id=cluster.id,
                 status=cluster.status,
                 score=cluster.score,
-                source_count=len(cluster.source_links),
+                source_count=source_count,
+                visibility_threshold=visibility_threshold,
+                promotion_eligible=promotion_eligible,
+                promoted_at=cluster.promoted_at,
+                previous_status=cluster.previous_status,
+                promotion_reason=cluster.promotion_reason,
+                promotion_explanation=cluster.promotion_explanation,
                 validation_error=cluster.validation_error,
                 headline=cluster.headline,
                 summary=cluster.summary,

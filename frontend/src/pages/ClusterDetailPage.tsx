@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+ï»¿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchClusterDetail, fetchDebugClusters } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
@@ -48,13 +48,13 @@ export function ClusterDetailPage() {
         <div className="controls">
           <h2 style={{ margin: 0 }}>Cluster Detail</h2>
           <button onClick={() => void load()} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh"}
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
-          <Link to="/">Back to list</Link>
+          <Link to="/inspect">Back to list</Link>
         </div>
 
         {error && <p className="error">{error}</p>}
-        {!error && loading && <p>Loading cluster…</p>}
+        {!error && loading && <p>Loading cluster...</p>}
 
         {!error && !loading && cluster && (
           <>
@@ -83,6 +83,18 @@ export function ClusterDetailPage() {
                 <strong>source_count</strong>
                 <div>{cluster.sources.length}</div>
               </div>
+              {debugItem && (
+                <>
+                  <div>
+                    <strong>visibility threshold</strong>
+                    <div>{debugItem.visibility_threshold}</div>
+                  </div>
+                  <div>
+                    <strong>promoted_at</strong>
+                    <div>{debugItem.promoted_at ? formatTimestamp(debugItem.promoted_at) : "not promoted"}</div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="section">
@@ -168,6 +180,15 @@ export function ClusterDetailPage() {
               Cluster <code>{clusterId}</code> exists in debug output but is filtered from the main API.
             </p>
             <p>
+              <strong>Status:</strong> {debugItem.status}
+            </p>
+            <p>
+              <strong>Sources:</strong> {debugItem.source_count} / {debugItem.visibility_threshold}
+            </p>
+            <p>
+              <strong>Promotion eligible:</strong> {debugItem.promotion_eligible ? "true" : "false"}
+            </p>
+            <p>
               <strong>Validation error:</strong> {debugItem.validation_error || "(none provided)"}
             </p>
             <pre>{JSON.stringify(debugItem.debug_explanation, null, 2)}</pre>
@@ -190,6 +211,24 @@ export function ClusterDetailPage() {
           </p>
           <p>
             <strong>debug source_count:</strong> {debugItem.source_count}
+          </p>
+          <p>
+            <strong>visibility threshold:</strong> {debugItem.visibility_threshold}
+          </p>
+          <p>
+            <strong>promotion_eligible:</strong> {debugItem.promotion_eligible ? "true" : "false"}
+          </p>
+          <p>
+            <strong>promoted_at:</strong> {debugItem.promoted_at ? formatTimestamp(debugItem.promoted_at) : "not promoted"}
+          </p>
+          <p>
+            <strong>previous_status:</strong> {debugItem.previous_status || "none"}
+          </p>
+          <p>
+            <strong>promotion_reason:</strong> {debugItem.promotion_reason || "none"}
+          </p>
+          <p>
+            <strong>promotion_explanation:</strong> {debugItem.promotion_explanation || "none"}
           </p>
           <p>
             <strong>validation_error:</strong> {debugItem.validation_error || "none"}

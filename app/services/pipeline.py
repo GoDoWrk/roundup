@@ -93,6 +93,11 @@ def run_pipeline(session: Session, settings: Settings, *, run_id: str = "manual"
         low_confidence_new=cluster_result.low_confidence_new,
         validation_rejected=cluster_result.validation_rejected,
         timeline_deduplicated=cluster_result.timeline_deduplicated,
+        promoted=cluster_result.promoted_count,
+        hidden_total=cluster_result.hidden_total,
+        active_total=cluster_result.active_total,
+        promotion_attempts=cluster_result.promotion_attempts,
+        promotion_failures=cluster_result.promotion_failures,
     )
 
     session.commit()

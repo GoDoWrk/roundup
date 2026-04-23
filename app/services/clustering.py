@@ -47,6 +47,11 @@ class CandidateEvaluation:
 class RebuildResult:
     validation_failed: bool
     timeline_deduplicated: int
+    promotion_attempted: bool
+    promoted: bool
+    promotion_failed: bool
+    source_count: int
+    status: str
 
 
 @dataclass
@@ -60,6 +65,11 @@ class ClusteringRunResult:
     low_confidence_new: int
     validation_rejected: int
     timeline_deduplicated: int
+    promoted_count: int
+    hidden_total: int
+    active_total: int
+    promotion_attempts: int
+    promotion_failures: int
 
 
 def _jaccard(left: set[str], right: set[str]) -> float:
@@ -259,10 +269,21 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     )
     articles = list(session.scalars(articles_stmt).all())
     if not articles:
-        return RebuildResult(validation_failed=True, timeline_deduplicated=0)
+        return RebuildResult(
+            validation_failed=True,
+            timeline_deduplicated=0,
+            promotion_attempted=False,
+            promoted=False,
+            promotion_failed=False,
+            source_count=0,
+            status="hidden",
+        )
 
     first_seen = min(article.published_at for article in articles)
     last_updated = max(article.published_at for article in articles)
+    source_count = len(articles)
+    previous_status = cluster.status
+    promotion_attempted = previous_status == "hidden"
 
     keyword_union: set[str] = set()
     entity_union: set[str] = set()
@@ -284,7 +305,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     cluster.entities = sorted(entity_union)
     cluster.score = round(float(avg_similarity), 4)
     cluster.status = build_status(
-        source_count=len(articles),
+        source_count=source_count,
         last_updated=last_updated,
         now=datetime.now(timezone.utc),
         stale_hours=settings.cluster_stale_hours,
@@ -311,13 +332,47 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
 
     validation = validate_cluster_record(
         cluster,
-        source_count=len(articles),
+        source_count=source_count,
         min_sources=settings.cluster_min_sources_for_api,
         min_headline_words=settings.cluster_min_headline_words,
         min_detail_words=settings.cluster_min_detail_words,
     )
     cluster.validation_error = validation.error
-    return RebuildResult(validation_failed=not validation.is_valid, timeline_deduplicated=dedup_count)
+
+    promoted = False
+    promotion_failed = False
+    visibility_eligible = validation.is_valid and source_count >= settings.cluster_min_sources_for_api
+    if visibility_eligible:
+        if previous_status == "hidden":
+            promoted = True
+            cluster.previous_status = previous_status
+            cluster.promoted_at = datetime.now(timezone.utc)
+            cluster.promotion_reason = "source_count_threshold_reached_and_validation_passed"
+            cluster.promotion_explanation = (
+                f"Promoted after reaching {source_count} sources (threshold "
+                f"{settings.cluster_min_sources_for_api}) and passing validation."
+            )
+    else:
+        if previous_status != "hidden":
+            cluster.previous_status = previous_status
+        cluster.status = "hidden"
+        cluster.promotion_reason = "awaiting_additional_support_or_quality"
+        cluster.promotion_explanation = (
+            f"Cluster remains hidden with {source_count} sources (threshold "
+            f"{settings.cluster_min_sources_for_api}). Validation: {cluster.validation_error or 'not eligible'}."
+        )
+        if promotion_attempted:
+            promotion_failed = True
+
+    return RebuildResult(
+        validation_failed=not validation.is_valid,
+        timeline_deduplicated=dedup_count,
+        promotion_attempted=promotion_attempted,
+        promoted=promoted,
+        promotion_failed=promotion_failed,
+        source_count=source_count,
+        status=cluster.status,
+    )
 
 
 def _attach_article_to_cluster(
@@ -366,6 +421,9 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
     new_decisions = 0
     low_confidence_new = 0
     timeline_deduplicated = 0
+    promoted_count = 0
+    promotion_attempts = 0
+    promotion_failures = 0
     invalid_cluster_ids: set[str] = set()
 
     pending = _load_unclustered_articles(session)
@@ -459,9 +517,33 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
         rebuild_result = _rebuild_cluster(session, cluster, settings)
         if rebuild_result.validation_failed:
             invalid_cluster_ids.add(cluster.id)
+        promotion_attempts += int(rebuild_result.promotion_attempted)
+        promoted_count += int(rebuild_result.promoted)
+        promotion_failures += int(rebuild_result.promotion_failed)
 
         updated_count += 1
         timeline_deduplicated += rebuild_result.timeline_deduplicated
+
+    source_count_subquery = (
+        select(func.count())
+        .select_from(ClusterArticle)
+        .where(ClusterArticle.cluster_id == Cluster.id)
+        .scalar_subquery()
+    )
+    total_clusters = int(session.scalar(select(func.count()).select_from(Cluster)) or 0)
+    active_total = int(
+        session.scalar(
+            select(func.count())
+            .select_from(Cluster)
+            .where(
+                Cluster.status != "hidden",
+                Cluster.validation_error.is_(None),
+                source_count_subquery >= settings.cluster_min_sources_for_api,
+            )
+        )
+        or 0
+    )
+    hidden_total = max(0, total_clusters - active_total)
 
     return ClusteringRunResult(
         created_count=created_count,
@@ -473,4 +555,9 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
         low_confidence_new=low_confidence_new,
         validation_rejected=len(invalid_cluster_ids),
         timeline_deduplicated=timeline_deduplicated,
+        promoted_count=promoted_count,
+        hidden_total=hidden_total,
+        active_total=active_total,
+        promotion_attempts=promotion_attempts,
+        promotion_failures=promotion_failures,
     )

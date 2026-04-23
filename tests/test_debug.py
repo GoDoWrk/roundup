@@ -85,6 +85,12 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
 
     item = next(entry for entry in payload["items"] if entry["cluster_id"] == "debug-cluster")
     explanation = item["debug_explanation"]
+    assert "visibility_threshold" in item
+    assert "promotion_eligible" in item
+    assert "promoted_at" in item
+    assert "previous_status" in item
+    assert "promotion_reason" in item
+    assert "promotion_explanation" in item
     assert explanation["grouping_reason"]
     assert "thresholds" in explanation
     assert "threshold_results" in explanation

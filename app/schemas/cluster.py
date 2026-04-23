@@ -74,6 +74,12 @@ class ClusterDebugItem(BaseModel):
     status: str
     score: float
     source_count: int
+    visibility_threshold: int
+    promotion_eligible: bool
+    promoted_at: datetime | None
+    previous_status: str | None
+    promotion_reason: str | None
+    promotion_explanation: str | None
     validation_error: str | None
     headline: str
     summary: str

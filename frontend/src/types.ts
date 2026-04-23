@@ -65,6 +65,12 @@ export interface ClusterDebugItem {
   status: string;
   score: number;
   source_count: number;
+  visibility_threshold: number;
+  promotion_eligible: boolean;
+  promoted_at: string | null;
+  previous_status: string | null;
+  promotion_reason: string | null;
+  promotion_explanation: string | null;
   validation_error: string | null;
   headline: string;
   summary: string;
@@ -81,6 +87,11 @@ export interface ParsedMetrics {
   articles_deduplicated_total: number | null;
   clusters_created_total: number | null;
   clusters_updated_total: number | null;
+  clusters_promoted_total: number | null;
+  clusters_hidden_total: number | null;
+  clusters_active_total: number | null;
+  cluster_promotion_attempts_total: number | null;
+  cluster_promotion_failures_total: number | null;
   last_ingest_time: number | null;
   last_cluster_time: number | null;
 }

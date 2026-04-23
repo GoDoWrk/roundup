@@ -48,6 +48,11 @@ def update_cluster_metrics(
     low_confidence_new: int = 0,
     validation_rejected: int = 0,
     timeline_deduplicated: int = 0,
+    promoted: int = 0,
+    hidden_total: int = 0,
+    active_total: int = 0,
+    promotion_attempts: int = 0,
+    promotion_failures: int = 0,
 ) -> None:
     stats = get_or_create_pipeline_stats(session)
     stats.clusters_created_total += created
@@ -59,6 +64,11 @@ def update_cluster_metrics(
     stats.cluster_low_confidence_new_total += low_confidence_new
     stats.cluster_validation_rejected_total += validation_rejected
     stats.cluster_timeline_events_deduplicated_total += timeline_deduplicated
+    stats.clusters_promoted_total += promoted
+    stats.clusters_hidden_total = hidden_total
+    stats.clusters_active_total = active_total
+    stats.cluster_promotion_attempts_total += promotion_attempts
+    stats.cluster_promotion_failures_total += promotion_failures
     stats.last_cluster_time = utcnow()
 
 
@@ -107,6 +117,21 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP cluster_timeline_events_deduplicated_total Total timeline events removed by near-duplicate collapse",
         "# TYPE cluster_timeline_events_deduplicated_total counter",
         f"cluster_timeline_events_deduplicated_total {stats.cluster_timeline_events_deduplicated_total}",
+        "# HELP clusters_promoted_total Total number of hidden clusters promoted to API-eligible visibility",
+        "# TYPE clusters_promoted_total counter",
+        f"clusters_promoted_total {stats.clusters_promoted_total}",
+        "# HELP clusters_hidden_total Current number of debug-only hidden clusters",
+        "# TYPE clusters_hidden_total gauge",
+        f"clusters_hidden_total {stats.clusters_hidden_total}",
+        "# HELP clusters_active_total Current number of API-visible active clusters",
+        "# TYPE clusters_active_total gauge",
+        f"clusters_active_total {stats.clusters_active_total}",
+        "# HELP cluster_promotion_attempts_total Total hidden-cluster rebuild attempts that could trigger promotion",
+        "# TYPE cluster_promotion_attempts_total counter",
+        f"cluster_promotion_attempts_total {stats.cluster_promotion_attempts_total}",
+        "# HELP cluster_promotion_failures_total Total hidden-cluster promotion attempts that remained hidden",
+        "# TYPE cluster_promotion_failures_total counter",
+        f"cluster_promotion_failures_total {stats.cluster_promotion_failures_total}",
         "# HELP last_ingest_time Unix timestamp for the last ingest run",
         "# TYPE last_ingest_time gauge",
         f"last_ingest_time {ingest_ts}",
