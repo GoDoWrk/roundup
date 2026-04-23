@@ -18,8 +18,11 @@ services:
 
   migrate:
     build: .
+    working_dir: /app
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /app
     command: alembic upgrade head
     depends_on:
       db:
@@ -28,8 +31,11 @@ services:
   api:
     build: .
     restart: unless-stopped
+    working_dir: /app
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
@@ -53,8 +59,11 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    working_dir: /app
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /app
     command: python -m app.scheduler
     depends_on:
       db:
