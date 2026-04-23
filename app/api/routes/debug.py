@@ -56,6 +56,7 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         "title_signal_seen": False,
         "entity_overlap_seen": False,
         "keyword_overlap_seen": False,
+        "attach_override_seen": False,
     }
 
     for link in links:
@@ -81,6 +82,8 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             threshold_results["entity_overlap_seen"] = True
         if met.get("keyword_overlap_met"):
             threshold_results["keyword_overlap_seen"] = True
+        if met.get("attach_override_met"):
+            threshold_results["attach_override_seen"] = True
 
     def average(values: list[float]) -> float:
         if not values:

@@ -1,7 +1,7 @@
 """add ingest hardening counters
 
 Revision ID: 0003_ingest_hardening_counters
-Revises: 0002_cluster_quality_observability
+Revises: 0002_cluster_obs
 Create Date: 2026-04-23 20:10:00.000000
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "0003_ingest_hardening_counters"
-down_revision: Union[str, None] = "0002_cluster_quality_observability"
+down_revision: Union[str, None] = "0002_cluster_obs"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

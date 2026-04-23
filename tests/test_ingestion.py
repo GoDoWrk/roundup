@@ -19,10 +19,15 @@ def _entry(entry_id: int, title: str, url: str, published_at: str) -> dict:
     }
 
 
-def test_ingestion_deduplicates_identical_entries_within_batch(db_session: Session) -> None:
+def test_ingestion_deduplicates_identical_canonical_urls_within_batch(db_session: Session) -> None:
     entries = [
-        _entry(1, "Transit Plan Update", "https://example.com/transit", "2026-04-22T10:00:00Z"),
-        _entry(2, "Transit Plan Update", "https://example.com/transit", "2026-04-22T10:00:00Z"),
+        _entry(1, "Transit Plan Update", "https://example.com/transit?utm_source=feed", "2026-04-22T10:00:00Z"),
+        _entry(
+            2,
+            "Transit Expansion Plan Receives New Reactions",
+            "https://example.com/transit?utm_source=newsletter",
+            "2026-04-22T10:15:00Z",
+        ),
     ]
 
     result = ingest_entries(db_session, entries)
@@ -34,9 +39,26 @@ def test_ingestion_deduplicates_identical_entries_within_batch(db_session: Sessi
     assert total == 1
 
 
+def test_ingestion_allows_distinct_urls_with_similar_titles(db_session: Session) -> None:
+    entries = [
+        _entry(1, "Transit Plan Update", "https://example.com/transit-update-1", "2026-04-22T10:00:00Z"),
+        _entry(2, "Transit Plan Update", "https://example.com/transit-update-2", "2026-04-22T10:05:00Z"),
+    ]
+
+    result = ingest_entries(db_session, entries)
+    db_session.commit()
+
+    assert result.ingested == 2
+    assert result.deduplicated == 0
+    total = db_session.scalar(select(func.count()).select_from(Article))
+    assert total == 2
+
+
 def test_ingestion_deduplicates_against_existing_records(db_session: Session) -> None:
     first_batch = [_entry(1, "Budget Vote Scheduled", "https://example.com/budget", "2026-04-22T09:00:00Z")]
-    second_batch = [_entry(2, "Budget Vote Scheduled", "https://example.com/budget", "2026-04-22T09:00:00Z")]
+    second_batch = [
+        _entry(2, "Budget Vote Brings New Commentary", "https://example.com/budget?utm_source=feed", "2026-04-22T09:30:00Z")
+    ]
 
     first = ingest_entries(db_session, first_batch)
     db_session.commit()
@@ -48,10 +70,10 @@ def test_ingestion_deduplicates_against_existing_records(db_session: Session) ->
     assert second.deduplicated == 1
 
 
-def test_ingestion_skips_malformed_entry_without_failing_batch(db_session: Session) -> None:
+def test_ingestion_marks_blank_url_entry_as_malformed(db_session: Session) -> None:
     entries = [
         _entry(1, "Valid article", "https://example.com/valid", "2026-04-22T11:00:00Z"),
-        _entry(2, "Broken article", "https://example.com/broken", "not-a-date"),
+        _entry(2, "Broken article", "   ", "2026-04-22T11:05:00Z"),
     ]
 
     result = ingest_entries(db_session, entries)

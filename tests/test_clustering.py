@@ -198,3 +198,56 @@ def test_timeline_deduplicates_repetitive_same_publisher_updates(db_session: Ses
     assert cluster is not None
     event_count = db_session.query(ClusterTimelineEvent).filter(ClusterTimelineEvent.cluster_id == cluster.id).count()
     assert event_count < 3
+
+
+def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="s1",
+            title="City Council Approves Transit Expansion Plan",
+            normalized_title="city council approves transit expansion plan",
+            keywords=["city", "council", "expansion", "transit", "and", "approved", "details", "funding", "plan"],
+            entities=[],
+            published_at=now - timedelta(hours=5),
+            publisher="Metro Daily",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="s2",
+            title="Regional Leaders React to Transit Expansion Funding",
+            normalized_title="regional leaders react to transit expansion funding",
+            keywords=["expansion", "funding", "leaders", "regional", "transit", "approved", "package", "react", "the"],
+            entities=[],
+            published_at=now - timedelta(hours=2),
+            publisher="Regional Wire",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="s3",
+            title="Transit Agencies Publish First Implementation Timeline",
+            normalized_title="transit agencies publish first implementation timeline",
+            keywords=["agencies", "implementation", "transit", "expected", "milestones", "publish", "the", "timeline", "vote"],
+            entities=[],
+            published_at=now - timedelta(hours=1),
+            publisher="Transport Bulletin",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(
+        db_session,
+        _settings(cluster_min_sources_for_api=3),
+    )
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 2
+    assert db_session.query(Cluster).count() == 1
+
+    cluster = db_session.scalars(select(Cluster)).first()
+    assert cluster is not None
+    assert cluster.validation_error is None
+    assert len(cluster.source_links) == 3

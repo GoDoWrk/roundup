@@ -1,6 +1,6 @@
 """cluster quality and observability fields
 
-Revision ID: 0002_cluster_quality_observability
+Revision ID: 0002_cluster_obs
 Revises: 0001_initial
 Create Date: 2026-04-23 10:30:00.000000
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "0002_cluster_quality_observability"
+revision: str = "0002_cluster_obs"
 down_revision: Union[str, None] = "0001_initial"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

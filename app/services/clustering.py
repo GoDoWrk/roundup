@@ -185,6 +185,8 @@ def _build_heuristic_breakdown(
     candidate_count: int,
     settings: Settings,
     evaluation: CandidateEvaluation | None,
+    attach_override_met: bool = False,
+    attach_override_components: dict[str, float | int | bool] | None = None,
 ) -> dict:
     if evaluation is None:
         components = {
@@ -220,6 +222,9 @@ def _build_heuristic_breakdown(
         "title_signal_threshold": settings.cluster_min_title_signal,
         "entity_overlap_threshold": settings.cluster_min_entity_overlap,
         "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
+        "attach_override_title_similarity_threshold": 0.30,
+        "attach_override_time_proximity_threshold": 0.90,
+        "attach_override_keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
     }
 
     thresholds_met = {
@@ -228,6 +233,7 @@ def _build_heuristic_breakdown(
         "entity_overlap_met": overlap_counts["entity_overlap"] >= settings.cluster_min_entity_overlap,
         "keyword_overlap_met": overlap_counts["keyword_overlap"] >= settings.cluster_min_keyword_overlap,
         "signal_gate_passed": signal_gate_passed,
+        "attach_override_met": attach_override_met,
     }
 
     return {
@@ -240,6 +246,7 @@ def _build_heuristic_breakdown(
         "overlap_counts": overlap_counts,
         "thresholds": thresholds,
         "thresholds_met": thresholds_met,
+        "attach_override_components": attach_override_components or {},
     }
 
 
@@ -396,31 +403,57 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                 settings=settings,
                 evaluation=None,
             )
-        elif best_evaluation.score < settings.cluster_score_threshold:
-            cluster = _create_cluster(session, article)
-            created_count += 1
-            new_decisions += 1
-            low_confidence_new += 1
-            decision_reason = "best_candidate_below_score_threshold"
-            breakdown = _build_heuristic_breakdown(
-                decision="create_new_cluster",
-                decision_reason=decision_reason,
-                candidate_count=len(candidates),
-                settings=settings,
-                evaluation=best_evaluation,
-            )
         else:
-            cluster = best_evaluation.cluster
-            chosen_score = best_evaluation.score
-            attach_decisions += 1
-            decision_reason = "attached_to_existing_cluster"
-            breakdown = _build_heuristic_breakdown(
-                decision="attach_existing_cluster",
-                decision_reason=decision_reason,
-                candidate_count=len(candidates),
-                settings=settings,
-                evaluation=best_evaluation,
+            attach_override_met = (
+                best_evaluation.signal_gate_passed
+                and best_evaluation.keyword_overlap >= settings.cluster_min_keyword_overlap
+                and best_evaluation.title_similarity >= 0.30
+                and best_evaluation.time_proximity >= 0.90
             )
+            should_attach = best_evaluation.score >= settings.cluster_score_threshold or attach_override_met
+            attach_override_components = {
+                "signal_gate_passed": best_evaluation.signal_gate_passed,
+                "keyword_overlap": best_evaluation.keyword_overlap,
+                "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
+                "title_similarity": best_evaluation.title_similarity,
+                "title_similarity_threshold": 0.30,
+                "time_proximity": best_evaluation.time_proximity,
+                "time_proximity_threshold": 0.90,
+            }
+
+            if should_attach:
+                cluster = best_evaluation.cluster
+                chosen_score = best_evaluation.score
+                attach_decisions += 1
+                decision_reason = (
+                    "attached_to_existing_cluster_via_override"
+                    if attach_override_met and best_evaluation.score < settings.cluster_score_threshold
+                    else "attached_to_existing_cluster"
+                )
+                breakdown = _build_heuristic_breakdown(
+                    decision="attach_existing_cluster",
+                    decision_reason=decision_reason,
+                    candidate_count=len(candidates),
+                    settings=settings,
+                    evaluation=best_evaluation,
+                    attach_override_met=attach_override_met,
+                    attach_override_components=attach_override_components,
+                )
+            else:
+                cluster = _create_cluster(session, article)
+                created_count += 1
+                new_decisions += 1
+                low_confidence_new += 1
+                decision_reason = "best_candidate_below_score_threshold"
+                breakdown = _build_heuristic_breakdown(
+                    decision="create_new_cluster",
+                    decision_reason=decision_reason,
+                    candidate_count=len(candidates),
+                    settings=settings,
+                    evaluation=best_evaluation,
+                    attach_override_met=attach_override_met,
+                    attach_override_components=attach_override_components,
+                )
 
         _attach_article_to_cluster(session, cluster, article, chosen_score, breakdown)
         rebuild_result = _rebuild_cluster(session, cluster, settings)

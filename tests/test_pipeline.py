@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -8,9 +9,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import Article, PipelineStats
+from app.db.models import Article, Cluster, PipelineStats
+from app.services.ingestion import ingest_entries
 from app.services.miniflux_client import MinifluxRequestError
 from app.services.pipeline import run_pipeline
+from scripts.run_pipeline_once import reset_sample_mode_state_if_needed
 
 
 def _settings(tmp_path: Path, **overrides: object) -> Settings:
@@ -35,6 +38,38 @@ def _sample_entries() -> list[dict]:
             "content": "Update",
             "feed": {"title": "Example Feed"},
         }
+    ]
+
+
+def _sample_three_entries() -> list[dict]:
+    return [
+        {
+            "id": 1001,
+            "title": "City Council Approves Transit Expansion Plan",
+            "url": "https://example.com/news/transit-expansion",
+            "published_at": "2026-04-22T12:00:00Z",
+            "content": "City Council approved a transit expansion proposal and released funding details.",
+            "feed": {"title": "Metro Daily"},
+            "author": "Reporter A",
+        },
+        {
+            "id": 1002,
+            "title": "Regional Leaders React to Transit Expansion Funding",
+            "url": "https://example.com/news/transit-funding-reaction",
+            "published_at": "2026-04-22T14:30:00Z",
+            "content": "Regional transportation leaders responded to the approved transit expansion funding package.",
+            "feed": {"title": "Regional Wire"},
+            "author": "Reporter B",
+        },
+        {
+            "id": 1003,
+            "title": "Transit Agencies Publish First Implementation Timeline",
+            "url": "https://example.com/news/transit-timeline",
+            "published_at": "2026-04-22T17:10:00Z",
+            "content": "Transit agencies published expected implementation milestones after the vote.",
+            "feed": {"title": "Transport Bulletin"},
+            "author": "Reporter C",
+        },
     ]
 
 
@@ -132,3 +167,59 @@ def test_pipeline_survives_miniflux_failure_without_sample(
     stats = db_session.get(PipelineStats, 1)
     assert stats is not None
     assert stats.ingest_source_failures_total >= 1
+
+
+def test_sample_mode_reset_removes_only_sample_articles_and_reingests(
+    db_session: Session, tmp_path: Path
+) -> None:
+    sample_entries = _sample_three_entries()
+    sample_path = tmp_path / "sample.json"
+    sample_path.write_text(json.dumps(sample_entries), encoding="utf-8")
+
+    settings = _settings(
+        tmp_path,
+        miniflux_api_token="",
+        sample_miniflux_data_path=str(sample_path),
+        cluster_min_sources_for_api=3,
+    )
+
+    unrelated_entry = {
+        "id": 4001,
+        "title": "Unrelated Coverage",
+        "url": "https://example.com/news/unrelated",
+        "published_at": "2026-04-22T08:00:00Z",
+        "content": "Separate story that should not be cleared by sample reset.",
+        "feed": {"title": "Independent Desk"},
+    }
+    ingest_entries(db_session, sample_entries + [unrelated_entry])
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        Cluster(
+            id="orphan-cluster",
+            headline="Orphan cluster",
+            summary="Orphan summary with sufficient words to satisfy validation checks.",
+            what_changed="Orphan details changed and remained disconnected from source links.",
+            why_it_matters="Orphan impact remains isolated and should be pruned during sample reset.",
+            first_seen=now,
+            last_updated=now,
+            score=0.1,
+            status="emerging",
+            normalized_headline="orphan cluster",
+            keywords=["orphan"],
+            entities=[],
+        )
+    )
+    db_session.commit()
+
+    reset_sample_mode_state_if_needed(db_session, settings)
+    db_session.commit()
+
+    remaining_urls = set(db_session.scalars(select(Article.canonical_url)).all())
+    assert "https://example.com/news/unrelated" in remaining_urls
+    assert "https://example.com/news/transit-expansion" not in remaining_urls
+    assert db_session.get(Cluster, "orphan-cluster") is None
+
+    result = run_pipeline(db_session, settings, run_id="sample-reset")
+
+    assert result.ingested > 0
+    assert result.clusters_created > 0
