@@ -7,9 +7,11 @@ from app.api.routes.articles import router as articles_router
 from app.api.routes.clusters import router as clusters_router
 from app.api.routes.debug import router as debug_router
 from app.api.routes.health import router as health_router
+from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.startup_checks import run_startup_checks
 from app.db.session import get_db_session
+from app.schemas.common import ApiIndexResponse
 from app.services.metrics import metrics_as_prometheus_text
 
 configure_logging()
@@ -20,6 +22,21 @@ app.include_router(health_router)
 app.include_router(articles_router)
 app.include_router(clusters_router)
 app.include_router(debug_router)
+
+
+@app.get("/", response_model=ApiIndexResponse, tags=["meta"])
+def api_index() -> ApiIndexResponse:
+    settings = get_settings()
+    return ApiIndexResponse(
+        message=f"{settings.app_name} API is running. Start with these endpoints.",
+        docs_url="/docs",
+        endpoints={
+            "health": "/health",
+            "clusters": "/api/clusters",
+            "debug_clusters": "/debug/clusters",
+            "metrics": "/metrics",
+        },
+    )
 
 
 @app.on_event("startup")

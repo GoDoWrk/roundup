@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,8 +16,14 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg2://roundup:roundup@db:5432/roundup"
 
-    miniflux_base_url: str = "http://miniflux:8080"
-    miniflux_api_token: str = ""
+    miniflux_base_url: str = Field(
+        default="http://miniflux:8080",
+        validation_alias=AliasChoices("MINIFLUX_URL", "MINIFLUX_BASE_URL", "miniflux_base_url"),
+    )
+    miniflux_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("MINIFLUX_API_KEY", "MINIFLUX_API_TOKEN", "miniflux_api_token"),
+    )
     miniflux_fetch_limit: int = 100
     miniflux_timeout_seconds: int = 20
     sample_miniflux_data_path: str | None = None
@@ -42,7 +48,12 @@ class Settings(BaseSettings):
     api_default_limit: int = 50
     api_max_limit: int = 200
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        populate_by_name=True,
+    )
 
     @field_validator("sample_miniflux_data_path")
     @classmethod
@@ -82,12 +93,12 @@ class Settings(BaseSettings):
 
         if mode == "worker":
             if self.miniflux_api_token.strip() and not self.miniflux_base_url.strip():
-                errors.append("MINIFLUX_BASE_URL is required when MINIFLUX_API_TOKEN is set.")
+                errors.append("MINIFLUX_URL is required when MINIFLUX_API_KEY is set.")
 
             if not self.has_miniflux_credentials and sample_path is None:
                 errors.append(
                     "Worker startup requires either live Miniflux credentials "
-                    "(MINIFLUX_BASE_URL + MINIFLUX_API_TOKEN) or SAMPLE_MINIFLUX_DATA_PATH "
+                    "(MINIFLUX_URL + MINIFLUX_API_KEY) or SAMPLE_MINIFLUX_DATA_PATH "
                     "for offline development."
                 )
 

@@ -23,12 +23,14 @@ Roundup is a backend-first, self-hosted news intelligence pipeline. It ingests n
 Copy `.env.example` to `.env`.
 
 Worker startup requires one ingestion source:
-1. Live Miniflux: `MINIFLUX_BASE_URL` + `MINIFLUX_API_TOKEN`.
+1. Live Miniflux: `MINIFLUX_URL` + `MINIFLUX_API_KEY`.
 2. Offline sample data: `SAMPLE_MINIFLUX_DATA_PATH`.
 
 If neither is configured, worker startup fails fast with a clear error message.
 
 Key ingestion settings:
+- `MINIFLUX_URL`
+- `MINIFLUX_API_KEY`
 - `MINIFLUX_FETCH_LIMIT`
 - `MINIFLUX_TIMEOUT_SECONDS`
 - `SAMPLE_MINIFLUX_DATA_PATH`

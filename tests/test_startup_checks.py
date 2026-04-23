@@ -35,3 +35,16 @@ def test_worker_startup_check_accepts_sample_path(tmp_path: Path) -> None:
 def test_api_startup_check_does_not_require_miniflux() -> None:
     settings = Settings(database_url="sqlite+pysqlite:///:memory:", miniflux_api_token="")
     run_startup_checks("api", settings=settings)
+
+
+def test_settings_accept_new_miniflux_env_aliases() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        MINIFLUX_URL="http://miniflux.local",
+        MINIFLUX_API_KEY="secret",
+        sample_miniflux_data_path=None,
+    )
+
+    assert settings.miniflux_base_url == "http://miniflux.local"
+    assert settings.miniflux_api_token == "secret"
+    assert settings.has_miniflux_credentials is True

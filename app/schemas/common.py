@@ -9,3 +9,9 @@ class HealthResponse(BaseModel):
     db: str
     miniflux_configured: bool
     timestamp: datetime
+
+
+class ApiIndexResponse(BaseModel):
+    message: str
+    docs_url: str
+    endpoints: dict[str, str]

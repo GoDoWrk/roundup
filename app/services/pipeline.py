@@ -44,18 +44,22 @@ def _resolve_entries(settings: Settings) -> tuple[list[dict], str, bool]:
             timeout_seconds=settings.miniflux_timeout_seconds,
         )
         try:
-            return client.fetch_entries(limit=settings.miniflux_fetch_limit), "miniflux", False
+            entries = client.fetch_entries(limit=settings.miniflux_fetch_limit)
+            if not entries:
+                logger.info("pipeline_miniflux_returned_no_entries")
+            return entries, "miniflux", False
         except MinifluxClientError as exc:
             logger.error("miniflux_fetch_failed error=%s", exc)
-            if sample_path is not None:
-                return _load_entries_from_sample(sample_path), "sample_fallback", True
+            logger.warning(
+                "miniflux_configured_so_sample_fallback_disabled set MINIFLUX_URL and MINIFLUX_API_KEY correctly to restore live ingestion"
+            )
             return [], "miniflux_error", True
 
     if sample_path is not None:
         return _load_entries_from_sample(sample_path), "sample", False
 
     logger.error(
-        "no_ingestion_source_configured set MINIFLUX_BASE_URL + MINIFLUX_API_TOKEN or SAMPLE_MINIFLUX_DATA_PATH"
+        "no_ingestion_source_configured set MINIFLUX_URL + MINIFLUX_API_KEY or SAMPLE_MINIFLUX_DATA_PATH"
     )
     return [], "none", True
 

@@ -29,17 +29,18 @@ class MinifluxClient:
     def fetch_entries(self, limit: int = 100) -> list[dict]:
         if not self.api_token.strip():
             raise MinifluxConfigError(
-                "MINIFLUX_API_TOKEN is missing. Set MINIFLUX_API_TOKEN or configure SAMPLE_MINIFLUX_DATA_PATH "
+                "MINIFLUX_API_KEY is missing. Set MINIFLUX_API_KEY or configure SAMPLE_MINIFLUX_DATA_PATH "
                 "for offline development."
             )
 
         if not self.base_url.strip():
-            raise MinifluxConfigError("MINIFLUX_BASE_URL is missing while MINIFLUX_API_TOKEN is set.")
+            raise MinifluxConfigError("MINIFLUX_URL is missing while MINIFLUX_API_KEY is set.")
 
         endpoint = f"{self.base_url.rstrip('/')}/v1/entries"
         params = {
             "direction": "desc",
             "order": "published_at",
+            "status": "unread",
             "limit": limit,
         }
         headers = {
@@ -65,4 +66,6 @@ class MinifluxClient:
             raise MinifluxRequestError("Miniflux response did not include a valid 'entries' list.")
 
         logger.info("miniflux_fetch_success count=%s endpoint=%s", len(entries), endpoint)
+        if not entries:
+            logger.info("miniflux_feed_empty endpoint=%s", endpoint)
         return entries

@@ -86,7 +86,7 @@ def test_pipeline_handles_zero_new_articles(db_session: Session, monkeypatch: py
     assert result.malformed == 0
 
 
-def test_pipeline_falls_back_to_sample_data_when_miniflux_fails(
+def test_pipeline_does_not_fallback_to_sample_when_miniflux_is_configured(
     db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     sample_path = tmp_path / "sample.json"
@@ -98,15 +98,31 @@ def test_pipeline_falls_back_to_sample_data_when_miniflux_fails(
 
     monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_entries", _raise)
 
-    result = run_pipeline(db_session, settings, run_id="fallback")
+    result = run_pipeline(db_session, settings, run_id="miniflux-failure")
 
-    assert result.ingestion_source == "sample_fallback"
-    assert result.fetched == 1
-    assert result.ingested == 1
+    assert result.ingestion_source == "miniflux_error"
+    assert result.fetched == 0
+    assert result.ingested == 0
 
     stats = db_session.get(PipelineStats, 1)
     assert stats is not None
     assert stats.ingest_source_failures_total >= 1
+
+
+def test_pipeline_uses_sample_source_when_miniflux_not_configured(db_session: Session, tmp_path: Path) -> None:
+    sample_path = tmp_path / "sample.json"
+    sample_path.write_text(json.dumps(_sample_entries()), encoding="utf-8")
+    settings = _settings(
+        tmp_path,
+        miniflux_api_token="",
+        sample_miniflux_data_path=str(sample_path),
+    )
+
+    result = run_pipeline(db_session, settings, run_id="sample-only")
+
+    assert result.ingestion_source == "sample"
+    assert result.fetched == 1
+    assert result.ingested == 1
 
 
 def test_pipeline_skips_malformed_entry_and_ingests_rest(
@@ -142,6 +158,12 @@ def test_pipeline_skips_malformed_entry_and_ingests_rest(
 
     article_count = db_session.scalar(select(func.count()).select_from(Article))
     assert article_count == 1
+    article = db_session.scalars(select(Article)).first()
+    assert article is not None
+    assert article.title == "Valid entry"
+    assert article.url == "https://example.com/valid"
+    assert article.publisher == "Feed"
+    assert article.published_at.isoformat().startswith("2026-04-22T10:00:00")
 
     stats = db_session.get(PipelineStats, 1)
     assert stats is not None

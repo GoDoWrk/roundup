@@ -87,6 +87,7 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     explanation = item["debug_explanation"]
     assert explanation["grouping_reason"]
     assert "thresholds" in explanation
+    assert "threshold_results" in explanation
     assert "score_breakdown" in explanation
     assert explanation["top_shared_entities"]
     assert explanation["decision_counts"]
