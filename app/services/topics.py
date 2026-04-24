@@ -105,12 +105,21 @@ _REPORTING_VERBS = {
 _ACTION_BREAKERS = {
     "adds",
     "added",
+    "allow",
+    "allows",
+    "allowing",
     "announce",
     "announces",
     "announced",
     "arrest",
     "arrests",
     "arrested",
+    "ban",
+    "bans",
+    "banned",
+    "block",
+    "blocks",
+    "blocking",
     "attack",
     "attacks",
     "attacked",
@@ -123,9 +132,21 @@ _ACTION_BREAKERS = {
     "charge",
     "cuts",
     "cut",
+    "come",
+    "comes",
+    "coming",
     "expand",
     "expands",
     "expanded",
+    "felt",
+    "feel",
+    "feels",
+    "help",
+    "helps",
+    "helping",
+    "hit",
+    "hits",
+    "hitting",
     "investigate",
     "investigates",
     "investigated",
@@ -135,20 +156,40 @@ _ACTION_BREAKERS = {
     "probe",
     "probes",
     "probed",
+    "mull",
+    "mulls",
+    "mulling",
+    "mock",
+    "mocks",
+    "mocked",
+    "order",
+    "orders",
+    "ordering",
     "publish",
     "publishes",
     "published",
     "react",
     "reacts",
     "reacted",
+    "reject",
+    "rejects",
+    "rejected",
     "report",
     "reports",
     "reported",
+    "set",
+    "sets",
+    "setting",
     "say",
     "says",
     "said",
+    "tell",
+    "tells",
+    "told",
     "warn",
     "warns",
+    "versus",
+    "vs",
     "wins",
     "won",
 }
@@ -373,6 +414,9 @@ _TOPIC_NOISE_WORDS = {
     "breaking",
     "classified",
     "current",
+    "extremely",
+    "be",
+    "being",
     "facing",
     "global",
     "involved",
@@ -383,6 +427,14 @@ _TOPIC_NOISE_WORDS = {
     "intensify",
     "intensifies",
     "intensifying",
+    "largest",
+    "ever",
+    "unelected",
+    "frustrating",
+    "is",
+    "are",
+    "was",
+    "were",
     "misleading",
     "new",
     "news",
@@ -405,6 +457,10 @@ _TOPIC_NOISE_WORDS = {
     "used",
     "using",
     "upending",
+    "outside",
+    "like",
+    "test",
+    "what",
     "year",
     "years",
     "live",
@@ -412,17 +468,28 @@ _TOPIC_NOISE_WORDS = {
 
 _GENERIC_ENTITY_HINTS = {
     "australia",
+    "britain",
     "china",
     "e u",
     "eu",
+    "europe",
     "french",
     "france",
+    "india",
     "north america",
     "south america",
     "u k",
     "u s",
     "uk",
     "us",
+    "bbc",
+    "guardian",
+    "npr",
+    "nyt",
+    "reuters",
+    "al jazeera",
+    "ap",
+    "afp",
 }
 
 _TOPIC_THEME_WORDS = {"war", "files", "admin"}
@@ -629,6 +696,35 @@ def _theme_candidate_phrase(theme: str, title: str, content_text: str) -> str:
     return theme
 
 
+def _comparison_topic(title: str, title_entities: list[str]) -> str:
+    tokens = _topic_tokens(title)
+    lower_tokens = [token.lower() for token in tokens]
+    if "vs" not in lower_tokens and "versus" not in lower_tokens:
+        return ""
+
+    split_index = next((index for index, token in enumerate(lower_tokens) if token in {"vs", "versus"}), -1)
+    if split_index < 0:
+        return ""
+
+    left_tokens = tokens[:split_index]
+    right_tokens = tokens[split_index + 1 :]
+
+    left_entities = _clean_topic_tokens(left_tokens)
+    right_entities = _clean_topic_tokens(right_tokens)
+    left_choice = next((token for token in left_entities if _is_strong_topic_token(token)), "")
+    right_choice = next((token for token in right_entities if _is_strong_topic_token(token)), "")
+
+    if left_choice and right_choice:
+        return _topic_phrase_from_tokens([left_choice, right_choice])
+
+    if title_entities:
+        filtered = [entity for entity in title_entities if not _is_generic_entity_hint(entity)]
+        if len(filtered) >= 2:
+            return f"{filtered[0]} {filtered[1]}"
+
+    return ""
+
+
 def _split_topic_chunks(title: str) -> list[list[str]]:
     chunks: list[list[str]] = []
     current: list[str] = []
@@ -759,6 +855,10 @@ def derive_topic_from_text(
         subject = _select_subject(theme, entity_candidates, normalized_tokens)
         if subject:
             return f"{subject} {theme}"
+
+    comparison_topic = _comparison_topic(title, entity_candidates)
+    if comparison_topic and not _is_generic_topic(comparison_topic):
+        return comparison_topic
 
     leading_subject = _best_topic_phrase(title)
     if leading_subject and not _is_generic_topic(leading_subject):

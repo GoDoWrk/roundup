@@ -549,12 +549,12 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                     or (
                         best_evaluation.topic_match
                         and best_evaluation.keyword_overlap >= 1
-                        and best_evaluation.title_similarity >= 0.30
-                        and best_evaluation.time_proximity >= 0.85
+                        and best_evaluation.title_similarity >= 0.25
+                        and best_evaluation.time_proximity >= 0.80
                     )
                 )
-                and best_evaluation.title_similarity >= 0.30
-                and best_evaluation.time_proximity >= 0.85
+                and best_evaluation.title_similarity >= 0.25
+                and best_evaluation.time_proximity >= 0.80
             )
             should_attach = best_evaluation.score >= settings.cluster_score_threshold or attach_override_met
             attach_override_components = {

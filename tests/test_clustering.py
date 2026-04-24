@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
+from app.services.enrichment import build_what_changed
 from app.services.clustering import cluster_new_articles
 from app.services.topics import derive_topic_from_text
 
@@ -329,6 +330,64 @@ def test_topic_mismatch_forces_new_cluster(db_session: Session) -> None:
     assert db_session.query(Cluster).count() == 2
 
 
+def test_war_adjacent_articles_do_not_collapse_into_one_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="wa1",
+            title="Trump may talk of regime infighting, but Iran seems united by strategy born of war",
+            normalized_title="trump may talk of regime infighting but iran seems united by strategy born of war",
+            keywords=["trump", "iran", "war", "strategy", "regime", "infighting"],
+            entities=["Trump", "Iran"],
+            published_at=now - timedelta(hours=3),
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="wa2",
+            title="US soldier involved in Maduro raid charged over alleged bets on capture",
+            normalized_title="us soldier involved in maduro raid charged over alleged bets on capture",
+            keywords=["us", "soldier", "maduro", "raid", "capture", "bets"],
+            entities=["Maduro"],
+            published_at=now - timedelta(hours=1),
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_what_changed_filters_noise_terms() -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="wc1",
+        title="Trump may talk of regime infighting, but Iran seems united by strategy born of war",
+        normalized_title="trump may talk of regime infighting but iran seems united by strategy born of war",
+        keywords=["trump", "iran", "war", "strategy", "regime", "infighting"],
+        entities=["Trump", "Iran"],
+        published_at=now - timedelta(hours=3),
+        publisher="World news | The Guardian",
+    )
+    latest = _article(
+        dedupe_hash="wc2",
+        title="Trump claims US has total control over strait of Hormuz after Iran seizes two container ships",
+        normalized_title="trump claims us has total control over strait of hormuz after iran seizes two container ships",
+        keywords=["trump", "iran", "hormuz", "pentagon", "container", "ships", "but"],
+        entities=["Trump", "Iran", "Pentagon"],
+        published_at=now - timedelta(hours=1),
+        publisher="World news | The Guardian",
+    )
+
+    text = build_what_changed("cluster-1", [first, latest])
+
+    assert "but" not in text.lower()
+    assert "additional confirmed details" not in text.lower()
+
+
 def test_topic_builder_prefers_human_subject_labels() -> None:
     assert derive_topic_from_text(
         "How Trump's Iran war is driving military dissent",
@@ -342,6 +401,38 @@ def test_topic_builder_prefers_human_subject_labels() -> None:
         "Trump administration moves to reclassify cannabis in major shift that could expand research",
         "Trump administration moves to reclassify cannabis in major shift that could expand research",
     ) == "Trump Admin"
+    assert derive_topic_from_text(
+        "Didi vs Modi: A Test for the Hindu Right in India's Bengali Heartland",
+        "Didi vs Modi: A Test for the Hindu Right in India's Bengali Heartland",
+    ) == "Didi Modi"
+    assert derive_topic_from_text(
+        "Alibaba's Qwen AI is coming to cars, allowing drivers order food and book hotels by voice",
+        "Alibaba's Qwen AI is coming to cars, allowing drivers order food and book hotels by voice",
+    ) == "Alibaba Qwen"
+    assert derive_topic_from_text(
+        "In Britain, 7 Unelected Lords Are Helping to Block an Assisted Dying Bill",
+        "In Britain, 7 Unelected Lords Are Helping to Block an Assisted Dying Bill",
+    ) == "Assisted Dying"
+    assert derive_topic_from_text(
+        "Europe Mulls What Mutual Defense Looks Like Outside NATO",
+        "Europe Mulls What Mutual Defense Looks Like Outside NATO",
+    ) == "Mutual Defense"
+    assert derive_topic_from_text(
+        "Actor felt mocked by Rebel Wilson's wife in Instagram post referencing Finding Nemo, court hears",
+        "Actor felt mocked by Rebel Wilson's wife in Instagram post referencing Finding Nemo, court hears",
+    ) == "Instagram Post"
+    assert derive_topic_from_text(
+        "Largest-ever ban on toxic chemicals in EU hit by extremely frustrating delays",
+        "Largest-ever ban on toxic chemicals in EU hit by extremely frustrating delays",
+    ) == "Toxic Chemicals"
+    assert derive_topic_from_text(
+        "Anthony Albanese accused of caving to gas companies as Labor set to reject new export tax",
+        "Anthony Albanese accused of caving to gas companies as Labor set to reject new export tax",
+    ) == "Anthony Albanese"
+    assert derive_topic_from_text(
+        "Trump tells BBC that King's visit could absolutely help repair relations with UK",
+        "Trump tells BBC that King's visit could absolutely help repair relations with UK",
+    ) == "King Visit"
     assert derive_topic_from_text(
         "US soldier involved in Maduro raid charged over alleged bets on capture",
         "US soldier involved in Maduro raid charged over alleged bets on capture",
