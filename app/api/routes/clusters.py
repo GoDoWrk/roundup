@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Select, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.db.models import Cluster, ClusterArticle
@@ -30,17 +30,20 @@ def list_clusters(
         .scalar_subquery()
     )
     legacy_source_count_error = f"cluster must have at least {settings.cluster_min_sources_for_api} sources"
-
-    base = select(Cluster).where(
+    visible_filters = (
         Cluster.status != "hidden",
         source_count_subquery >= settings.cluster_min_sources_for_api,
         or_(Cluster.validation_error.is_(None), Cluster.validation_error == legacy_source_count_error),
     )
-    count_stmt = select(func.count()).select_from(Cluster).where(
-        Cluster.status != "hidden",
-        source_count_subquery >= settings.cluster_min_sources_for_api,
-        or_(Cluster.validation_error.is_(None), Cluster.validation_error == legacy_source_count_error),
+    base = (
+        select(Cluster)
+        .options(
+            selectinload(Cluster.source_links).selectinload(ClusterArticle.article),
+            selectinload(Cluster.timeline_events),
+        )
+        .where(*visible_filters)
     )
+    count_stmt = select(func.count()).select_from(Cluster).where(*visible_filters)
     if status:
         base = base.where(Cluster.status == status)
         count_stmt = count_stmt.where(Cluster.status == status)
@@ -50,20 +53,27 @@ def list_clusters(
     stmt: Select[tuple[Cluster]] = (
         base.order_by(Cluster.last_updated.desc(), Cluster.id.asc()).limit(final_limit).offset(offset)
     )
-    clusters = list(db.scalars(stmt).all())
+    clusters = list(db.scalars(stmt).unique().all())
 
     return ClusterListResponse(
         total=total,
         limit=final_limit,
         offset=offset,
-        items=[build_story_cluster(db, cluster) for cluster in clusters],
+        items=[build_story_cluster(cluster) for cluster in clusters],
     )
 
 
 @router.get("/{cluster_id}", response_model=StoryCluster)
 def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> StoryCluster:
     settings = get_settings()
-    cluster = db.get(Cluster, cluster_id)
+    cluster = db.get(
+        Cluster,
+        cluster_id,
+        options=[
+            selectinload(Cluster.source_links).selectinload(ClusterArticle.article),
+            selectinload(Cluster.timeline_events),
+        ],
+    )
     source_count = len(cluster.source_links) if cluster is not None else 0
     if (
         cluster is None
@@ -75,4 +85,4 @@ def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> Story
         )
     ):
         raise HTTPException(status_code=404, detail="Cluster not found")
-    return build_story_cluster(db, cluster)
+    return build_story_cluster(cluster)

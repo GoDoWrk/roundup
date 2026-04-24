@@ -37,6 +37,7 @@ class Article(Base):
     __table_args__ = (
         Index("ix_articles_published_at", "published_at"),
         Index("ix_articles_canonical_url", "canonical_url"),
+        Index("ix_articles_publisher", "publisher"),
         Index("ix_articles_topic", "topic"),
     )
 

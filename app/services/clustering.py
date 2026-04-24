@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
@@ -21,6 +22,11 @@ from app.services.enrichment import (
 from app.services.normalizer import normalize_title
 from app.services.topics import derive_topic_from_article, derive_topic_from_articles, topic_matches
 from app.services.validation import validate_cluster_record
+
+logger = logging.getLogger(__name__)
+
+ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD = 0.25
+ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD = 0.80
 
 
 @dataclass(frozen=True)
@@ -230,7 +236,6 @@ def _load_repromotable_hidden_clusters(session: Session, settings: Settings) -> 
 def _promotion_blockers(
     *,
     source_count: int,
-    score: float,
     validation_error: str | None,
     settings: Settings,
 ) -> list[str]:
@@ -293,8 +298,8 @@ def _build_heuristic_breakdown(
         "title_signal_threshold": settings.cluster_min_title_signal,
         "entity_overlap_threshold": settings.cluster_min_entity_overlap,
         "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
-        "attach_override_title_similarity_threshold": 0.30,
-        "attach_override_time_proximity_threshold": 0.85,
+        "attach_override_title_similarity_threshold": ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD,
+        "attach_override_time_proximity_threshold": ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD,
         "attach_override_keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
     }
 
@@ -417,7 +422,6 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     promotion_failed = False
     promotion_blockers = _promotion_blockers(
         source_count=source_count,
-        score=float(avg_similarity),
         validation_error=cluster.validation_error,
         settings=settings,
     )
@@ -549,12 +553,12 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                     or (
                         best_evaluation.topic_match
                         and best_evaluation.keyword_overlap >= 1
-                        and best_evaluation.title_similarity >= 0.25
-                        and best_evaluation.time_proximity >= 0.80
+                        and best_evaluation.title_similarity >= ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD
+                        and best_evaluation.time_proximity >= ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD
                     )
                 )
-                and best_evaluation.title_similarity >= 0.25
-                and best_evaluation.time_proximity >= 0.80
+                and best_evaluation.title_similarity >= ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD
+                and best_evaluation.time_proximity >= ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD
             )
             should_attach = best_evaluation.score >= settings.cluster_score_threshold or attach_override_met
             attach_override_components = {
@@ -563,9 +567,9 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                 "keyword_overlap": best_evaluation.keyword_overlap,
                 "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
                 "title_similarity": best_evaluation.title_similarity,
-                "title_similarity_threshold": 0.30,
+                "title_similarity_threshold": ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD,
                 "time_proximity": best_evaluation.time_proximity,
-                "time_proximity_threshold": 0.90,
+                "time_proximity_threshold": ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD,
             }
 
             if should_attach:
@@ -603,6 +607,20 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                 )
 
         _attach_article_to_cluster(session, cluster, article, chosen_score, breakdown)
+        logger.info(
+            "cluster_article_decision article_id=%s cluster_id=%s decision=%s reason=%s score=%.4f title_similarity=%.4f entity_overlap=%s keyword_overlap=%s time_proximity=%.4f topic_match=%s signal_gate_passed=%s",
+            article.id,
+            cluster.id,
+            breakdown["decision"],
+            decision_reason,
+            chosen_score,
+            best_evaluation.title_similarity if best_evaluation is not None else 0.0,
+            best_evaluation.entity_overlap if best_evaluation is not None else 0,
+            best_evaluation.keyword_overlap if best_evaluation is not None else 0,
+            best_evaluation.time_proximity if best_evaluation is not None else 0.0,
+            best_evaluation.topic_match if best_evaluation is not None else False,
+            best_evaluation.signal_gate_passed if best_evaluation is not None else False,
+        )
         rebuild_result = _rebuild_cluster(session, cluster, settings)
         if rebuild_result.validation_failed:
             invalid_cluster_ids.add(cluster.id)

@@ -33,6 +33,7 @@ def _valid_story_cluster() -> dict:
                 "published_at": now,
             }
         ],
+        "topic": "Transit",
         "first_seen": now,
         "last_updated": now,
         "score": 0.7,

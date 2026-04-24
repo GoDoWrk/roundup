@@ -4,10 +4,10 @@ from collections import Counter
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
-from app.db.models import Article, Cluster
+from app.db.models import Article, Cluster, ClusterArticle
 from app.db.session import get_db_session
 from app.schemas.article import ArticleDebugResponse
 from app.schemas.cluster import (
@@ -146,8 +146,15 @@ def debug_articles(db: Session = Depends(get_db_session)) -> ArticleDebugRespons
 @router.get("/clusters", response_model=ClusterDebugResponse)
 def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugResponse:
     settings = get_settings()
-    stmt: Select[tuple[Cluster]] = select(Cluster).order_by(Cluster.last_updated.desc(), Cluster.id.asc())
-    rows = list(db.scalars(stmt).all())
+    stmt: Select[tuple[Cluster]] = (
+        select(Cluster)
+        .options(
+            selectinload(Cluster.source_links).selectinload(ClusterArticle.article),
+            selectinload(Cluster.timeline_events),
+        )
+        .order_by(Cluster.last_updated.desc(), Cluster.id.asc())
+    )
+    rows = list(db.scalars(stmt).unique().all())
 
     items: list[ClusterDebugItem] = []
     for cluster in rows:
@@ -156,7 +163,6 @@ def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugRespons
         visibility_threshold = settings.cluster_min_sources_for_api
         promotion_blockers = _promotion_blockers(
             source_count=source_count,
-            score=cluster.score,
             validation_error=cluster.validation_error,
             settings=settings,
         )
