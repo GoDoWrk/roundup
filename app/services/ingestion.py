@@ -104,6 +104,7 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
                 normalized_title=normalized.normalized_title,
                 keywords=normalized.keywords,
                 entities=normalized.entities,
+                topic=normalized.topic,
                 dedupe_hash=normalized.dedupe_hash,
             )
             session.add(article)

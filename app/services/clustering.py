@@ -19,6 +19,7 @@ from app.services.enrichment import (
     build_why_it_matters,
 )
 from app.services.normalizer import normalize_title
+from app.services.topics import derive_topic_from_article, derive_topic_from_articles, topic_matches
 from app.services.validation import validate_cluster_record
 
 
@@ -27,6 +28,7 @@ class FeatureVector:
     title: str
     keywords: set[str]
     entities: set[str]
+    topic: str
     published_at: datetime
 
 
@@ -39,6 +41,7 @@ class CandidateEvaluation:
     time_proximity: float
     entity_overlap: int
     keyword_overlap: int
+    topic_match: bool
     score: float
     signal_gate_passed: bool
 
@@ -100,15 +103,18 @@ def _article_features(article: Article) -> FeatureVector:
         title=article.normalized_title,
         keywords=set(article.keywords),
         entities=set(article.entities),
+        topic=derive_topic_from_article(article),
         published_at=article.published_at,
     )
 
 
 def _cluster_features(cluster: Cluster) -> FeatureVector:
+    cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
     return FeatureVector(
         title=cluster.normalized_headline,
         keywords=set(cluster.keywords),
         entities=set(cluster.entities),
+        topic=cluster_topic,
         published_at=cluster.last_updated,
     )
 
@@ -123,6 +129,7 @@ def _evaluate_candidate(
     entity_jaccard = _jaccard(article.entities, cluster_features.entities)
     keyword_jaccard = _jaccard(article.keywords, cluster_features.keywords)
     time_proximity = _time_proximity(article.published_at, cluster_features.published_at, settings.cluster_time_window_hours)
+    topic_match = topic_matches(article.topic, cluster_features.topic)
 
     entity_overlap = len(article.entities.intersection(cluster_features.entities))
     keyword_overlap = len(article.keywords.intersection(cluster_features.keywords))
@@ -136,9 +143,13 @@ def _evaluate_candidate(
     )
 
     signal_gate_passed = (
-        title_similarity >= settings.cluster_min_title_signal
-        or entity_overlap >= settings.cluster_min_entity_overlap
-        or keyword_overlap >= settings.cluster_min_keyword_overlap
+        topic_match
+        and (
+            title_similarity >= settings.cluster_min_title_signal
+            or entity_overlap >= settings.cluster_min_entity_overlap
+            or keyword_overlap >= settings.cluster_min_keyword_overlap
+            or (time_proximity >= 0.85 and keyword_overlap >= 1)
+        )
     )
 
     return CandidateEvaluation(
@@ -149,6 +160,7 @@ def _evaluate_candidate(
         time_proximity=round(time_proximity, 4),
         entity_overlap=entity_overlap,
         keyword_overlap=keyword_overlap,
+        topic_match=topic_match,
         score=score,
         signal_gate_passed=signal_gate_passed,
     )
@@ -186,6 +198,31 @@ def _load_candidate_clusters(session: Session, article: Article, settings: Setti
         .order_by(Cluster.last_updated.desc())
     )
     return list(session.scalars(stmt).all())
+
+
+def _promotion_blockers(
+    *,
+    source_count: int,
+    score: float,
+    validation_error: str | None,
+    settings: Settings,
+) -> list[str]:
+    blockers: list[str] = []
+
+    if source_count < settings.cluster_min_sources_for_api:
+        blockers.append(
+            f"source_count_below_threshold: needs at least {settings.cluster_min_sources_for_api} sources, has {source_count}"
+        )
+
+    if score < settings.cluster_score_threshold:
+        blockers.append(
+            f"score_below_threshold: score {score:.3f} is below {settings.cluster_score_threshold:.2f}"
+        )
+
+    if validation_error:
+        blockers.append(f"validation_failed: {validation_error}")
+
+    return blockers
 
 
 def _build_heuristic_breakdown(
@@ -227,13 +264,15 @@ def _build_heuristic_breakdown(
         selected_cluster_id = evaluation.cluster.id
         signal_gate_passed = evaluation.signal_gate_passed
 
+    topic_match = evaluation.topic_match if evaluation is not None else False
+    selected_topic = evaluation.cluster.topic if evaluation is not None else None
     thresholds = {
         "score_threshold": settings.cluster_score_threshold,
         "title_signal_threshold": settings.cluster_min_title_signal,
         "entity_overlap_threshold": settings.cluster_min_entity_overlap,
         "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
         "attach_override_title_similarity_threshold": 0.30,
-        "attach_override_time_proximity_threshold": 0.90,
+        "attach_override_time_proximity_threshold": 0.85,
         "attach_override_keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
     }
 
@@ -242,16 +281,22 @@ def _build_heuristic_breakdown(
         "title_signal_met": components["title_similarity"] >= settings.cluster_min_title_signal,
         "entity_overlap_met": overlap_counts["entity_overlap"] >= settings.cluster_min_entity_overlap,
         "keyword_overlap_met": overlap_counts["keyword_overlap"] >= settings.cluster_min_keyword_overlap,
+        "topic_match_met": topic_match,
         "signal_gate_passed": signal_gate_passed,
         "attach_override_met": attach_override_met,
     }
+
+    score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
 
     return {
         "decision": decision,
         "decision_reason": decision_reason,
         "candidate_count": candidate_count,
         "selected_cluster_id": selected_cluster_id,
+        "selected_topic": selected_topic,
         "selected_score": round(selected_score, 4),
+        "selected_topic_match": topic_match,
+        "score_formula": score_formula,
         "components": components,
         "overlap_counts": overlap_counts,
         "thresholds": thresholds,
@@ -269,6 +314,11 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     )
     articles = list(session.scalars(articles_stmt).all())
     if not articles:
+        cluster.status = "hidden"
+        cluster.validation_error = "cluster has no source articles"
+        cluster.promotion_reason = "no_sources_available"
+        cluster.promotion_explanation = "Cluster was hidden because it no longer has any attached source articles."
+        cluster.topic = "General"
         return RebuildResult(
             validation_failed=True,
             timeline_deduplicated=0,
@@ -287,6 +337,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
 
     keyword_union: set[str] = set()
     entity_union: set[str] = set()
+    cluster_topics = derive_topic_from_articles(articles)
     similarity_stmt = select(func.avg(ClusterArticle.similarity_score)).where(ClusterArticle.cluster_id == cluster.id)
     avg_similarity = session.scalar(similarity_stmt) or 0.0
 
@@ -303,6 +354,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     cluster.normalized_headline = normalize_title(cluster.headline)
     cluster.keywords = sorted(keyword_union)
     cluster.entities = sorted(entity_union)
+    cluster.topic = cluster_topics
     cluster.score = round(float(avg_similarity), 4)
     cluster.status = build_status(
         source_count=source_count,
@@ -341,7 +393,13 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
 
     promoted = False
     promotion_failed = False
-    visibility_eligible = validation.is_valid and source_count >= settings.cluster_min_sources_for_api
+    promotion_blockers = _promotion_blockers(
+        source_count=source_count,
+        score=float(avg_similarity),
+        validation_error=cluster.validation_error,
+        settings=settings,
+    )
+    visibility_eligible = not promotion_blockers
     if visibility_eligible:
         if previous_status == "hidden":
             promoted = True
@@ -349,17 +407,16 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
             cluster.promoted_at = datetime.now(timezone.utc)
             cluster.promotion_reason = "source_count_threshold_reached_and_validation_passed"
             cluster.promotion_explanation = (
-                f"Promoted after reaching {source_count} sources (threshold "
-                f"{settings.cluster_min_sources_for_api}) and passing validation."
+                f"Promoted after reaching {source_count} sources, exceeding the score threshold of "
+                f"{settings.cluster_score_threshold:.2f}, and passing validation."
             )
     else:
-        if previous_status != "hidden":
-            cluster.previous_status = previous_status
+        cluster.previous_status = previous_status
         cluster.status = "hidden"
-        cluster.promotion_reason = "awaiting_additional_support_or_quality"
+        cluster.promotion_reason = "; ".join(blocker.split(":", 1)[0] for blocker in promotion_blockers)
         cluster.promotion_explanation = (
-            f"Cluster remains hidden with {source_count} sources (threshold "
-            f"{settings.cluster_min_sources_for_api}). Validation: {cluster.validation_error or 'not eligible'}."
+            "Cluster remains hidden until it clears these blockers: "
+            + "; ".join(promotion_blockers)
         )
         if promotion_attempted:
             promotion_failed = True
@@ -406,6 +463,7 @@ def _create_cluster(session: Session, article: Article) -> Cluster:
         normalized_headline=article.normalized_title,
         keywords=article.keywords,
         entities=article.entities,
+        topic=article.topic,
     )
     session.add(cluster)
     session.flush()
@@ -430,6 +488,7 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
 
     for article in pending:
         article_features = _article_features(article)
+        article.topic = article_features.topic
         candidates = _load_candidate_clusters(session, article, settings)
 
         best_evaluation: CandidateEvaluation | None = None
@@ -464,13 +523,22 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
         else:
             attach_override_met = (
                 best_evaluation.signal_gate_passed
-                and best_evaluation.keyword_overlap >= settings.cluster_min_keyword_overlap
+                and (
+                    best_evaluation.keyword_overlap >= settings.cluster_min_keyword_overlap
+                    or (
+                        best_evaluation.topic_match
+                        and best_evaluation.keyword_overlap >= 1
+                        and best_evaluation.title_similarity >= 0.30
+                        and best_evaluation.time_proximity >= 0.85
+                    )
+                )
                 and best_evaluation.title_similarity >= 0.30
-                and best_evaluation.time_proximity >= 0.90
+                and best_evaluation.time_proximity >= 0.85
             )
             should_attach = best_evaluation.score >= settings.cluster_score_threshold or attach_override_met
             attach_override_components = {
                 "signal_gate_passed": best_evaluation.signal_gate_passed,
+                "topic_match": best_evaluation.topic_match,
                 "keyword_overlap": best_evaluation.keyword_overlap,
                 "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
                 "title_similarity": best_evaluation.title_similarity,
@@ -538,6 +606,7 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
             .where(
                 Cluster.status != "hidden",
                 Cluster.validation_error.is_(None),
+                Cluster.score >= settings.cluster_score_threshold,
                 source_count_subquery >= settings.cluster_min_sources_for_api,
             )
         )

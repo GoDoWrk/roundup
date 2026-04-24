@@ -32,11 +32,13 @@ def list_clusters(
     base = select(Cluster).where(
         Cluster.status != "hidden",
         Cluster.validation_error.is_(None),
+        Cluster.score >= settings.cluster_score_threshold,
         source_count_subquery >= settings.cluster_min_sources_for_api,
     )
     count_stmt = select(func.count()).select_from(Cluster).where(
         Cluster.status != "hidden",
         Cluster.validation_error.is_(None),
+        Cluster.score >= settings.cluster_score_threshold,
         source_count_subquery >= settings.cluster_min_sources_for_api,
     )
     if status:
@@ -67,6 +69,7 @@ def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> Story
         cluster is None
         or cluster.status == "hidden"
         or cluster.validation_error is not None
+        or cluster.score < settings.cluster_score_threshold
         or source_count < settings.cluster_min_sources_for_api
     ):
         raise HTTPException(status_code=404, detail="Cluster not found")

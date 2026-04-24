@@ -18,6 +18,8 @@ from app.schemas.cluster import (
     ClusterDebugThresholds,
 )
 from app.services.serialization import article_to_debug
+from app.services.clustering import _promotion_blockers
+from app.services.topics import derive_topic_from_articles
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
@@ -93,12 +95,16 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     shared_entities = _top_shared_terms(cluster, attr="entities")
     shared_keywords = _top_shared_terms(cluster, attr="keywords")
     topic_text = ", ".join((shared_entities + shared_keywords)[:3]) or "shared reporting themes"
+    cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
+
+    score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
 
     attach_count = decision_counts.get("attach_existing_cluster", 0)
     create_count = decision_counts.get("create_new_cluster", 0)
     grouping_reason = (
-        f"{attach_count} article attachments and {create_count} new-cluster decisions were made based on deterministic "
-        f"title/entity/keyword/time signals around {topic_text}."
+        f"{attach_count} article attachments and {create_count} new-cluster decisions were made within the topic "
+        f"'{cluster_topic}' using a weighted score ({score_formula}) plus a signal gate. "
+        f"The main shared themes were {topic_text}."
     )
 
     return ClusterDebugExplanation(
@@ -119,6 +125,7 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             average_entity_jaccard=average(components["entity_jaccard"]),
             average_keyword_jaccard=average(components["keyword_jaccard"]),
             average_time_proximity=average(components["time_proximity"]),
+            score_formula=score_formula,
         ),
         decision_counts={key: int(value) for key, value in sorted(decision_counts.items())},
     )
@@ -141,13 +148,21 @@ def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugRespons
     items: list[ClusterDebugItem] = []
     for cluster in rows:
         source_count = len(cluster.source_links)
+        cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
         visibility_threshold = settings.cluster_min_sources_for_api
-        promotion_eligible = source_count >= visibility_threshold and cluster.validation_error is None
+        promotion_blockers = _promotion_blockers(
+            source_count=source_count,
+            score=cluster.score,
+            validation_error=cluster.validation_error,
+            settings=settings,
+        )
+        promotion_eligible = not promotion_blockers
         items.append(
             ClusterDebugItem(
                 cluster_id=cluster.id,
                 status=cluster.status,
                 score=cluster.score,
+                topic=cluster_topic,
                 source_count=source_count,
                 visibility_threshold=visibility_threshold,
                 promotion_eligible=promotion_eligible,
@@ -155,6 +170,7 @@ def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugRespons
                 previous_status=cluster.previous_status,
                 promotion_reason=cluster.promotion_reason,
                 promotion_explanation=cluster.promotion_explanation,
+                promotion_blockers=promotion_blockers,
                 validation_error=cluster.validation_error,
                 headline=cluster.headline,
                 summary=cluster.summary,

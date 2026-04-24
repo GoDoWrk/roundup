@@ -9,6 +9,7 @@ describe("ClusterCard", () => {
         cluster={{
           cluster_id: "cluster-1",
           headline: "Transit Plan Advances",
+          topic: "Transit Plan",
           summary: "   ",
           what_changed: "",
           why_it_matters: "",

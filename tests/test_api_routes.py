@@ -84,11 +84,44 @@ def test_api_clusters_list_and_detail_return_structured_payloads(client, db_sess
     assert {"headline", "summary", "what_changed", "why_it_matters", "timeline", "sources", "score", "status"} <= set(
         item.keys()
     )
+    assert "topic" in item
     assert len(item["sources"]) == 3
 
     detail_response = client.get("/api/clusters/api-cluster")
     assert detail_response.status_code == 200
     detail_payload = detail_response.json()
     assert detail_payload["cluster_id"] == "api-cluster"
+    assert "topic" in detail_payload
     assert len(detail_payload["sources"]) == 3
     assert isinstance(detail_payload["timeline"], list)
+
+
+def test_api_clusters_detail_hides_low_score_cluster(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _cluster("low-score-cluster", now)
+    cluster.score = 0.21
+    db_session.add(cluster)
+    db_session.flush()
+
+    for idx, publisher in enumerate(["Daily One", "Daily Two", "Daily Three"], start=1):
+        article = _article(idx, cluster.id, now, publisher)
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(
+                cluster_id=cluster.id,
+                article_id=article.id,
+                similarity_score=0.21,
+                heuristic_breakdown={"decision": "attach_existing_cluster", "selected_score": 0.21},
+            )
+        )
+
+    db_session.commit()
+
+    list_response = client.get("/api/clusters")
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert all(row["cluster_id"] != "low-score-cluster" for row in list_payload["items"])
+
+    detail_response = client.get("/api/clusters/low-score-cluster")
+    assert detail_response.status_code == 404

@@ -251,3 +251,78 @@ def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session:
     assert cluster is not None
     assert cluster.validation_error is None
     assert len(cluster.source_links) == 3
+
+
+def test_cluster_topics_are_persisted_for_articles_and_clusters(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="topic-1",
+            title="State Agency Announces Water Conservation Plan",
+            normalized_title="state agency announces water conservation plan",
+            keywords=["state", "agency", "water", "conservation", "plan"],
+            entities=["State Agency"],
+            published_at=now - timedelta(hours=3),
+            publisher="Regional Daily",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="topic-2",
+            title="State Agency Expands Water Conservation Plan",
+            normalized_title="state agency expands water conservation plan",
+            keywords=["state", "agency", "water", "conservation", "plan"],
+            entities=["State Agency"],
+            published_at=now - timedelta(hours=1),
+            publisher="Metro Chronicle",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    cluster = db_session.scalars(select(Cluster)).first()
+    assert cluster is not None
+    assert cluster.topic
+    assert result.created_count == 1
+
+    articles = list(db_session.scalars(select(Article).order_by(Article.id.asc())).all())
+    assert all(article.topic for article in articles)
+    assert len({article.topic for article in articles}) == 1
+    assert articles[0].topic == cluster.topic
+
+
+def test_topic_mismatch_forces_new_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+
+    first = _article(
+        dedupe_hash="topic-match-1",
+        title="US soldier charged with using Polymarket to bet on Nicolas Maduro abduction",
+        normalized_title="us soldier charged with using polymarket to bet on nicolas maduro abduction",
+        keywords=["us", "soldier", "polymarket", "maduro", "bet"],
+        entities=["Nicolas Maduro", "Polymarket"],
+        published_at=now - timedelta(hours=2),
+        publisher="Al Jazeera",
+    )
+    first.topic = "Nicolas Maduro"
+    second = _article(
+        dedupe_hash="topic-match-2",
+        title="French police probe suspected weather device tampering after odd Polymarket bet",
+        normalized_title="french police probe suspected weather device tampering after odd polymarket bet",
+        keywords=["french", "police", "weather", "polymarket", "bet"],
+        entities=["French Police", "Polymarket"],
+        published_at=now - timedelta(hours=1),
+        publisher="NPR Topics",
+    )
+    second.topic = "Polymarket"
+
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert db_session.query(Cluster).count() == 2

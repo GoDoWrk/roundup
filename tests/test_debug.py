@@ -85,16 +85,19 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
 
     item = next(entry for entry in payload["items"] if entry["cluster_id"] == "debug-cluster")
     explanation = item["debug_explanation"]
+    assert "topic" in item
     assert "visibility_threshold" in item
     assert "promotion_eligible" in item
     assert "promoted_at" in item
     assert "previous_status" in item
     assert "promotion_reason" in item
     assert "promotion_explanation" in item
+    assert "promotion_blockers" in item
     assert explanation["grouping_reason"]
     assert "thresholds" in explanation
     assert "threshold_results" in explanation
     assert "score_breakdown" in explanation
+    assert explanation["score_breakdown"]["score_formula"]
     assert explanation["top_shared_entities"]
     assert explanation["decision_counts"]
 
@@ -124,3 +127,31 @@ def test_api_clusters_filters_out_clusters_below_min_source_count(client, db_ses
     assert response.status_code == 200
     payload = response.json()
     assert all(item["cluster_id"] != "small-cluster" for item in payload["items"])
+
+
+def test_api_clusters_filters_out_low_score_clusters(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    low_score_cluster = _cluster("low-score-cluster", now)
+    low_score_cluster.score = 0.24
+    db_session.add(low_score_cluster)
+    db_session.flush()
+
+    for idx in range(3):
+        article = _article(idx + 1, low_score_cluster.id, now, f"Publisher {idx}")
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(
+                cluster_id=low_score_cluster.id,
+                article_id=article.id,
+                similarity_score=0.2,
+                heuristic_breakdown={"decision": "attach_existing_cluster", "selected_score": 0.2},
+            )
+        )
+
+    db_session.commit()
+
+    response = client.get("/api/clusters")
+    assert response.status_code == 200
+    payload = response.json()
+    assert all(item["cluster_id"] != "low-score-cluster" for item in payload["items"])

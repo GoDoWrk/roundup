@@ -1,14 +1,14 @@
 # OPERATIONS
 
 ## Purpose
-This runbook is a fast checklist to confirm the Roundup pipeline is healthy and producing usable clusters.
+Fast checklist for confirming the Roundup pipeline is healthy and producing usable clusters.
 
-## 1) Start services
+## Start services
 ```bash
 docker compose up --build
 ```
 
-Expected startup order:
+Expected order:
 1. `db` healthy
 2. `miniflux-db` healthy
 3. `miniflux` healthy
@@ -17,81 +17,74 @@ Expected startup order:
 6. `api` and `worker` start
 7. `inspector` starts
 
-## 2) Confirm API health
+## Health checks
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/metrics
+curl http://localhost:8000/api/clusters
+curl http://localhost:8000/debug/clusters
 ```
-Expected:
-- `status` is `ok` or `degraded`
-- `db` is `ok`
-- `miniflux_reachable` is `true`
-- `miniflux_usable` is `true`
 
-## 3) Confirm ingestion source
-Default mode should be live Miniflux:
+Expected:
+- `GET /health` returns `status=ok` or `status=degraded`
+- `GET /api/clusters` shows only validated public clusters
+- `GET /debug/clusters` includes rejected or hidden clusters with reasons
+
+## Ingestion mode
+Default mode should use live Miniflux:
 - `DEMO_MODE=false`
 - `MINIFLUX_URL=http://miniflux:8080`
-- bootstrap should write `/miniflux-bootstrap/miniflux_api_key` and set runtime token automatically
+- bootstrap writes `/miniflux-bootstrap/miniflux_api_key`
 
 Demo mode is explicit only:
 - set `DEMO_MODE=true`
 - keep `SAMPLE_MINIFLUX_DATA_PATH` configured
 
-## 4) Verify pipeline activity
-Open metrics:
-```bash
-curl http://localhost:8000/metrics
-```
-Check these increase over time:
+## What to watch
+Metrics that should move:
 - `articles_ingested_total`
 - `clusters_created_total`
 - `clusters_updated_total`
 
-Check for ingestion quality/resilience:
+Metrics that indicate ingestion trouble:
 - `articles_malformed_total`
 - `ingest_source_failures_total`
 
-## 5) Verify cluster output
-Main API:
-```bash
-curl http://localhost:8000/api/clusters
-```
-Debug API:
-```bash
-curl http://localhost:8000/debug/clusters
-```
+## Cluster lifecycle
+Hidden clusters should still appear in `/debug/clusters` with:
+- `source_count`
+- `visibility_threshold`
+- promotion fields
 
-Expected:
-- Main API shows only validated clusters.
-- Debug API includes rejected clusters with validation/debug context.
-- Hidden clusters should show `source_count`, `visibility_threshold`, and promotion fields.
-- When a hidden cluster crosses threshold with valid enrichment, the same `cluster_id` should show `status=active` and a non-null `promoted_at`.
+When a hidden cluster becomes valid, it should keep the same `cluster_id`, become `status=active`, and gain a non-null `promoted_at`.
 
-Optional deterministic lifecycle check:
+Optional deterministic check:
 ```bash
 docker compose exec api python scripts/demo_cluster_promotion.py
 ```
+
 Expected phases:
-- phase 1 hidden (1 source)
-- phase 2 hidden (2 sources, threshold 3)
-- phase 3 promoted active (same cluster_id, first_seen preserved)
+- phase 1 hidden
+- phase 2 hidden
+- phase 3 promoted active
 
-## 6) Visual inspection UI
-Open `http://localhost:8080`:
-- Cluster list: check headline/summary quality and source counts.
-- Cluster detail: check timeline and source ordering.
-- Metrics page: confirm timestamps update.
+## UI check
+Open `http://localhost:8080` and confirm:
+- public cluster cards look coherent
+- story detail shows timeline and sources
+- inspector pages still render for debug use
 
-## 7) Common failure patterns
+## Common failures
 - Worker exits at startup:
-  - Missing Miniflux token/config with `DEMO_MODE=false`.
-- API/worker never start and `miniflux-bootstrap` exits:
-  - invalid `MINIFLUX_ADMIN_USERNAME`/`MINIFLUX_ADMIN_PASSWORD`
-  - Miniflux service not reachable
-  - feed seed file missing or invalid
-- `ingest_source_failures_total` rising:
-  - Miniflux API unreachable or invalid response.
-- `articles_malformed_total` rising:
-  - Upstream entries contain malformed fields and are being safely skipped.
-- `/api/clusters` empty but `/debug/clusters` not empty:
-  - Clusters are failing validation and being filtered as designed.
+  - missing Miniflux token or config with `DEMO_MODE=false`
+- `miniflux-bootstrap` exits:
+  - invalid admin credentials
+  - Miniflux not reachable
+  - seed feed file missing or invalid
+- `ingest_source_failures_total` rises:
+  - Miniflux API unreachable or returning invalid data
+- `articles_malformed_total` rises:
+  - upstream feed entries are malformed and being skipped safely
+- `/api/clusters` is empty but `/debug/clusters` is not:
+  - clusters are failing validation and filtered from the public API as intended
+

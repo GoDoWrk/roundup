@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
 from app.schemas.article import ArticleDebugItem, ArticleResponse
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.services.topics import derive_topic_from_article, derive_topic_from_articles
 
 
 def article_to_response(article: Article) -> ArticleResponse:
@@ -15,6 +16,7 @@ def article_to_response(article: Article) -> ArticleResponse:
         url=article.url,
         publisher=article.publisher,
         published_at=article.published_at,
+        topic=article.topic or derive_topic_from_article(article),
     )
 
 
@@ -28,6 +30,7 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         published_at=article.published_at,
         keywords=list(article.keywords),
         entities=list(article.entities),
+        topic=article.topic or derive_topic_from_article(article),
     )
 
 
@@ -71,6 +74,7 @@ def build_story_cluster(session: Session, cluster: Cluster) -> StoryCluster:
     return StoryCluster(
         cluster_id=cluster.id,
         headline=cluster.headline,
+        topic=cluster.topic or derive_topic_from_articles(articles),
         summary=cluster.summary,
         what_changed=cluster.what_changed,
         why_it_matters=cluster.why_it_matters,

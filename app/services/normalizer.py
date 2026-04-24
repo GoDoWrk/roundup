@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from app.services.topics import derive_topic_from_text
+
 STOPWORDS = {
     "about",
     "after",
@@ -54,6 +56,7 @@ class NormalizedArticle:
     normalized_title: str
     keywords: list[str]
     entities: list[str]
+    topic: str
     dedupe_hash: str
 
 
@@ -124,6 +127,7 @@ def normalize_miniflux_entry(entry: dict) -> NormalizedArticle:
     keyword_text = f"{title} {content[:2000]}"
     keywords = extract_keywords(keyword_text)
     entities = extract_entities(keyword_text)
+    topic = derive_topic_from_text(title, content)
 
     dedupe_hash = build_dedupe_hash(canonical_url, normalized_title_value, published_at)
 
@@ -139,5 +143,6 @@ def normalize_miniflux_entry(entry: dict) -> NormalizedArticle:
         normalized_title=normalized_title_value,
         keywords=keywords,
         entities=entities,
+        topic=topic,
         dedupe_hash=dedupe_hash,
     )

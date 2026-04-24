@@ -3,6 +3,7 @@
 export interface ClusterListRow {
   clusterId: string;
   headline: string;
+  topic: string;
   sourceCount: number;
   firstSeen: string;
   lastUpdated: string;
@@ -22,6 +23,7 @@ export function toClusterListRows(payload: ClusterListResponse): ClusterListRow[
   return payload.items.map((item) => ({
     clusterId: item.cluster_id,
     headline: item.headline,
+    topic: item.topic,
     sourceCount: item.sources.length,
     firstSeen: item.first_seen,
     lastUpdated: item.last_updated,
