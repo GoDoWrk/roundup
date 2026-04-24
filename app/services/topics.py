@@ -111,6 +111,10 @@ _ACTION_BREAKERS = {
     "arrest",
     "arrests",
     "arrested",
+    "attack",
+    "attacks",
+    "attacked",
+    "attacking",
     "approve",
     "approves",
     "approved",
@@ -255,21 +259,11 @@ _THEME_RULES: list[tuple[str, set[str]]] = [
             "crisis",
             "crises",
             "hostilities",
-            "raid",
-            "raids",
             "strike",
             "strikes",
-            "attacked",
-            "attack",
-            "attacks",
-            "bomb",
-            "bombing",
-            "bombings",
-            "shelling",
             "ceasefire",
             "cease-fire",
             "truce",
-            "mines",
             "military",
         },
     ),
@@ -278,14 +272,6 @@ _THEME_RULES: list[tuple[str, set[str]]] = [
         {
             "file",
             "files",
-            "release",
-            "releases",
-            "watchdog",
-            "probe",
-            "probes",
-            "investigate",
-            "investigates",
-            "investigation",
             "records",
             "documents",
             "transparency",
@@ -297,12 +283,6 @@ _THEME_RULES: list[tuple[str, set[str]]] = [
             "admin",
             "administration",
             "administrations",
-            "government",
-            "doj",
-            "justice",
-            "white",
-            "house",
-            "cabinet",
         },
     ),
     (
@@ -371,12 +351,10 @@ _THEME_SUBJECT_PRIORITY: dict[str, list[str]] = {
         "Sudan",
         "Taiwan",
         "China",
-        "Trump",
     ],
     "Files": [
         "Epstein",
         "Jeffrey Epstein",
-        "Maduro",
     ],
     "Admin": [
         "Trump",
@@ -389,6 +367,65 @@ _THEME_SUBJECT_PRIORITY: dict[str, list[str]] = {
         "Mamdani",
     ],
 }
+
+_TOPIC_NOISE_WORDS = {
+    "alleged",
+    "breaking",
+    "classified",
+    "current",
+    "facing",
+    "global",
+    "involved",
+    "latest",
+    "long awaited",
+    "longawaited",
+    "major",
+    "intensify",
+    "intensifies",
+    "intensifying",
+    "misleading",
+    "new",
+    "news",
+    "odd",
+    "people",
+    "person",
+    "preview",
+    "race",
+    "bet",
+    "bets",
+    "k",
+    "winning",
+    "unveils",
+    "reported",
+    "reportedly",
+    "reporting",
+    "soldier",
+    "story",
+    "tech",
+    "used",
+    "using",
+    "upending",
+    "year",
+    "years",
+    "live",
+}
+
+_GENERIC_ENTITY_HINTS = {
+    "australia",
+    "china",
+    "e u",
+    "eu",
+    "french",
+    "france",
+    "north america",
+    "south america",
+    "u k",
+    "u s",
+    "uk",
+    "us",
+}
+
+_TOPIC_THEME_WORDS = {"war", "files", "admin"}
 
 
 def normalize_whitespace(value: str) -> str:
@@ -442,6 +479,86 @@ def _candidate_subject_entities(title: str, content_text: str) -> list[str]:
     return [term for term in entities if not _is_generic_topic(term)]
 
 
+def _display_topic_token(token: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "", token)
+    if not cleaned:
+        return ""
+    if cleaned.lower().endswith("s") and len(cleaned) > 3 and token.lower().endswith(("'s", "’s")):
+        cleaned = cleaned[:-1]
+    if cleaned.isupper() or cleaned.isdigit():
+        return cleaned
+    if len(cleaned) <= 3 and cleaned.upper() == cleaned:
+        return cleaned.upper()
+    if any(ch.isupper() for ch in cleaned[1:]):
+        return cleaned[0].upper() + cleaned[1:]
+    return cleaned[:1].upper() + cleaned[1:].lower()
+
+
+def _is_topic_noise_token(token: str) -> bool:
+    normalized = _normalize_topic_key(token)
+    return (
+        not normalized
+        or len(normalized) <= 1
+        or re.fullmatch(r"v\d+", normalized) is not None
+        or normalized in STOPWORDS
+        or normalized in _TOPIC_BLOCKLIST
+        or _is_generic_entity_hint(token)
+        or normalized in _TOPIC_PREFIXES
+        or normalized in _TOPIC_SUFFIXES
+        or normalized in _REPORTING_VERBS
+        or normalized in _ACTION_BREAKERS
+        or normalized in _TOPIC_NOISE_WORDS
+    )
+
+
+def _is_generic_entity_hint(token: str) -> bool:
+    normalized = _normalize_topic_key(token)
+    variants = {normalized, normalized.replace(" ", "")}
+    if normalized.endswith(" s"):
+        stem = " ".join(normalized.split()[:-1])
+        variants.add(stem)
+        variants.add(stem.replace(" ", ""))
+    return bool(variants.intersection(_GENERIC_ENTITY_HINTS))
+
+
+def _is_strong_topic_token(token: str) -> bool:
+    normalized = _normalize_topic_key(token)
+    if _is_topic_noise_token(token):
+        return False
+    if token[:1].isupper() and not _is_generic_entity_hint(token):
+        return True
+    return len(normalized) > 4 and not _is_generic_entity_hint(token)
+
+
+def _clean_topic_tokens(tokens: list[str]) -> list[str]:
+    cleaned = [token for token in tokens if not _is_topic_noise_token(token)]
+    if cleaned:
+        return cleaned
+    return [token for token in tokens if _normalize_topic_key(token)]
+
+
+def _topic_phrase_from_tokens(tokens: list[str]) -> str:
+    cleaned = _clean_topic_tokens(tokens)
+    if not cleaned:
+        return ""
+    return " ".join(
+        display
+        for display in (_display_topic_token(token) for token in cleaned[:2])
+        if display
+    )
+
+
+def _topic_quality_score(value: str) -> tuple[int, int, int]:
+    tokens = _topic_tokens(value)
+    cleaned = _clean_topic_tokens(tokens)
+    if not cleaned:
+        return (0, 0, 0)
+    strong_count = sum(1 for token in cleaned if _is_strong_topic_token(token))
+    generic_penalty = 1 if any(_is_generic_entity_hint(token) for token in cleaned) else 0
+    theme_penalty = 1 if _normalize_topic_key(cleaned[-1]) in _TOPIC_THEME_WORDS and len(cleaned) == 2 else 0
+    return (strong_count, len(cleaned) - generic_penalty - theme_penalty, -generic_penalty)
+
+
 def _identify_theme(normalized_tokens: list[str]) -> str:
     token_set = set(normalized_tokens)
     for theme, markers in _THEME_RULES:
@@ -474,7 +591,7 @@ def _select_subject(theme: str, entities: list[str], normalized_tokens: list[str
         war_subjects = set(_THEME_SUBJECT_PRIORITY["War"])
         for entity in entities:
             entity_key = _normalize_topic_key(entity)
-            if entity_key in { _normalize_topic_key(subject) for subject in war_subjects }:
+            if entity_key in {_normalize_topic_key(subject) for subject in war_subjects}:
                 return entity
             if any(subject.lower() in entity_key for subject in war_subjects):
                 return entity
@@ -542,75 +659,122 @@ def _strip_topic_prefixes(tokens: list[str]) -> list[str]:
     return trimmed
 
 
-def _chunk_score(tokens: list[str]) -> tuple[int, int]:
-    meaningful = [token for token in tokens if _normalize_topic_key(token) not in _TOPIC_PREFIXES]
+def _chunk_score(tokens: list[str]) -> tuple[int, int, int]:
+    meaningful = _clean_topic_tokens(tokens)
     if not meaningful:
-        return (0, 0)
-    entity_bonus = 1 if any(token[:1].isupper() for token in meaningful) else 0
-    return (len(meaningful), entity_bonus)
+        return (0, 0, 0)
+    entity_bonus = 1 if any(_is_strong_topic_token(token) for token in meaningful) else 0
+    return (entity_bonus, sum(1 for token in meaningful if _is_strong_topic_token(token)), len(meaningful))
 
 
-def _leading_subject_phrase(title: str) -> str:
+def _best_topic_phrase(title: str) -> str:
     chunks = _split_topic_chunks(title)
     if not chunks:
         return ""
 
-    tokens = _strip_topic_prefixes(chunks[-1])
-    while len(tokens) > 1 and _normalize_topic_key(tokens[-1]) in _TOPIC_SUFFIXES:
-        tokens.pop()
-    if not tokens:
+    best_index = -1
+    best_tokens: list[str] = []
+    best_score: tuple[int, int, int] = (0, 0, 0)
+
+    for index, chunk in enumerate(chunks):
+        tokens = _strip_topic_prefixes(chunk)
+        while len(tokens) > 1 and _normalize_topic_key(tokens[-1]) in _TOPIC_SUFFIXES:
+            tokens.pop()
+        if not tokens:
+            continue
+        score = _chunk_score(tokens)
+        if score > best_score:
+            best_index = index
+            best_tokens = tokens
+            best_score = score
+
+    if not best_tokens:
         return ""
 
-    if len(tokens) < 2 and len(chunks) > 1:
-        for previous_chunk in reversed(chunks[:-1]):
-            for token in previous_chunk:
-                normalized = _normalize_topic_key(token)
-                if _is_generic_topic(token):
-                    continue
-                if normalized in _TOPIC_PREFIXES or normalized in _TOPIC_SUFFIXES:
-                    continue
-                if len(normalized) <= 2:
-                    continue
-                tokens = [token, *tokens]
-                if len(tokens) >= 2:
-                    break
-            if len(tokens) >= 2:
+    phrase_tokens = _clean_topic_tokens(best_tokens)
+    if len(phrase_tokens) < 2 and len(chunks) > 1:
+        for neighbor_index in range(best_index + 1, len(chunks)):
+            neighbor_tokens = _clean_topic_tokens(_strip_topic_prefixes(chunks[neighbor_index]))
+            extra = next(
+                (
+                    token
+                    for token in neighbor_tokens
+                    if _is_strong_topic_token(token) and _normalize_topic_key(token) not in {_normalize_topic_key(existing) for existing in phrase_tokens}
+                ),
+                "",
+            )
+            if extra:
+                phrase_tokens.append(extra)
                 break
+        if len(phrase_tokens) < 2:
+            for neighbor_index in range(best_index - 1, -1, -1):
+                neighbor_tokens = _clean_topic_tokens(_strip_topic_prefixes(chunks[neighbor_index]))
+                extra = next(
+                    (
+                        token
+                        for token in neighbor_tokens
+                        if _is_strong_topic_token(token) and _normalize_topic_key(token) not in {_normalize_topic_key(existing) for existing in phrase_tokens}
+                    ),
+                    "",
+                )
+                if extra:
+                    phrase_tokens.append(extra)
+                    break
 
-    return " ".join(tokens[:4])
+    return _topic_phrase_from_tokens(phrase_tokens)
 
 
-def derive_topic_from_text(title: str, content_text: str = "") -> str:
+def derive_topic_from_text(
+    title: str,
+    content_text: str = "",
+    *,
+    keywords: list[str] | None = None,
+    entities: list[str] | None = None,
+) -> str:
     combined = f"{normalize_whitespace(title)} {normalize_whitespace(content_text[:2000])}".strip()
     if not combined:
         return "General"
 
     normalized_tokens = _normalized_tokens(combined)
-    entities = _candidate_subject_entities(title, content_text)
+    entity_candidates = _candidate_subject_entities(title, content_text)
+    if entities:
+        merged_entities: list[str] = []
+        seen_entities: set[str] = set()
+        for candidate in [*entities, *entity_candidates]:
+            candidate = normalize_whitespace(candidate)
+            if not candidate:
+                continue
+            normalized_candidate = _normalize_topic_key(candidate)
+            if normalized_candidate in seen_entities:
+                continue
+            seen_entities.add(normalized_candidate)
+            merged_entities.append(candidate)
+        entity_candidates = merged_entities
 
     theme = _identify_theme(normalized_tokens)
     if theme in {"War", "Files", "Admin"}:
-        subject = _select_subject(theme, entities, normalized_tokens)
-        if subject:
-            themed = _theme_candidate_phrase(theme, title, content_text)
-            if themed == theme:
-                return f"{subject} {themed}"
+        themed = _theme_candidate_phrase(theme, title, content_text)
+        if themed != theme:
             return themed
+        subject = _select_subject(theme, entity_candidates, normalized_tokens)
+        if subject:
+            return f"{subject} {theme}"
 
-    leading_subject = _leading_subject_phrase(title)
+    leading_subject = _best_topic_phrase(title)
     if leading_subject and not _is_generic_topic(leading_subject):
         return leading_subject
 
-    keyword_candidates = [keyword for keyword in extract_keywords(combined, max_keywords=8) if not _is_generic_topic(keyword)]
+    keyword_source = keywords if keywords is not None else extract_keywords(combined, max_keywords=8)
+    keyword_candidates = [keyword for keyword in keyword_source if not _is_generic_topic(keyword)]
     if len(keyword_candidates) >= 2:
         return f"{keyword_candidates[0].title()} {keyword_candidates[1].title()}"
     if keyword_candidates:
         return keyword_candidates[0].title()
 
-    if entities:
-        if len(entities) >= 2:
-            return f"{entities[0]} {entities[1]}"
-        return entities[0]
+    if entity_candidates:
+        if len(entity_candidates) >= 2:
+            return f"{entity_candidates[0]} {entity_candidates[1]}"
+        return entity_candidates[0]
 
     fallback_words = [word for word in re.findall(r"[A-Za-z0-9]+", normalize_whitespace(title)) if len(word) > 2]
     if fallback_words:
@@ -623,10 +787,18 @@ def derive_topic_from_article(article: Article) -> str:
     if source_article is not None:
         return derive_topic_from_article(source_article)
 
+    recomputed_topic = derive_topic_from_text(
+        article.title,
+        article.content_text,
+        keywords=list(getattr(article, "keywords", []) or []),
+        entities=list(getattr(article, "entities", []) or []),
+    )
     stored_topic = normalize_whitespace(getattr(article, "topic", ""))
     if stored_topic:
+        if _topic_quality_score(recomputed_topic) > _topic_quality_score(stored_topic):
+            return recomputed_topic
         return stored_topic
-    return derive_topic_from_text(article.title, article.content_text)
+    return recomputed_topic
 
 
 def derive_topic_from_articles(articles: list[Article]) -> str:

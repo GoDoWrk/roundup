@@ -127,7 +127,7 @@ def normalize_miniflux_entry(entry: dict) -> NormalizedArticle:
     keyword_text = f"{title} {content[:2000]}"
     keywords = extract_keywords(keyword_text)
     entities = extract_entities(keyword_text)
-    topic = derive_topic_from_text(title, content)
+    topic = derive_topic_from_text(title, content, keywords=keywords, entities=entities)
 
     dedupe_hash = build_dedupe_hash(canonical_url, normalized_title_value, published_at)
 

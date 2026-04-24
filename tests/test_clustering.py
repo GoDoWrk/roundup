@@ -342,3 +342,31 @@ def test_topic_builder_prefers_human_subject_labels() -> None:
         "Trump administration moves to reclassify cannabis in major shift that could expand research",
         "Trump administration moves to reclassify cannabis in major shift that could expand research",
     ) == "Trump Admin"
+    assert derive_topic_from_text(
+        "US soldier involved in Maduro raid charged over alleged bets on capture",
+        "US soldier involved in Maduro raid charged over alleged bets on capture",
+    ) == "Maduro Raid"
+    assert derive_topic_from_text(
+        "2 young people arrested in alleged plot to attack Houston synagogue",
+        "2 young people arrested in alleged plot to attack Houston synagogue",
+    ) == "Houston Synagogue"
+    assert derive_topic_from_text(
+        "Australia news live: US approves first major Aukus submarine contract; Harvey Norman facing class action for alleged 'misleading' ads",
+        "Australia news live: US approves first major Aukus submarine contract; Harvey Norman facing class action for alleged 'misleading' ads",
+    ) == "Aukus Submarine"
+    assert derive_topic_from_text(
+        "China's DeepSeek releases preview of long-awaited V4 model as AI race intensifies",
+        "China's DeepSeek releases preview of long-awaited V4 model as AI race intensifies",
+    ) == "DeepSeek Model"
+    assert derive_topic_from_text(
+        "China's DeepSeek unveils latest models a year after upending global tech",
+        "China's DeepSeek unveils latest models a year after upending global tech",
+    ) == "DeepSeek Models"
+    assert derive_topic_from_text(
+        "US soldier arrested for $400K winning Polymarket bets on Maduro capture, DOJ says",
+        "US soldier arrested for $400K winning Polymarket bets on Maduro capture, DOJ says",
+    ) == "Maduro Capture"
+    assert derive_topic_from_text(
+        "Soldier Used Classified Information to Bet on Maduro’s Ouster, U.S. Says",
+        "Soldier Used Classified Information to Bet on Maduro’s Ouster, U.S. Says",
+    ) == "Maduro Ouster"
