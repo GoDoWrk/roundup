@@ -192,6 +192,34 @@ _TOPIC_PREFIXES = {
     "weird",
 }
 
+_TOPIC_SUFFIXES = {
+    "added",
+    "announcement",
+    "announcements",
+    "coverage",
+    "details",
+    "detail",
+    "first",
+    "funding",
+    "latest",
+    "live",
+    "move",
+    "moves",
+    "news",
+    "plan",
+    "plans",
+    "report",
+    "reporting",
+    "release",
+    "releases",
+    "story",
+    "timeline",
+    "update",
+    "updates",
+    "vote",
+    "votes",
+}
+
 _TOPIC_ANCHORS = {
     "agency",
     "agencies",
@@ -212,6 +240,154 @@ _TOPIC_ANCHORS = {
     "uk",
     "un",
     "us",
+}
+
+_THEME_RULES: list[tuple[str, set[str]]] = [
+    (
+        "War",
+        {
+            "war",
+            "wars",
+            "battle",
+            "battles",
+            "conflict",
+            "conflicts",
+            "crisis",
+            "crises",
+            "hostilities",
+            "raid",
+            "raids",
+            "strike",
+            "strikes",
+            "attacked",
+            "attack",
+            "attacks",
+            "bomb",
+            "bombing",
+            "bombings",
+            "shelling",
+            "ceasefire",
+            "cease-fire",
+            "truce",
+            "mines",
+            "military",
+        },
+    ),
+    (
+        "Files",
+        {
+            "file",
+            "files",
+            "release",
+            "releases",
+            "watchdog",
+            "probe",
+            "probes",
+            "investigate",
+            "investigates",
+            "investigation",
+            "records",
+            "documents",
+            "transparency",
+        },
+    ),
+    (
+        "Admin",
+        {
+            "admin",
+            "administration",
+            "administrations",
+            "government",
+            "doj",
+            "justice",
+            "white",
+            "house",
+            "cabinet",
+        },
+    ),
+    (
+        "Expansion",
+        {
+            "expand",
+            "expands",
+            "expanded",
+            "expansion",
+        },
+    ),
+    (
+        "Plan",
+        {
+            "plan",
+            "plans",
+            "proposal",
+            "roadmap",
+            "blueprint",
+            "timeline",
+        },
+    ),
+    (
+        "Deal",
+        {
+            "deal",
+            "deals",
+            "agreement",
+            "package",
+        },
+    ),
+    (
+        "Bill",
+        {
+            "bill",
+            "bills",
+            "funding",
+            "legislation",
+            "resolution",
+        },
+    ),
+    (
+        "Election",
+        {
+            "election",
+            "elections",
+            "vote",
+            "votes",
+            "voting",
+            "poll",
+            "polls",
+        },
+    ),
+]
+
+_THEME_SUBJECT_PRIORITY: dict[str, list[str]] = {
+    "War": [
+        "Iran",
+        "Israel",
+        "Ukraine",
+        "Russia",
+        "Lebanon",
+        "Syria",
+        "Gaza",
+        "Yemen",
+        "Sudan",
+        "Taiwan",
+        "China",
+        "Trump",
+    ],
+    "Files": [
+        "Epstein",
+        "Jeffrey Epstein",
+        "Maduro",
+    ],
+    "Admin": [
+        "Trump",
+        "Biden",
+        "Harris",
+        "Obama",
+        "Modi",
+        "Netanyahu",
+        "Starmer",
+        "Mamdani",
+    ],
 }
 
 
@@ -254,6 +430,86 @@ def _entity_candidates(text: str) -> list[str]:
 
 def _topic_tokens(text: str) -> list[str]:
     return re.findall(r"[A-Za-z][A-Za-z0-9\-']*", text)
+
+
+def _normalized_tokens(text: str) -> list[str]:
+    return [_normalize_topic_key(token) for token in _topic_tokens(text)]
+
+
+def _candidate_subject_entities(title: str, content_text: str) -> list[str]:
+    combined = f"{normalize_whitespace(title)} {normalize_whitespace(content_text[:2000])}".strip()
+    entities = _entity_candidates(combined)
+    return [term for term in entities if not _is_generic_topic(term)]
+
+
+def _identify_theme(normalized_tokens: list[str]) -> str:
+    token_set = set(normalized_tokens)
+    for theme, markers in _THEME_RULES:
+        if token_set.intersection(markers):
+            return theme
+    return ""
+
+
+def _select_subject(theme: str, entities: list[str], normalized_tokens: list[str]) -> str:
+    priority = _THEME_SUBJECT_PRIORITY.get(theme, [])
+    normalized_entities = {entity: _normalize_topic_key(entity) for entity in entities}
+
+    for preferred in priority:
+        preferred_key = _normalize_topic_key(preferred)
+        for entity, entity_key in normalized_entities.items():
+            if preferred_key == entity_key or preferred_key in entity_key or entity_key in preferred_key:
+                return entity
+
+    if theme == "Files":
+        for entity in entities:
+            if "epstein" in _normalize_topic_key(entity):
+                return entity
+
+    if theme == "Admin":
+        for entity in entities:
+            if "trump" in _normalize_topic_key(entity):
+                return entity
+
+    if theme == "War":
+        war_subjects = set(_THEME_SUBJECT_PRIORITY["War"])
+        for entity in entities:
+            entity_key = _normalize_topic_key(entity)
+            if entity_key in { _normalize_topic_key(subject) for subject in war_subjects }:
+                return entity
+            if any(subject.lower() in entity_key for subject in war_subjects):
+                return entity
+
+    if entities:
+        return entities[0]
+
+    topic_words = [token for token in normalized_tokens if len(token) > 2 and token not in STOPWORDS]
+    if topic_words:
+        return topic_words[0].title()
+
+    return ""
+
+
+def _theme_candidate_phrase(theme: str, title: str, content_text: str) -> str:
+    if theme == "War":
+        title_tokens = _normalized_tokens(title)
+        if "iran" in title_tokens:
+            return "Iran War"
+        if "ukraine" in title_tokens:
+            return "Ukraine War"
+        if "israel" in title_tokens:
+            return "Israel War"
+
+    if theme == "Files":
+        title_tokens = _normalized_tokens(title)
+        if "epstein" in title_tokens:
+            return "Epstein Files"
+
+    if theme == "Admin":
+        title_tokens = _normalized_tokens(title)
+        if "trump" in title_tokens:
+            return "Trump Admin"
+
+    return theme
 
 
 def _split_topic_chunks(title: str) -> list[list[str]]:
@@ -299,28 +555,26 @@ def _leading_subject_phrase(title: str) -> str:
     if not chunks:
         return ""
 
-    best_index = 0
-    best_score = (-1, -1)
-    for index, chunk in enumerate(chunks):
-        score = _chunk_score(chunk)
-        if score > best_score or (score == best_score and index > best_index):
-            best_score = score
-            best_index = index
-
-    tokens = _strip_topic_prefixes(chunks[best_index])
+    tokens = _strip_topic_prefixes(chunks[-1])
+    while len(tokens) > 1 and _normalize_topic_key(tokens[-1]) in _TOPIC_SUFFIXES:
+        tokens.pop()
     if not tokens:
         return ""
 
-    if len(tokens) < 3 and best_index > 0:
-        previous_chunk = chunks[best_index - 1]
-        for token in previous_chunk:
-            normalized = _normalize_topic_key(token)
-            if normalized in _TOPIC_ANCHORS or normalized in _TOPIC_PREFIXES:
-                continue
-            if len(normalized) <= 3:
-                continue
-            if token not in tokens:
+    if len(tokens) < 2 and len(chunks) > 1:
+        for previous_chunk in reversed(chunks[:-1]):
+            for token in previous_chunk:
+                normalized = _normalize_topic_key(token)
+                if _is_generic_topic(token):
+                    continue
+                if normalized in _TOPIC_PREFIXES or normalized in _TOPIC_SUFFIXES:
+                    continue
+                if len(normalized) <= 2:
+                    continue
                 tokens = [token, *tokens]
+                if len(tokens) >= 2:
+                    break
+            if len(tokens) >= 2:
                 break
 
     return " ".join(tokens[:4])
@@ -331,25 +585,36 @@ def derive_topic_from_text(title: str, content_text: str = "") -> str:
     if not combined:
         return "General"
 
+    normalized_tokens = _normalized_tokens(combined)
+    entities = _candidate_subject_entities(title, content_text)
+
+    theme = _identify_theme(normalized_tokens)
+    if theme in {"War", "Files", "Admin"}:
+        subject = _select_subject(theme, entities, normalized_tokens)
+        if subject:
+            themed = _theme_candidate_phrase(theme, title, content_text)
+            if themed == theme:
+                return f"{subject} {themed}"
+            return themed
+
     leading_subject = _leading_subject_phrase(title)
     if leading_subject and not _is_generic_topic(leading_subject):
         return leading_subject
 
-    keywords = [keyword for keyword in extract_keywords(combined, max_keywords=6) if not _is_generic_topic(keyword)]
-    if len(keywords) >= 2:
-        return f"{keywords[0].title()} {keywords[1].title()}"
-    if keywords:
-        return keywords[0].title()
+    keyword_candidates = [keyword for keyword in extract_keywords(combined, max_keywords=8) if not _is_generic_topic(keyword)]
+    if len(keyword_candidates) >= 2:
+        return f"{keyword_candidates[0].title()} {keyword_candidates[1].title()}"
+    if keyword_candidates:
+        return keyword_candidates[0].title()
 
-    entity_candidates = [
-        term for term in _entity_candidates(combined) if not _is_generic_topic(term) and len(term.split()) <= 2
-    ]
-    if entity_candidates:
-        return entity_candidates[0]
+    if entities:
+        if len(entities) >= 2:
+            return f"{entities[0]} {entities[1]}"
+        return entities[0]
 
     fallback_words = [word for word in re.findall(r"[A-Za-z0-9]+", normalize_whitespace(title)) if len(word) > 2]
     if fallback_words:
-        return " ".join(word.title() for word in fallback_words[:3])
+        return " ".join(word.title() for word in fallback_words[:2])
     return "General"
 
 

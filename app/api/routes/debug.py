@@ -98,12 +98,16 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
 
     score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
+    score_summary = (
+        "Score is a weighted blend of title similarity, shared entities, shared keywords, and recency. "
+        "Higher scores usually mean a tighter match; lower scores usually mean broader or more mixed coverage."
+    )
 
     attach_count = decision_counts.get("attach_existing_cluster", 0)
     create_count = decision_counts.get("create_new_cluster", 0)
     grouping_reason = (
         f"{attach_count} article attachments and {create_count} new-cluster decisions were made within the topic "
-        f"'{cluster_topic}' using a weighted score ({score_formula}) plus a signal gate. "
+        f"'{cluster_topic}' using a weighted score ({score_formula}). {score_summary} "
         f"The main shared themes were {topic_text}."
     )
 

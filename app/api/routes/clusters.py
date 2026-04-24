@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models import Cluster, ClusterArticle
 from app.db.session import get_db_session
 from app.schemas.cluster import ClusterListResponse, StoryCluster
+from app.services.clustering import _is_legacy_source_count_validation_error
 from app.services.serialization import build_story_cluster
 
 router = APIRouter(prefix="/api/clusters", tags=["clusters"])
@@ -28,18 +29,17 @@ def list_clusters(
         .where(ClusterArticle.cluster_id == Cluster.id)
         .scalar_subquery()
     )
+    legacy_source_count_error = f"cluster must have at least {settings.cluster_min_sources_for_api} sources"
 
     base = select(Cluster).where(
         Cluster.status != "hidden",
-        Cluster.validation_error.is_(None),
-        Cluster.score >= settings.cluster_score_threshold,
         source_count_subquery >= settings.cluster_min_sources_for_api,
+        or_(Cluster.validation_error.is_(None), Cluster.validation_error == legacy_source_count_error),
     )
     count_stmt = select(func.count()).select_from(Cluster).where(
         Cluster.status != "hidden",
-        Cluster.validation_error.is_(None),
-        Cluster.score >= settings.cluster_score_threshold,
         source_count_subquery >= settings.cluster_min_sources_for_api,
+        or_(Cluster.validation_error.is_(None), Cluster.validation_error == legacy_source_count_error),
     )
     if status:
         base = base.where(Cluster.status == status)
@@ -68,9 +68,11 @@ def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> Story
     if (
         cluster is None
         or cluster.status == "hidden"
-        or cluster.validation_error is not None
-        or cluster.score < settings.cluster_score_threshold
         or source_count < settings.cluster_min_sources_for_api
+        or (
+            cluster.validation_error is not None
+            and not _is_legacy_source_count_validation_error(cluster.validation_error, settings)
+        )
     ):
         raise HTTPException(status_code=404, detail="Cluster not found")
     return build_story_cluster(db, cluster)

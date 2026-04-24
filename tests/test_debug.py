@@ -129,7 +129,7 @@ def test_api_clusters_filters_out_clusters_below_min_source_count(client, db_ses
     assert all(item["cluster_id"] != "small-cluster" for item in payload["items"])
 
 
-def test_api_clusters_filters_out_low_score_clusters(client, db_session: Session) -> None:
+def test_api_clusters_keeps_low_score_clusters_when_they_are_valid(client, db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     low_score_cluster = _cluster("low-score-cluster", now)
     low_score_cluster.score = 0.24
@@ -154,4 +154,4 @@ def test_api_clusters_filters_out_low_score_clusters(client, db_session: Session
     response = client.get("/api/clusters")
     assert response.status_code == 200
     payload = response.json()
-    assert all(item["cluster_id"] != "low-score-cluster" for item in payload["items"])
+    assert any(item["cluster_id"] == "low-score-cluster" for item in payload["items"])

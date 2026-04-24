@@ -200,6 +200,33 @@ def _load_candidate_clusters(session: Session, article: Article, settings: Setti
     return list(session.scalars(stmt).all())
 
 
+def _is_legacy_source_count_validation_error(validation_error: str | None, settings: Settings) -> bool:
+    if not validation_error:
+        return False
+    legacy_message = f"cluster must have at least {settings.cluster_min_sources_for_api} sources"
+    return validation_error == legacy_message
+
+
+def _load_repromotable_hidden_clusters(session: Session, settings: Settings) -> list[Cluster]:
+    source_count_subquery = (
+        select(func.count())
+        .select_from(ClusterArticle)
+        .where(ClusterArticle.cluster_id == Cluster.id)
+        .scalar_subquery()
+    )
+    legacy_source_count_error = f"cluster must have at least {settings.cluster_min_sources_for_api} sources"
+    stmt: Select[tuple[Cluster]] = (
+        select(Cluster)
+        .where(
+            Cluster.status == "hidden",
+            source_count_subquery >= settings.cluster_min_sources_for_api,
+            (Cluster.validation_error.is_(None) | (Cluster.validation_error == legacy_source_count_error)),
+        )
+        .order_by(Cluster.last_updated.desc(), Cluster.id.asc())
+    )
+    return list(session.scalars(stmt).all())
+
+
 def _promotion_blockers(
     *,
     source_count: int,
@@ -214,12 +241,7 @@ def _promotion_blockers(
             f"source_count_below_threshold: needs at least {settings.cluster_min_sources_for_api} sources, has {source_count}"
         )
 
-    if score < settings.cluster_score_threshold:
-        blockers.append(
-            f"score_below_threshold: score {score:.3f} is below {settings.cluster_score_threshold:.2f}"
-        )
-
-    if validation_error:
+    if validation_error and not _is_legacy_source_count_validation_error(validation_error, settings):
         blockers.append(f"validation_failed: {validation_error}")
 
     return blockers
@@ -407,8 +429,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
             cluster.promoted_at = datetime.now(timezone.utc)
             cluster.promotion_reason = "source_count_threshold_reached_and_validation_passed"
             cluster.promotion_explanation = (
-                f"Promoted after reaching {source_count} sources, exceeding the score threshold of "
-                f"{settings.cluster_score_threshold:.2f}, and passing validation."
+                f"Promoted after reaching {source_count} sources and passing validation."
             )
     else:
         cluster.previous_status = previous_status
@@ -592,6 +613,14 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
         updated_count += 1
         timeline_deduplicated += rebuild_result.timeline_deduplicated
 
+    for cluster in _load_repromotable_hidden_clusters(session, settings):
+        rebuild_result = _rebuild_cluster(session, cluster, settings)
+        promotion_attempts += int(rebuild_result.promotion_attempted)
+        promoted_count += int(rebuild_result.promoted)
+        promotion_failures += int(rebuild_result.promotion_failed)
+        if rebuild_result.validation_failed:
+            invalid_cluster_ids.add(cluster.id)
+
     source_count_subquery = (
         select(func.count())
         .select_from(ClusterArticle)
@@ -606,7 +635,6 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
             .where(
                 Cluster.status != "hidden",
                 Cluster.validation_error.is_(None),
-                Cluster.score >= settings.cluster_score_threshold,
                 source_count_subquery >= settings.cluster_min_sources_for_api,
             )
         )

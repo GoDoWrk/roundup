@@ -96,7 +96,7 @@ def test_api_clusters_list_and_detail_return_structured_payloads(client, db_sess
     assert isinstance(detail_payload["timeline"], list)
 
 
-def test_api_clusters_detail_hides_low_score_cluster(client, db_session: Session) -> None:
+def test_api_clusters_detail_keeps_low_score_cluster_public_when_it_is_valid(client, db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     cluster = _cluster("low-score-cluster", now)
     cluster.score = 0.21
@@ -121,7 +121,7 @@ def test_api_clusters_detail_hides_low_score_cluster(client, db_session: Session
     list_response = client.get("/api/clusters")
     assert list_response.status_code == 200
     list_payload = list_response.json()
-    assert all(row["cluster_id"] != "low-score-cluster" for row in list_payload["items"])
+    assert any(row["cluster_id"] == "low-score-cluster" for row in list_payload["items"])
 
     detail_response = client.get("/api/clusters/low-score-cluster")
-    assert detail_response.status_code == 404
+    assert detail_response.status_code == 200

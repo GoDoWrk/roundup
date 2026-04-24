@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
 from app.services.clustering import cluster_new_articles
+from app.services.topics import derive_topic_from_text
 
 
 def _settings(**overrides: object) -> Settings:
@@ -326,3 +327,18 @@ def test_topic_mismatch_forces_new_cluster(db_session: Session) -> None:
 
     assert result.created_count == 2
     assert db_session.query(Cluster).count() == 2
+
+
+def test_topic_builder_prefers_human_subject_labels() -> None:
+    assert derive_topic_from_text(
+        "How Trump's Iran war is driving military dissent",
+        "How Trump's Iran war is driving military dissent",
+    ) == "Iran War"
+    assert derive_topic_from_text(
+        "US Department of Justice watchdog to probe release of Epstein files",
+        "US Department of Justice watchdog to probe release of Epstein files",
+    ) == "Epstein Files"
+    assert derive_topic_from_text(
+        "Trump administration moves to reclassify cannabis in major shift that could expand research",
+        "Trump administration moves to reclassify cannabis in major shift that could expand research",
+    ) == "Trump Admin"
