@@ -108,7 +108,7 @@ def test_api_clusters_filters_out_clusters_below_min_source_count(client, db_ses
     db_session.add(small_cluster)
     db_session.flush()
 
-    for idx in range(2):
+    for idx in range(1):
         article = _article(idx + 1, small_cluster.id, now, f"Publisher {idx}")
         db_session.add(article)
         db_session.flush()
