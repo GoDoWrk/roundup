@@ -112,7 +112,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import json,sys,urllib.request; payload=json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=5)); sys.exit(0 if payload.get('status')=='ok' else 1)",
+          "import json,sys,urllib.request; payload=json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=5)); sys.exit(0 if payload.get('status') in {'ok','degraded'} else 1)",
         ]
       interval: 15s
       timeout: 5s

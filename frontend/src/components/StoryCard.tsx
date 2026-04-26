@@ -57,6 +57,14 @@ function metricLabel(label: string, value: number): string | null {
   return Number.isFinite(value) ? `${label} ${value.toFixed(2)}` : null;
 }
 
+function safeCount(value: number | null | undefined, fallback = 0): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+
+  return value;
+}
+
 export function StoryCard({
   cluster,
   to,
@@ -71,20 +79,22 @@ export function StoryCard({
   const { preferences } = useUserPreferences();
   const normalizedVariant = normalizeVariant(variant);
   const now = Date.now();
-  const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
+  const headline = cluster.headline?.trim() || "Untitled story";
+  const sourceCount = safeCount(cluster.source_count, cluster.sources?.length ?? 0);
   const updateCount = getUpdateCount(cluster);
   const summary = cluster.summary?.trim() ?? "";
   const topic = cluster.topic?.trim();
-  const freshnessLabel = getFreshnessLabel(cluster.last_updated, now);
-  const recentlyUpdated = isRecentlyUpdated(cluster.last_updated, now);
+  const lastUpdated = cluster.last_updated ?? null;
+  const freshnessLabel = lastUpdated ? getFreshnessLabel(lastUpdated, now) : null;
+  const recentlyUpdated = lastUpdated ? isRecentlyUpdated(lastUpdated, now) : false;
   const relevanceLabel = metricLabel("Relevance", cluster.score);
   const confidenceLabel = metricLabel("Confidence", cluster.confidence_score);
-  const readableTimestamp = formatReadableTimestamp(cluster.last_updated);
-  const relativeLabel = formatRelativeTime(cluster.last_updated, now);
+  const readableTimestamp = formatReadableTimestamp(lastUpdated);
+  const relativeLabel = formatRelativeTime(lastUpdated, now);
   const hasValidTimestamp = readableTimestamp && !relativeLabel.startsWith("(");
   const imageUrl = getClusterImageUrl(cluster) ?? "";
   const saved = isSaved(cluster.cluster_id);
-  const saveLabel = saved ? `Remove saved story: ${cluster.headline}` : `Save story: ${cluster.headline}`;
+  const saveLabel = saved ? `Remove saved story: ${headline}` : `Save story: ${headline}`;
   const shouldShowSummary =
     Boolean(summary) &&
     normalizedVariant !== "timeline" &&
@@ -124,7 +134,7 @@ export function StoryCard({
     <>
       <ImageWithFallback
         src={imageUrl}
-        label={topic || cluster.headline}
+        label={topic || headline}
         className="story-card__image-frame"
         imageClassName="story-card__image"
       />
@@ -145,7 +155,7 @@ export function StoryCard({
         </div>
 
         <div className="story-card__title-row">
-          <h3 className="story-card__headline">{cluster.headline}</h3>
+          <h3 className="story-card__headline">{headline}</h3>
         </div>
 
         {shouldShowSummary && (

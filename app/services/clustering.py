@@ -27,6 +27,59 @@ from app.services.validation import validate_cluster_record
 
 logger = logging.getLogger(__name__)
 
+CLUSTER_KEYWORD_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "been",
+    "being",
+    "blank",
+    "but",
+    "by",
+    "com",
+    "continue",
+    "for",
+    "from",
+    "get",
+    "had",
+    "has",
+    "have",
+    "he",
+    "her",
+    "his",
+    "href",
+    "https",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "not",
+    "of",
+    "on",
+    "or",
+    "our",
+    "said",
+    "says",
+    "she",
+    "that",
+    "the",
+    "their",
+    "they",
+    "this",
+    "to",
+    "was",
+    "were",
+    "will",
+    "with",
+    "you",
+    "your",
+}
+
 
 @dataclass(frozen=True)
 class FeatureVector:
@@ -110,11 +163,24 @@ def _semantic_score(title_similarity: float, entity_jaccard: float, keyword_jacc
     return 0.50 * title_similarity + 0.30 * entity_jaccard + 0.20 * keyword_jaccard
 
 
+def _semantic_keywords(values: list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
+    keywords: set[str] = set()
+    for value in values or []:
+        keyword = str(value).strip().lower()
+        if keyword and keyword not in CLUSTER_KEYWORD_STOPWORDS:
+            keywords.add(keyword)
+    return keywords
+
+
+def _semantic_entities(values: list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
+    return {entity for entity in (str(value).strip() for value in values or []) if entity}
+
+
 def _article_features(article: Article) -> FeatureVector:
     return FeatureVector(
         title=article.normalized_title,
-        keywords=set(article.keywords),
-        entities=set(article.entities),
+        keywords=_semantic_keywords(article.keywords),
+        entities=_semantic_entities(article.entities),
         topic=derive_topic_from_article(article),
         published_at=article.published_at,
     )
@@ -124,8 +190,8 @@ def _cluster_features(cluster: Cluster) -> FeatureVector:
     cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
     return FeatureVector(
         title=cluster.normalized_headline,
-        keywords=set(cluster.keywords),
-        entities=set(cluster.entities),
+        keywords=_semantic_keywords(cluster.keywords),
+        entities=_semantic_entities(cluster.entities),
         topic=cluster_topic,
         published_at=cluster.last_updated,
     )
@@ -164,6 +230,12 @@ def _evaluate_candidate(
         signal_reasons.append("meaningful_keyword_overlap")
     if topic_match and semantic_score >= settings.cluster_min_topic_semantic_score:
         signal_reasons.append("topic_semantic_similarity")
+    if (
+        topic_match
+        and title_similarity >= settings.cluster_attach_override_min_title_similarity
+        and keyword_overlap > 0
+    ):
+        signal_reasons.append("topic_title_keyword_similarity")
 
     signal_gate_passed = topic_match and bool(signal_reasons)
     if not topic_match:
@@ -293,10 +365,10 @@ def _has_related_topic(left: Cluster, right: Cluster) -> bool:
 
 
 def _related_score(left: Cluster, right: Cluster, settings: Settings) -> tuple[int, int, int, datetime, str] | None:
-    left_entities = set(left.entities or [])
-    right_entities = set(right.entities or [])
-    left_keywords = set(left.keywords or [])
-    right_keywords = set(right.keywords or [])
+    left_entities = _semantic_entities(left.entities)
+    right_entities = _semantic_entities(right.entities)
+    left_keywords = _semantic_keywords(left.keywords)
+    right_keywords = _semantic_keywords(right.keywords)
     entity_overlap = len(left_entities.intersection(right_entities))
     keyword_overlap = len(left_keywords.intersection(right_keywords))
     topic_match = _has_related_topic(left, right)
@@ -483,8 +555,8 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     avg_similarity = session.scalar(similarity_stmt) or 0.0
 
     for article in articles:
-        keyword_union.update(article.keywords)
-        entity_union.update(article.entities)
+        keyword_union.update(_semantic_keywords(article.keywords))
+        entity_union.update(_semantic_entities(article.entities))
 
     cluster.first_seen = first_seen
     cluster.last_updated = last_updated
@@ -601,8 +673,8 @@ def _create_cluster(session: Session, article: Article) -> Cluster:
         score=0.0,
         status="emerging",
         normalized_headline=article.normalized_title,
-        keywords=article.keywords,
-        entities=article.entities,
+        keywords=sorted(_semantic_keywords(article.keywords)),
+        entities=sorted(_semantic_entities(article.entities)),
         topic=article.topic,
     )
     session.add(cluster)
@@ -674,6 +746,7 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                         "meaningful_entity_overlap",
                         "meaningful_keyword_overlap",
                         "topic_semantic_similarity",
+                        "topic_title_keyword_similarity",
                     }
                     for reason in best_evaluation.signal_reasons
                 )

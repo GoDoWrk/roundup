@@ -100,6 +100,11 @@ This keeps schema changes and Miniflux setup from racing the app startup.
 
 ## Public routes
 - `/` public homepage with live story cards from `/api/clusters`.
+- `/clusters` cluster directory.
+- `/saved` browser-local saved stories.
+- `/search` search across clusters, updates, and sources.
+- `/alerts` browser-local followed story alerts.
+- `/settings` browser-local display and topic preferences.
 - `/story/:clusterId` public story detail view.
 - `/inspect` operator cluster list and debug-only rejected clusters.
 - `/inspect/clusters/:clusterId` full cluster detail or debug fallback.

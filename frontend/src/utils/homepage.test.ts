@@ -7,6 +7,7 @@ import {
   getClusterImageUrl,
   getFilteredClusters,
   getUpdateCount,
+  clusterMatchesPublisher,
   previewSummary,
   selectHomepageSections,
   sortClustersByLatestUpdates,
@@ -131,6 +132,13 @@ describe("homepage utilities", () => {
     ];
 
     expect(collectSourcePublishers(clusters)).toEqual(["Example News", "Wire Service"]);
+  });
+
+  it("tolerates missing source arrays when collecting publishers", () => {
+    expect(collectSourcePublishers([cluster({ cluster_id: "a", headline: "A", sources: null as never })])).toEqual([]);
+    expect(clusterMatchesPublisher(cluster({ cluster_id: "b", headline: "B", sources: null as never }), "Example")).toBe(
+      false
+    );
   });
 
   it("selects lead, supporting, and developing homepage sections", () => {

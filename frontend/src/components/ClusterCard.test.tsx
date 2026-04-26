@@ -143,4 +143,37 @@ describe("ClusterCard", () => {
 
     expect(container.querySelector(".story-card__summary")).toBeNull();
   });
+
+  it("renders safe fallbacks for missing optional runtime fields", () => {
+    const { getByLabelText, getByText } = render(
+      <SavedStoriesProvider>
+        <FollowedStoriesProvider>
+          <ClusterCard
+            cluster={
+              {
+                cluster_id: "cluster-missing",
+                headline: "   ",
+                topic: null,
+                summary: null,
+                sources: null,
+                source_count: null,
+                primary_image_url: null,
+                thumbnail_urls: null,
+                timeline: null,
+                timeline_events: null,
+                last_updated: null,
+                confidence_score: null,
+                score: null
+              } as never
+            }
+          />
+        </FollowedStoriesProvider>
+      </SavedStoriesProvider>
+    );
+
+    getByText("Untitled story");
+    getByText(/0 sources/i);
+    getByText(/0 updates/i);
+    getByLabelText("Save story: Untitled story");
+  });
 });

@@ -29,13 +29,16 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
     miniflux_reachable = False
     miniflux_usable = False
     if settings.miniflux_base_url.strip():
-        client = MinifluxClient(
-            base_url=settings.miniflux_base_url,
-            api_token=settings.miniflux_api_token_resolved,
-            timeout_seconds=min(settings.miniflux_timeout_seconds, 2),
-        )
-        miniflux_reachable = client.check_service_reachable()
-        miniflux_usable = settings.has_miniflux_credentials and client.check_credentials()
+        try:
+            client = MinifluxClient(
+                base_url=settings.miniflux_base_url,
+                api_token=settings.miniflux_api_token_resolved,
+                timeout_seconds=min(settings.miniflux_timeout_seconds, 2),
+            )
+            miniflux_reachable = client.check_service_reachable()
+            miniflux_usable = settings.has_miniflux_credentials and client.check_credentials()
+        except Exception:
+            logger.warning("health_miniflux_check_failed", exc_info=True)
 
     status = "ok"
     if db_status != "ok":

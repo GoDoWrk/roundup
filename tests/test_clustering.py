@@ -155,6 +155,46 @@ def test_close_time_same_topic_without_semantic_overlap_creates_new_cluster(db_s
     assert second_breakdown["thresholds_met"]["signal_gate_passed"] is False
 
 
+def test_generic_stopword_keyword_overlap_does_not_attach(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="stopword-1",
+        title="Solar farm opens near county airport",
+        normalized_title="solar farm opens near county airport",
+        keywords=["the", "and", "for", "solar"],
+        entities=[],
+        published_at=now - timedelta(minutes=15),
+        publisher="Energy Desk",
+    )
+    first.topic = "Infrastructure"
+    second = _article(
+        dedupe_hash="stopword-2",
+        title="Court hears appeal in fraud case",
+        normalized_title="court hears appeal in fraud case",
+        keywords=["the", "and", "for", "court"],
+        entities=[],
+        published_at=now - timedelta(minutes=5),
+        publisher="Justice Wire",
+    )
+    second.topic = "Infrastructure"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["decision"] == "create_new_cluster"
+    assert second_breakdown["overlap_counts"]["keyword_overlap"] == 0
+    assert second_breakdown["thresholds_met"]["signal_gate_passed"] is False
+
+
 def test_clustering_batch_size_limits_articles_per_cycle(db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     fixtures = [
