@@ -343,6 +343,10 @@ def test_cluster_article_decision_log_is_structured(caplog, db_session: Session)
     assert payload["title_similarity"] > 0
     assert payload["entity_overlap"] == 1
     assert payload["keyword_overlap"] >= 2
+    assert "location_overlap" in payload
+    assert "source_match" in payload
+    assert payload["selected_cluster_id"]
+    assert "candidate_cluster_id" in payload
     assert payload["time_proximity"] > 0
     assert payload["signal_gate_passed"] is True
     assert payload["reason"] in {"attached_to_existing_cluster", "attached_to_existing_cluster_via_override"}
@@ -656,6 +660,84 @@ def test_war_adjacent_articles_do_not_collapse_into_one_cluster(db_session: Sess
 
     assert result.created_count == 2
     assert db_session.query(Cluster).count() == 2
+
+
+def test_mali_camara_story_rejects_gaza_yemen_hezbollah_but_keeps_related_updates(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    fixtures = [
+        _article(
+            dedupe_hash="mali-1",
+            title="Mali defence minister Sadio Camara says army operation secured key town",
+            normalized_title="mali defence minister sadio camara says army operation secured key town",
+            keywords=["mali", "sadio camara", "army", "operation", "town"],
+            entities=["Sadio Camara", "Mali"],
+            published_at=now - timedelta(hours=4),
+            publisher="Sahel Monitor",
+        ),
+        _article(
+            dedupe_hash="mali-2",
+            title="Sadio Camara briefs Mali cabinet on follow-up security operation",
+            normalized_title="sadio camara briefs mali cabinet on follow-up security operation",
+            keywords=["mali", "sadio camara", "cabinet", "security", "operation"],
+            entities=["Sadio Camara", "Mali"],
+            published_at=now - timedelta(hours=3, minutes=30),
+            publisher="Bamako Times",
+        ),
+        _article(
+            dedupe_hash="gaza-1",
+            title="Mediators push for Gaza ceasefire after overnight strikes",
+            normalized_title="mediators push for gaza ceasefire after overnight strikes",
+            keywords=["gaza", "ceasefire", "mediators", "strikes"],
+            entities=["Gaza"],
+            published_at=now - timedelta(hours=3),
+            publisher="World Briefing",
+        ),
+        _article(
+            dedupe_hash="yemen-1",
+            title="Landmine blast in Yemen kills civilians near coastal road",
+            normalized_title="landmine blast in yemen kills civilians near coastal road",
+            keywords=["yemen", "landmine", "civilians", "coastal road"],
+            entities=["Yemen"],
+            published_at=now - timedelta(hours=2, minutes=45),
+            publisher="Global Desk",
+        ),
+        _article(
+            dedupe_hash="lebanon-1",
+            title="Hezbollah and Lebanon officials weigh response after border exchange",
+            normalized_title="hezbollah and lebanon officials weigh response after border exchange",
+            keywords=["hezbollah", "lebanon", "border", "exchange"],
+            entities=["Hezbollah", "Lebanon"],
+            published_at=now - timedelta(hours=2, minutes=30),
+            publisher="Regional Wire",
+        ),
+    ]
+    db_session.add_all(fixtures)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.attach_decisions == 1
+    assert result.created_count == 4
+    assert db_session.query(Cluster).count() == 4
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.article_id.asc())).all())
+    by_article = {link.article.title: link for link in links if link.article is not None}
+
+    mali_first_cluster = by_article["Mali defence minister Sadio Camara says army operation secured key town"].cluster_id
+    mali_second_cluster = by_article["Sadio Camara briefs Mali cabinet on follow-up security operation"].cluster_id
+    assert mali_first_cluster == mali_second_cluster
+
+    assert by_article["Mediators push for Gaza ceasefire after overnight strikes"].cluster_id != mali_first_cluster
+    assert by_article["Landmine blast in Yemen kills civilians near coastal road"].cluster_id != mali_first_cluster
+    assert by_article["Hezbollah and Lebanon officials weigh response after border exchange"].cluster_id != mali_first_cluster
+
+    gaza_breakdown = by_article["Mediators push for Gaza ceasefire after overnight strikes"].heuristic_breakdown
+    assert gaza_breakdown["decision"] == "create_new_cluster"
+    assert gaza_breakdown["candidate_rejection_reason"] in {
+        "location_conflict_without_entity_overlap",
+        "distinct_event_signatures",
+    }
 
 
 def test_what_changed_filters_noise_terms() -> None:

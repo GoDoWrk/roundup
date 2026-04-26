@@ -39,6 +39,32 @@ def _top_shared_terms(cluster: Cluster, *, attr: str, limit: int = 5) -> list[st
     return (shared or [term for term, _ in ranked])[:limit]
 
 
+def _location_diversity_warning(cluster: Cluster) -> str | None:
+    location_terms = {
+        "gaza",
+        "iran",
+        "israel",
+        "lebanon",
+        "mali",
+        "sahel",
+        "syria",
+        "ukraine",
+        "yemen",
+    }
+    seen: set[str] = set()
+    for link in cluster.source_links:
+        article = link.article
+        if article is None:
+            continue
+        terms = {str(term).strip().lower() for term in (article.entities + article.keywords) if str(term).strip()}
+        title_terms = {part.strip().lower() for part in (article.title or "").replace("-", " ").split() if part.strip()}
+        seen.update(terms.intersection(location_terms))
+        seen.update(title_terms.intersection(location_terms))
+    if len(seen) >= 3:
+        return "cluster_location_diversity_warning"
+    return None
+
+
 def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     settings = get_settings()
     links = list(cluster.source_links)
@@ -109,6 +135,8 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
                 semantic_score=round(float(component_values.get("semantic_score") or 0.0), 4),
                 entity_overlap=int((breakdown.get("overlap_counts") or {}).get("entity_overlap") or 0),
                 keyword_overlap=int((breakdown.get("overlap_counts") or {}).get("keyword_overlap") or 0),
+                location_overlap=int((breakdown.get("overlap_counts") or {}).get("location_overlap") or 0),
+                source_match=bool(breakdown.get("selected_source_match")),
                 topic_match=bool(breakdown.get("selected_topic_match")),
                 time_proximity=round(float(component_values.get("time_proximity") or 0.0), 4),
                 signal_gate_passed=bool(met.get("signal_gate_passed")),
@@ -141,6 +169,9 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         f"'{cluster_topic}' using a weighted score ({score_formula}). {score_summary} "
         f"The main shared themes were {topic_text}."
     )
+    quality_warning = _location_diversity_warning(cluster)
+    if quality_warning:
+        warning_counts.update([quality_warning])
 
     return ClusterDebugExplanation(
         grouping_reason=grouping_reason,

@@ -92,6 +92,8 @@ class ClusterDebugJoinDecision(BaseModel):
     semantic_score: float
     entity_overlap: int
     keyword_overlap: int
+    location_overlap: int
+    source_match: bool
     topic_match: bool
     time_proximity: float
     signal_gate_passed: bool
