@@ -98,6 +98,30 @@ Optional deterministic lifecycle check:
 docker compose exec api python scripts/demo_cluster_promotion.py
 ```
 
+## Fresh install verification
+Use this sequence before release or PR handoff to confirm a clean checkout can build, migrate, and serve the expected UI/API surfaces:
+
+```bash
+cp .env.example .env
+docker compose build
+docker compose -p roundup_migration_test up -d db
+docker compose -p roundup_migration_test run --rm migrate
+docker compose -p roundup_migration_test down -v
+docker compose up --build
+```
+
+Then inspect:
+
+```bash
+curl http://localhost:8000/health
+curl "http://localhost:8000/api/clusters?limit=5"
+curl "http://localhost:8000/api/search?q=transit&limit=5"
+curl http://localhost:8000/debug/articles
+curl http://localhost:8000/debug/clusters
+```
+
+Public UI routes should render at `http://localhost:8080/`, `/saved`, `/search`, `/alerts`, and `/inspect`. Story detail can be opened with any `cluster_id` returned from `/api/clusters`.
+
 ## What to watch
 Promoted clusters in `/debug/clusters` expose:
 - `visibility_threshold`

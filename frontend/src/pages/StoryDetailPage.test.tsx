@@ -165,7 +165,8 @@ describe("StoryDetailPage", () => {
     const prior = within(timelinePanel).getByText("Route impacts were detailed");
     expect(latest.compareDocumentPosition(prior) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(timelinePanel).queryByText("Older budget context surfaced")).not.toBeInTheDocument();
-    expect(container.querySelectorAll(".story-timeline__thumbnail")).toHaveLength(2);
+    expect(container.querySelectorAll(".story-timeline__thumbnail")).toHaveLength(6);
+    expect(container.querySelectorAll(".story-timeline__thumbnail--placeholder")).toHaveLength(4);
 
     fireEvent.click(screen.getByRole("button", { name: "Load older updates" }));
     expect(await screen.findByText("Older budget context surfaced")).toBeInTheDocument();
@@ -235,6 +236,7 @@ describe("StoryDetailPage", () => {
       const records = JSON.parse(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY) ?? "[]") as FollowedStoryRecord[];
       expect(records[0].last_viewed_at).toBe("2026-04-22T04:00:00Z");
       expect(records[0].story.last_updated).toBe("2026-04-22T04:00:00Z");
+      expect(within(screen.getByRole("link", { name: /^Alerts$/ })).queryByText("1")).not.toBeInTheDocument();
     });
   });
 

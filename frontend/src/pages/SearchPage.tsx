@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchSearchResults } from "../api/client";
+import { ImageWithFallback } from "../components/ImageWithFallback";
 import type { SearchResponse, SearchResult, SearchResultType } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 
@@ -57,27 +58,15 @@ function SearchSkeletonList() {
 }
 
 function SearchResultCard({ result }: { result: SearchResult }) {
-  const [imageFailed, setImageFailed] = useState(false);
   const readable = formatReadableTimestamp(result.last_updated);
   const relative = formatRelativeTime(result.last_updated);
   const updatedLabel = readable && !relative.startsWith("(") ? `${relative} | ${readable}` : readable;
   const matchedField = matchedFieldLabel(result.matched_field);
   const topic = result.topic?.trim();
-  const showImage = Boolean(result.thumbnail_url && !imageFailed);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [result.thumbnail_url]);
 
   return (
     <article className="search-result-card" data-result-type={result.type}>
-      <div className={`search-result-card__image${showImage ? "" : " search-result-card__image--placeholder"}`}>
-        {showImage ? (
-          <img src={result.thumbnail_url ?? ""} alt="" loading="lazy" onError={() => setImageFailed(true)} />
-        ) : (
-          <span aria-hidden="true">{topic?.slice(0, 1).toUpperCase() || "R"}</span>
-        )}
-      </div>
+      <ImageWithFallback src={result.thumbnail_url} label={topic} className="search-result-card__image" />
 
       <div className="search-result-card__copy">
         <div className="search-result-card__meta">

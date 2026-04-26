@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { ImageWithFallback } from "./ImageWithFallback";
 import { useFollowedStories } from "../context/FollowedStoriesContext";
 import { useSavedStories } from "../context/SavedStoriesContext";
 import { useUserPreferences } from "../context/UserPreferencesContext";
@@ -21,7 +22,6 @@ interface ClusterCardProps {
 }
 
 export function ClusterCard({ cluster, to, highlighted = false, variant = "standard" }: ClusterCardProps) {
-  const [imageFailed, setImageFailed] = useState(false);
   const { isSaved, toggleSaved } = useSavedStories();
   const { isFollowed, updateFollowedStory } = useFollowedStories();
   const { preferences } = useUserPreferences();
@@ -37,15 +37,10 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   const hasValidTimestamp = readableTimestamp && !relativeLabel.startsWith("(");
   const className = `story-card story-card--${variant}${recentlyUpdated ? " story-card--fresh" : ""}${highlighted ? " story-card--updated" : ""}${to ? " story-card--linked" : ""}`;
   const imageUrl = getClusterImageUrl(cluster) ?? "";
-  const showImage = imageUrl.length > 0 && !imageFailed;
   const topic = cluster.topic?.trim();
   const saved = isSaved(cluster.cluster_id);
   const saveLabel = saved ? `Remove saved story: ${cluster.headline}` : `Save story: ${cluster.headline}`;
   const shouldShowSummary = Boolean(summary) && variant !== "thumbnail" && (preferences.showSummaries || variant === "lead");
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [imageUrl]);
 
   useEffect(() => {
     if (isFollowed(cluster.cluster_id)) {
@@ -55,13 +50,12 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
 
   const content = (
     <>
-      <div className={`story-card__image-frame${showImage ? "" : " story-card__image-frame--placeholder"}`}>
-        {showImage ? (
-          <img src={imageUrl} alt="" className="story-card__image" loading="lazy" onError={() => setImageFailed(true)} />
-        ) : (
-          <span aria-hidden="true">{topic?.slice(0, 1).toUpperCase() || "R"}</span>
-        )}
-      </div>
+      <ImageWithFallback
+        src={imageUrl}
+        label={topic}
+        className="story-card__image-frame"
+        imageClassName="story-card__image"
+      />
       <div className="story-card__eyebrow">
         {topic && <span className="story-card__topic">{topic}</span>}
         <span className="story-card__meta-count">

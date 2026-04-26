@@ -128,8 +128,13 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
     articles = sorted(
         (link.article for link in source_links if link.article is not None),
         key=lambda article: (article.published_at, article.id),
+        reverse=True,
     )
-    timeline_rows = list(cluster.timeline_events)
+    timeline_rows = sorted(
+        cluster.timeline_events,
+        key=lambda row: (row.timestamp, row.id or 0),
+        reverse=True,
+    )
     thumbnail_urls = _cluster_image_urls(cluster)
 
     timeline = [

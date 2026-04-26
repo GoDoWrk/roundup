@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
+import { ImageWithFallback } from "../components/ImageWithFallback";
 import { useSavedStories } from "../context/SavedStoriesContext";
 import type { SavedStoryRecord } from "../utils/savedStories";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
@@ -32,9 +33,7 @@ function SavedStoryRow({
 
   return (
     <li className={`saved-story-row${missing ? " saved-story-row--missing" : ""}`}>
-      <div className={`saved-story-row__image${imageUrl ? "" : " saved-story-row__image--placeholder"}`}>
-        {imageUrl ? <img src={imageUrl} alt="" loading="lazy" /> : <span aria-hidden="true">{topic?.[0]?.toUpperCase() || "R"}</span>}
-      </div>
+      <ImageWithFallback src={imageUrl} label={topic} className="saved-story-row__image" />
 
       <div className="saved-story-row__copy">
         {missing && <span className="saved-story-row__status">No longer in live feed</span>}

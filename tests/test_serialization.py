@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from app.db.models import Article, Cluster, ClusterArticle
+from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
 from app.services.serialization import build_story_cluster
 
 
@@ -105,3 +105,49 @@ def test_build_story_cluster_falls_back_to_raw_payload_image_when_column_is_empt
 
     assert payload.primary_image_url == "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700"
     assert payload.sources[0].image_url == "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700"
+
+
+def test_build_story_cluster_orders_public_timeline_and_sources_newest_first() -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _cluster(now)
+    older = _article(1, now, None)
+    newest = _article(3, now, None)
+    middle = _article(2, now, None)
+    cluster.source_links = [
+        ClusterArticle(article=older, similarity_score=0.9),
+        ClusterArticle(article=newest, similarity_score=0.9),
+        ClusterArticle(article=middle, similarity_score=0.9),
+    ]
+    cluster.timeline_events = [
+        ClusterTimelineEvent(
+            id=1,
+            timestamp=now + timedelta(minutes=1),
+            event="Older timeline event",
+            source_url="https://example.com/older",
+            source_title="Older",
+        ),
+        ClusterTimelineEvent(
+            id=2,
+            timestamp=now + timedelta(minutes=3),
+            event="Newest timeline event",
+            source_url="https://example.com/newest",
+            source_title="Newest",
+        ),
+        ClusterTimelineEvent(
+            id=3,
+            timestamp=now + timedelta(minutes=2),
+            event="Middle timeline event",
+            source_url="https://example.com/middle",
+            source_title="Middle",
+        ),
+    ]
+
+    payload = build_story_cluster(cluster)
+
+    assert [source.article_id for source in payload.sources] == [newest.id, middle.id, older.id]
+    assert [event.event for event in payload.timeline_events] == [
+        "Newest timeline event",
+        "Middle timeline event",
+        "Older timeline event",
+    ]
+    assert payload.timeline == payload.timeline_events

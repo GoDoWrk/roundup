@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
+import { ImageWithFallback } from "../components/ImageWithFallback";
 import { useFollowedStories } from "../context/FollowedStoriesContext";
 import type { SourceReference, StoryCluster, TimelineEvent } from "../types";
 import { formatReadableTimestamp, formatRelativeTime, formatTimestamp } from "../utils/format";
@@ -131,8 +132,13 @@ function TimelineTab({
                       </a>
                     )}
                   </div>
-                  {thumbnail && (
-                    <img className="story-timeline__thumbnail" src={thumbnail} alt="" loading="lazy" />
+                  {event.source_url && (
+                    <ImageWithFallback
+                      src={thumbnail}
+                      label={eventSource || event.source_title}
+                      className="story-timeline__thumbnail"
+                      imageClassName="story-timeline__thumbnail-image"
+                    />
                   )}
                 </li>
               );
@@ -187,7 +193,12 @@ function SourcesTab({ sources }: { sources: SourceReference[] }) {
 
         return (
           <li key={source.article_id} className="story-sources__item">
-            {source.image_url && <img className="story-sources__image" src={source.image_url} alt="" loading="lazy" />}
+            <ImageWithFallback
+              src={source.image_url}
+              label={source.publisher || title}
+              className="story-sources__image"
+              imageClassName="story-sources__image-element"
+            />
             <div className="story-sources__copy">
               {source.publisher?.trim() && <div className="story-sources__publisher">{source.publisher}</div>}
               {source.url ? (

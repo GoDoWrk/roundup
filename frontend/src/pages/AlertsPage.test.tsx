@@ -156,4 +156,25 @@ describe("AlertsPage", () => {
     expect(await screen.findByText("New update")).toBeInTheDocument();
     expect(screen.getByText("1 new update")).toBeInTheDocument();
   });
+
+  it("keeps a local followed snapshot and marks it when the live story is missing", async () => {
+    const story = buildCluster("cluster-stale", "Stale followed story");
+    saveFollowedRecords([
+      {
+        cluster_id: "cluster-stale",
+        followed_at: "2026-04-23T01:00:00Z",
+        last_viewed_at: "2026-04-23T01:00:00Z",
+        story
+      }
+    ]);
+    mockFetch({
+      "/api/clusters/cluster-stale": { status: 404, body: { detail: "Cluster not found" } }
+    });
+
+    renderAt("/alerts");
+
+    expect(await screen.findByText("No longer in live feed")).toBeInTheDocument();
+    expect(screen.getByText("Stale followed story")).toBeInTheDocument();
+    expect(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY)).toContain("Stale followed story");
+  });
 });

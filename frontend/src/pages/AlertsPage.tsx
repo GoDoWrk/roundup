@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
+import { ImageWithFallback } from "../components/ImageWithFallback";
 import { useFollowedStories } from "../context/FollowedStoriesContext";
 import type { FollowedStoryRecord } from "../utils/followedStories";
 import { isStoryUnread } from "../utils/followedStories";
@@ -35,9 +36,7 @@ function AlertStoryRow({
 
   return (
     <li className={`saved-story-row alert-story-row${missing ? " saved-story-row--missing" : ""}`}>
-      <div className={`saved-story-row__image${imageUrl ? "" : " saved-story-row__image--placeholder"}`}>
-        {imageUrl ? <img src={imageUrl} alt="" loading="lazy" /> : <span aria-hidden="true">{topic?.[0]?.toUpperCase() || "R"}</span>}
-      </div>
+      <ImageWithFallback src={imageUrl} label={topic} className="saved-story-row__image" />
 
       <div className="saved-story-row__copy">
         {unread && <span className="saved-story-row__status alert-story-row__status--unread">New update</span>}
