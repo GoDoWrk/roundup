@@ -162,6 +162,8 @@ export interface ClusterDebugJoinDecision {
   semantic_score: number;
   entity_overlap: number;
   keyword_overlap: number;
+  location_overlap: number;
+  source_match: boolean;
   topic_match: boolean;
   time_proximity: number;
   signal_gate_passed: boolean;

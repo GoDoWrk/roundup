@@ -125,7 +125,8 @@ function TimelineTab({
                   </div>
                   <div className="story-timeline__body">
                     {eventTime && <time className="story-timeline__time">{eventTime}</time>}
-                    <p className="story-timeline__event">{event.event}</p>
+                    {event.source_title?.trim() && <p className="story-timeline__event">{event.source_title}</p>}
+                    <p className="story-timeline__event muted">{event.event?.trim() || event.source_title}</p>
                     {event.source_url && eventSource && (
                       <a href={event.source_url} target="_blank" rel="noreferrer" className="story-timeline__source">
                         {eventSource}
