@@ -78,7 +78,7 @@ def _is_detail_visible(cluster: Cluster, source_count: int, settings) -> bool:
     if cluster.validation_error is not None and not _is_legacy_source_count_validation_error(cluster.validation_error, settings):
         return False
 
-    if cluster.status != "hidden" and source_count >= settings.cluster_min_sources_for_api:
+    if cluster.status != "hidden" and source_count >= settings.cluster_min_sources_for_developing_stories:
         return True
 
     candidate_min_sources = 1 if settings.cluster_show_just_in_single_source else 2

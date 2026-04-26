@@ -231,6 +231,44 @@ def test_homepage_clusters_sections_promoted_and_candidate_stories(
     assert detail_response.json()["cluster_id"] == "homepage-candidate"
 
 
+def test_api_cluster_detail_visible_when_homepage_developing_threshold_is_met(
+    client,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        miniflux_api_token="token",
+        cluster_min_sources_for_api=3,
+        cluster_min_sources_for_top_stories=3,
+        cluster_min_sources_for_developing_stories=2,
+        cluster_show_just_in_single_source=False,
+    )
+    monkeypatch.setattr(cluster_routes, "get_settings", lambda: settings)
+
+    now = datetime.now(timezone.utc)
+    cluster = _cluster("homepage-developing-visible", now)
+    db_session.add(cluster)
+    db_session.flush()
+    for idx, publisher in enumerate(["Daily One", "Daily Two"], start=1):
+        article = _article(idx, cluster.id, now, publisher)
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(ClusterArticle(cluster_id=cluster.id, article_id=article.id, similarity_score=0.7, heuristic_breakdown={}))
+    db_session.commit()
+
+    homepage_response = client.get("/api/clusters/homepage")
+    assert homepage_response.status_code == 200
+    homepage_payload = homepage_response.json()
+    assert [item["cluster_id"] for item in homepage_payload["sections"]["developing_stories"]] == [
+        "homepage-developing-visible"
+    ]
+
+    detail_response = client.get("/api/clusters/homepage-developing-visible")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["cluster_id"] == "homepage-developing-visible"
+
+
 def test_api_clusters_list_and_detail_return_structured_payloads(client, db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     api_cluster = _add_visible_cluster(db_session, "api-cluster", now, with_images=True)
