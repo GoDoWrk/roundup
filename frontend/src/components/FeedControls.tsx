@@ -36,7 +36,7 @@ export function FeedControls({
           aria-pressed={sortMode === "top"}
           onClick={() => onSortModeChange("top")}
         >
-          Sort: Relevance
+          Sort: Top Stories
         </button>
         <button
           type="button"
@@ -46,7 +46,7 @@ export function FeedControls({
           aria-pressed={sortMode === "latest"}
           onClick={() => onSortModeChange("latest")}
         >
-          Sort: Latest
+          Sort: Latest Updates
         </button>
       </div>
     </section>

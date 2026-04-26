@@ -89,6 +89,20 @@ afterEach(() => {
 });
 
 describe("SavedStoriesPage", () => {
+  it("renders a local-browser empty state without alert language", () => {
+    renderAt("/saved");
+
+    expect(screen.getByRole("heading", { name: "Saved Stories" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your saved list is empty" })).toBeInTheDocument();
+    expect(screen.getByText("Stories saved in this browser, kept locally without accounts or backend changes.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Save stories from the homepage or story detail pages to build a local reading list in this browser.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/notification/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/push/i)).not.toBeInTheDocument();
+  });
+
   it("renders saved stories newest first with metadata, thumbnail, and remove control", async () => {
     const older = buildCluster("cluster-older", "Older saved story");
     const newer = buildCluster("cluster-newer", "Newer saved story", {

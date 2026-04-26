@@ -4,6 +4,26 @@ const RECENT_UPDATE_WINDOW_MS = 60 * 60 * 1000;
 const SUMMARY_PREVIEW_LENGTH = 180;
 const TOP_SUPPORTING_COUNT = 3;
 const DEVELOPING_STORY_COUNT = 4;
+const GENERATED_PLACEHOLDER_TEXT = new Set([
+  "pending headline",
+  "pending summary",
+  "pending change",
+  "pending impact"
+]);
+
+export function readerText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (GENERATED_PLACEHOLDER_TEXT.has(normalized) || normalized.startsWith("pending ")) {
+    return null;
+  }
+
+  return trimmed;
+}
 
 export function previewSummary(text: string, maxLength = SUMMARY_PREVIEW_LENGTH): string {
   const trimmed = text.trim();
@@ -103,7 +123,7 @@ export function getUpdateCount(cluster: StoryCluster): number {
   return (cluster.timeline ?? []).length;
 }
 
-function compareDevelopingClusters(left: StoryCluster, right: StoryCluster): number {
+export function compareDevelopingClusters(left: StoryCluster, right: StoryCluster): number {
   if (left.is_developing !== right.is_developing) {
     return left.is_developing ? -1 : 1;
   }

@@ -7,8 +7,16 @@ describe("parsePrometheusMetrics", () => {
 # HELP articles_ingested_total x
 articles_ingested_total 12
 articles_deduplicated_total 2
+latest_articles_fetched 30
+latest_articles_stored 12
+latest_duplicate_articles_skipped 2
 clusters_created_total 4
 clusters_updated_total 5
+latest_candidate_clusters_created 3
+latest_visible_clusters 8
+articles_pending_clustering 1
+summaries_pending 0
+active_sources 6
 clusters_promoted_total 2
 clusters_hidden_total 11
 clusters_active_total 8
@@ -21,8 +29,16 @@ last_cluster_time 1713000200
     const parsed = parsePrometheusMetrics(raw);
     expect(parsed.articles_ingested_total).toBe(12);
     expect(parsed.articles_deduplicated_total).toBe(2);
+    expect(parsed.latest_articles_fetched).toBe(30);
+    expect(parsed.latest_articles_stored).toBe(12);
+    expect(parsed.latest_duplicate_articles_skipped).toBe(2);
     expect(parsed.clusters_created_total).toBe(4);
     expect(parsed.clusters_updated_total).toBe(5);
+    expect(parsed.latest_candidate_clusters_created).toBe(3);
+    expect(parsed.latest_visible_clusters).toBe(8);
+    expect(parsed.articles_pending_clustering).toBe(1);
+    expect(parsed.summaries_pending).toBe(0);
+    expect(parsed.active_sources).toBe(6);
     expect(parsed.clusters_promoted_total).toBe(2);
     expect(parsed.clusters_hidden_total).toBe(11);
     expect(parsed.clusters_active_total).toBe(8);

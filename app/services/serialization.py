@@ -123,7 +123,12 @@ def _string_list(value: object) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
-def build_story_cluster(cluster: Cluster) -> StoryCluster:
+def build_story_cluster(
+    cluster: Cluster,
+    *,
+    visibility: str = "public",
+    visibility_label: str = "Confirmed",
+) -> StoryCluster:
     source_links = list(cluster.source_links)
     articles = sorted(
         (link.article for link in source_links if link.article is not None),
@@ -189,4 +194,7 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         related_cluster_ids=_string_list(getattr(cluster, "related_cluster_ids", [])),
         score=cluster.score,
         status=cluster.status,
+        visibility=visibility,
+        visibility_label=visibility_label,
+        is_single_source=len(sources) == 1,
     )

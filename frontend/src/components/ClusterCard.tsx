@@ -1,17 +1,15 @@
 import { Link } from "react-router-dom";
-import { useEffect } from "react";
 import { ImageWithFallback } from "./ImageWithFallback";
-import { useFollowedStories } from "../context/FollowedStoriesContext";
 import { useSavedStories } from "../context/SavedStoriesContext";
 import { useUserPreferences } from "../context/UserPreferencesContext";
 import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import {
   getClusterImageUrl,
-  getFreshnessLabel,
   getUpdateCount,
   isRecentlyUpdated,
-  previewSummary
+  previewSummary,
+  readerText
 } from "../utils/homepage";
 
 interface ClusterCardProps {
@@ -23,15 +21,13 @@ interface ClusterCardProps {
 
 export function ClusterCard({ cluster, to, highlighted = false, variant = "standard" }: ClusterCardProps) {
   const { isSaved, toggleSaved } = useSavedStories();
-  const { isFollowed, updateFollowedStory } = useFollowedStories();
   const { preferences } = useUserPreferences();
   const now = Date.now();
   const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
   const updateCount = getUpdateCount(cluster);
-  const summary = cluster.summary?.trim() ?? "";
-  const freshnessLabel = getFreshnessLabel(cluster.last_updated, now);
+  const summary = readerText(cluster.summary) ?? "";
   const recentlyUpdated = isRecentlyUpdated(cluster.last_updated, now);
-  const scoreLabel = Number.isFinite(cluster.score) ? cluster.score.toFixed(2) : null;
+  const isCandidate = cluster.visibility === "candidate" || cluster.status === "hidden";
   const readableTimestamp = formatReadableTimestamp(cluster.last_updated);
   const relativeLabel = formatRelativeTime(cluster.last_updated, now);
   const hasValidTimestamp = readableTimestamp && !relativeLabel.startsWith("(");
@@ -41,12 +37,17 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   const saved = isSaved(cluster.cluster_id);
   const saveLabel = saved ? `Remove saved story: ${cluster.headline}` : `Save story: ${cluster.headline}`;
   const shouldShowSummary = Boolean(summary) && variant !== "thumbnail" && (preferences.showSummaries || variant === "lead");
-
-  useEffect(() => {
-    if (isFollowed(cluster.cluster_id)) {
-      updateFollowedStory(cluster);
-    }
-  }, [cluster, isFollowed, updateFollowedStory]);
+  const sourceLabel =
+    sourceCount > 0 ? `${sourceCount} source${sourceCount === 1 ? "" : "s"}` : "Sources pending";
+  const updateLabel =
+    updateCount > 0 ? `${updateCount} update${updateCount === 1 ? "" : "s"}` : "No updates yet";
+  const statusLabels = [
+    sourceCount === 1 || cluster.is_single_source ? "Single source" : null,
+    sourceCount !== 1 && cluster.is_developing ? "Developing" : null,
+    sourceCount !== 1 && !cluster.is_developing && isCandidate ? "Developing" : null,
+    recentlyUpdated ? "Updated recently" : null,
+    highlighted ? "Updated" : null
+  ].filter((label): label is string => Boolean(label));
 
   const content = (
     <>
@@ -58,18 +59,19 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
       />
       <div className="story-card__eyebrow">
         {topic && <span className="story-card__topic">{topic}</span>}
-        <span className="story-card__meta-count">
-          {sourceCount} source{sourceCount === 1 ? "" : "s"}
-        </span>
-        <span className="story-card__meta-count">
-          {updateCount} update{updateCount === 1 ? "" : "s"}
-        </span>
-        {freshnessLabel && recentlyUpdated && <span className="story-card__freshness">{freshnessLabel}</span>}
-        {highlighted && <span className="story-card__refresh-badge">Updated since last refresh</span>}
+        <span className="story-card__meta-count">{sourceLabel}</span>
+        <span className="story-card__meta-count">{updateLabel}</span>
+        {statusLabels.map((label) => (
+          <span
+            key={label}
+            className={`story-card__status${label === "Single source" || isCandidate ? " story-card__status--candidate" : ""}`}
+          >
+            {label}
+          </span>
+        ))}
       </div>
       <div className="story-card__title-row">
         <h3 className="story-card__headline">{cluster.headline}</h3>
-        {scoreLabel && <span className="story-card__score">{scoreLabel}</span>}
       </div>
       {shouldShowSummary && (
         <p className="story-card__summary">{previewSummary(summary, variant === "supporting" ? 96 : undefined)}</p>

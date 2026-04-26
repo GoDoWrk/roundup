@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FollowedStoriesProvider } from "../context/FollowedStoriesContext";
 import { SavedStoriesProvider } from "../context/SavedStoriesContext";
 import type { StoryCluster } from "../types";
 import { HomePage } from "./HomePage";
@@ -15,9 +14,7 @@ function renderHome() {
   return render(
     <MemoryRouter>
       <SavedStoriesProvider>
-        <FollowedStoriesProvider>
-          <HomePage />
-        </FollowedStoriesProvider>
+        <HomePage />
       </SavedStoriesProvider>
     </MemoryRouter>
   );
@@ -94,10 +91,56 @@ function buildCluster(
 
 function clusterResponse(items: StoryCluster[]) {
   return {
-    total: items.length,
-    limit: 20,
-    offset: 0,
-    items
+    sections: {
+      top_stories: items,
+      developing_stories: [],
+      just_in: []
+    },
+    status: {
+      visible_clusters: items.length,
+      candidate_clusters: 0,
+      articles_fetched_latest_run: items.length,
+      articles_stored_latest_run: items.length,
+      duplicate_articles_skipped_latest_run: 0,
+      failed_source_count: 0,
+      active_sources: 1,
+      last_ingestion: "2026-04-23T00:00:00Z",
+      articles_pending: 0,
+      summaries_pending: 0
+    },
+    thresholds: {
+      min_sources_for_top_stories: 2,
+      min_sources_for_developing_stories: 2,
+      show_just_in_single_source: true,
+      max_top_stories: 6,
+      max_developing_stories: 8,
+      max_just_in: 10
+    }
+  };
+}
+
+function homepageResponse(sections: {
+  top_stories?: StoryCluster[];
+  developing_stories?: StoryCluster[];
+  just_in?: StoryCluster[];
+}) {
+  const items = [
+    ...(sections.top_stories ?? []),
+    ...(sections.developing_stories ?? []),
+    ...(sections.just_in ?? [])
+  ];
+  return {
+    ...clusterResponse(items),
+    sections: {
+      top_stories: sections.top_stories ?? [],
+      developing_stories: sections.developing_stories ?? [],
+      just_in: sections.just_in ?? []
+    },
+    status: {
+      ...clusterResponse(items).status,
+      visible_clusters: (sections.top_stories ?? []).length + (sections.developing_stories ?? []).length,
+      candidate_clusters: (sections.just_in ?? []).length
+    }
   };
 }
 
@@ -143,7 +186,7 @@ describe("HomePage", () => {
     expect(screen.getByText(/returned 500/i)).toBeInTheDocument();
   });
 
-  it("uses the highest relevance cluster as the default lead story and renders supporting stories", async () => {
+  it("uses the highest ranked cluster as the default lead story and renders supporting stories", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -164,6 +207,7 @@ describe("HomePage", () => {
     expect(cards[0]).toHaveAttribute("data-card-variant", "lead");
     expect(cards[0]).toHaveTextContent("Highest score story");
     expect(cards[0]).toHaveTextContent("3 sources");
+    expect(cards[0]).not.toHaveTextContent("0.95");
     expect(within(cards[0]).getByRole("link", { name: /highest score story/i })).toHaveAttribute("href", "/story/cluster-2");
     expect(cards[1]).toHaveTextContent("Second supporting story");
     expect(cards[0].querySelector("img")).toHaveAttribute("src", "https://example.com/lead.jpg");
@@ -189,7 +233,7 @@ describe("HomePage", () => {
     expect(window.localStorage.getItem("roundup-saved-stories-v1")).toBe("[]");
   });
 
-  it("can switch from relevance sorting to latest sorting", async () => {
+  it("can switch from top story sorting to latest update sorting", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -201,7 +245,7 @@ describe("HomePage", () => {
     renderHome();
     await waitFor(() => expect(leadCard()).toHaveTextContent("Older but higher score"));
 
-    fireEvent.click(screen.getByRole("button", { name: /sort: latest/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sort: latest updates/i }));
 
     await waitFor(() => expect(leadCard()).toHaveTextContent("Newer but lower score"));
   });
@@ -227,15 +271,19 @@ describe("HomePage", () => {
   it("prioritizes developing stories by is_developing and latest update after top stories", async () => {
     mockFetch({
       status: 200,
-      body: clusterResponse([
-        buildCluster("cluster-1", "Lead", 0.99, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-2", "Support one", 0.9, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-3", "Support two", 0.89, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-4", "Support three", 0.88, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-5", "Developing older", 0.5, "2026-04-23T01:00:00Z", { is_developing: true }),
-        buildCluster("cluster-6", "Developing newer", 0.4, "2026-04-23T03:00:00Z", { is_developing: true }),
-        buildCluster("cluster-7", "Recent active", 0.7, "2026-04-23T04:00:00Z")
-      ])
+      body: homepageResponse({
+        top_stories: [
+          buildCluster("cluster-1", "Lead", 0.99, "2026-04-23T00:00:00Z"),
+          buildCluster("cluster-2", "Support one", 0.9, "2026-04-23T00:00:00Z"),
+          buildCluster("cluster-3", "Support two", 0.89, "2026-04-23T00:00:00Z"),
+          buildCluster("cluster-4", "Support three", 0.88, "2026-04-23T00:00:00Z")
+        ],
+        developing_stories: [
+          buildCluster("cluster-5", "Developing older", 0.5, "2026-04-23T01:00:00Z", { is_developing: true }),
+          buildCluster("cluster-6", "Developing newer", 0.4, "2026-04-23T03:00:00Z", { is_developing: true }),
+          buildCluster("cluster-7", "Recent active", 0.7, "2026-04-23T04:00:00Z")
+        ]
+      })
     });
 
     renderHome();
@@ -245,6 +293,30 @@ describe("HomePage", () => {
     expect(cards[0]).toHaveTextContent("Developing newer");
     expect(cards[1]).toHaveTextContent("Developing older");
     expect(cards[2]).toHaveTextContent("Recent active");
+  });
+
+  it("renders just in candidate stories without a public detail link", async () => {
+    mockFetch({
+      status: 200,
+      body: homepageResponse({
+        just_in: [
+          buildCluster("candidate-1", "Single source item", 1, "2026-04-23T04:00:00Z", {
+            status: "hidden",
+            visibility: "candidate",
+            visibility_label: "Single source",
+            is_single_source: true
+          })
+        ]
+      })
+    });
+
+    renderHome();
+
+    const justIn = await screen.findByRole("region", { name: "Just In" });
+    const card = within(justIn).getByTestId("story-card");
+    expect(card).toHaveTextContent("Single source item");
+    expect(card).toHaveTextContent("Single source");
+    expect(within(card).queryByRole("link", { name: /single source item/i })).not.toBeInTheDocument();
   });
 
   it("renders a placeholder visual when no image is available", async () => {
@@ -316,7 +388,7 @@ describe("HomePage", () => {
     });
 
     await waitFor(() => expect(screen.getByText("Transit Plan Revised")).toBeInTheDocument());
-    expect(screen.getByText("Updated since last refresh")).toBeInTheDocument();
+    expect(screen.getByText("Updated")).toBeInTheDocument();
     expect(callCount).toBe(2);
   });
 });

@@ -119,6 +119,8 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             entity_overlap_threshold=settings.cluster_min_entity_overlap,
             keyword_overlap_threshold=settings.cluster_min_keyword_overlap,
             min_sources_for_api=settings.cluster_min_sources_for_api,
+            min_sources_for_top_stories=settings.cluster_min_sources_for_top_stories,
+            min_sources_for_developing_stories=settings.cluster_min_sources_for_developing_stories,
         ),
         threshold_results=threshold_results,
         top_shared_entities=shared_entities,

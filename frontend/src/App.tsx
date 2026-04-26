@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   BrowserRouter,
   Link,
@@ -9,38 +9,22 @@ import {
   Routes,
   useParams
 } from "react-router-dom";
-import { FollowedStoriesProvider, useFollowedStories } from "./context/FollowedStoriesContext";
 import { SavedStoriesProvider } from "./context/SavedStoriesContext";
 import { UserPreferencesProvider, useUserPreferences } from "./context/UserPreferencesContext";
 import { ClusterDetailPage } from "./pages/ClusterDetailPage";
 import { ClusterListPage } from "./pages/ClusterListPage";
-import { AlertsPage } from "./pages/AlertsPage";
 import { HomePage } from "./pages/HomePage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { SavedStoriesPage } from "./pages/SavedStoriesPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StoryDetailPage } from "./pages/StoryDetailPage";
-import { formatUnreadCount } from "./utils/followedStories";
 
 const primaryNavItems = [
   { label: "Home", to: "/", icon: "H", end: true },
-  { label: "Clusters", to: "/clusters", icon: "C" },
   { label: "Saved", to: "/saved", icon: "S" },
-  { label: "Search", to: "/search", icon: "Q" },
-  { label: "Alerts", to: "/alerts", icon: "A" },
+  { label: "Inspector", to: "/inspect", icon: "I" },
   { label: "Settings", to: "/settings", icon: "G" }
-];
-
-const topicLinks = [
-  { label: "World", slug: "world" },
-  { label: "U.S.", slug: "us" },
-  { label: "Politics", slug: "politics" },
-  { label: "Business", slug: "business" },
-  { label: "Technology", slug: "technology" },
-  { label: "Science", slug: "science" },
-  { label: "Health", slug: "health" },
-  { label: "More", slug: "more" }
 ];
 
 function RoundupMark() {
@@ -52,8 +36,7 @@ function RoundupMark() {
 }
 
 function AppShell() {
-  const { preferences, resolvedTheme, updatePreferences } = useUserPreferences();
-  const { unreadCount } = useFollowedStories();
+  const { preferences, resolvedTheme } = useUserPreferences();
   const darkMode = resolvedTheme === "dark";
   const shellClassName = [
     "app-shell",
@@ -72,109 +55,22 @@ function AppShell() {
         </Link>
 
         <nav className="app-sidebar__section app-sidebar__section--primary" aria-label="Primary navigation">
-          {primaryNavItems.map((item) => {
-            const showAlertsBadge = item.to === "/alerts" && unreadCount > 0;
-
-            return (
-              <NavLink key={item.to} to={item.to} end={item.end} className="app-nav-link">
-                <span className="app-nav-link__icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-                <span>{item.label}</span>
-                {showAlertsBadge && (
-                  <span className="app-nav-link__badge" aria-hidden="true">
-                    {formatUnreadCount(unreadCount)}
-                  </span>
-                )}
-              </NavLink>
-            );
-          })}
-          <NavLink to="/inspect" className="app-nav-link app-nav-link--operator">
-            <span className="app-nav-link__icon" aria-hidden="true">
-              I
-            </span>
-            <span>Inspector</span>
-          </NavLink>
-        </nav>
-
-        <nav className="app-sidebar__section app-sidebar__section--topics" aria-label="Topics">
-          <p>Topics</p>
-          {topicLinks.map((topic) => (
-            <NavLink key={topic.slug} to={`/topic/${topic.slug}`} className="app-topic-link">
-              {topic.label}
+          {primaryNavItems.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end} className="app-nav-link">
+              <span className="app-nav-link__icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
-        <div className="app-sidebar__bottom">
-          <NavLink to="/settings" className="app-nav-link">
-            <span className="app-nav-link__icon" aria-hidden="true">
-              G
-            </span>
-            <span>Settings</span>
-          </NavLink>
-          <label className="theme-switch">
-            <span>Dark mode</span>
-            <input
-              type="checkbox"
-              checked={darkMode}
-              onChange={(event) => updatePreferences({ theme: event.target.checked ? "dark" : "light" })}
-              aria-label="Dark mode"
-            />
-            <span className="theme-switch__track" aria-hidden="true" />
-          </label>
-        </div>
       </aside>
 
       <main className="app-main">
         <Outlet />
       </main>
     </div>
-  );
-}
-
-function PlaceholderPage({ title, eyebrow, children }: { title: string; eyebrow?: string; children: ReactNode }) {
-  return (
-    <div className="placeholder-page">
-      <section className="placeholder-panel">
-        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-        <h1>{title}</h1>
-        <div>{children}</div>
-      </section>
-    </div>
-  );
-}
-
-function ClustersPlaceholderPage() {
-  return (
-    <PlaceholderPage title="Clusters" eyebrow="Story clusters">
-      <p>
-        The live home feed already shows the current public clusters. A dedicated cluster browsing view can build on the
-        same API without changing the backend contract.
-      </p>
-      <div className="placeholder-actions">
-        <Link className="primary-button" to="/">
-          View top stories
-        </Link>
-        <Link className="secondary-button" to="/inspect">
-          Open inspector
-        </Link>
-      </div>
-    </PlaceholderPage>
-  );
-}
-
-function TopicPlaceholderPage() {
-  const { topicSlug = "" } = useParams();
-  const topic = useMemo(
-    () => topicLinks.find((item) => item.slug === topicSlug)?.label ?? topicSlug.replace(/-/g, " "),
-    [topicSlug]
-  );
-
-  return (
-    <PlaceholderPage title={topic || "Topic"} eyebrow="Topic">
-      <p>This topic route is reserved for live topic filtering. It does not hardcode story content.</p>
-    </PlaceholderPage>
   );
 }
 
@@ -212,21 +108,19 @@ export function AppRoutes() {
         element={
           <UserPreferencesProvider>
             <SavedStoriesProvider>
-              <FollowedStoriesProvider>
-                <AppShell />
-              </FollowedStoriesProvider>
+              <AppShell />
             </SavedStoriesProvider>
           </UserPreferencesProvider>
         }
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/story/:clusterId" element={<StoryDetailPage />} />
-        <Route path="/clusters" element={<ClustersPlaceholderPage />} />
+        <Route path="/clusters" element={<Navigate to="/" replace />} />
         <Route path="/saved" element={<SavedStoriesPage />} />
         <Route path="/search" element={<SearchPage />} />
-        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/alerts" element={<Navigate to="/saved" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/topic/:topicSlug" element={<TopicPlaceholderPage />} />
+        <Route path="/topic/:topicSlug" element={<Navigate to="/" replace />} />
       </Route>
       <Route path="/inspect" element={<AppLayout />}>
         <Route index element={<ClusterListPage />} />

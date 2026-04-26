@@ -1,34 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSources } from "../api/client";
+import { useSavedStories } from "../context/SavedStoriesContext";
 import { useUserPreferences } from "../context/UserPreferencesContext";
 import type { SourceHealthItem, SourceListResponse } from "../types";
 import { formatReadableTimestamp } from "../utils/format";
 import {
-  TOPIC_PREFERENCES,
-  type DefaultViewPreference,
+  DEFAULT_USER_PREFERENCES,
   type ThemePreference
 } from "../utils/userPreferences";
 
-type SettingsTab = "preferences" | "alerts" | "sources" | "account" | "privacy";
+type SettingsTab = "preferences" | "sources";
 
 const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
   { id: "preferences", label: "Preferences" },
-  { id: "alerts", label: "Alerts" },
-  { id: "sources", label: "Sources" },
-  { id: "account", label: "Account" },
-  { id: "privacy", label: "Privacy" }
+  { id: "sources", label: "Sources" }
 ];
 
 const themeOptions: Array<{ value: ThemePreference; label: string }> = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
   { value: "system", label: "System" }
-];
-
-const defaultViewOptions: Array<{ value: DefaultViewPreference; label: string }> = [
-  { value: "timeline", label: "Timeline" },
-  { value: "summary", label: "Summary" },
-  { value: "sources", label: "Sources" }
 ];
 
 function ToggleSwitch({
@@ -54,16 +45,6 @@ function ToggleSwitch({
       />
       <span className="settings-switch__track" aria-hidden="true" />
     </label>
-  );
-}
-
-function PlaceholderTab({ title, children }: { title: string; children: string }) {
-  return (
-    <section className="settings-placeholder-panel" aria-labelledby={`settings-${title.toLowerCase()}-heading`}>
-      <p className="eyebrow">Not configured</p>
-      <h2 id={`settings-${title.toLowerCase()}-heading`}>{title}</h2>
-      <p>{children}</p>
-    </section>
   );
 }
 
@@ -186,7 +167,7 @@ export function SettingsPage() {
   const [sourcesError, setSourcesError] = useState<string | null>(null);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const { preferences, updatePreferences } = useUserPreferences();
-  const selectedTopics = new Set(preferences.topics);
+  const { savedStories, savedCount, unsaveStory } = useSavedStories();
 
   const loadSources = useCallback(async () => {
     setSourcesLoading(true);
@@ -209,17 +190,14 @@ export function SettingsPage() {
     }
   }, [activeTab, loadSources, sourcesLoaded, sourcesLoading]);
 
-  function toggleTopic(topicId: string, checked: boolean) {
-    updatePreferences((current) => {
-      const nextTopics = new Set(current.topics);
-      if (checked) {
-        nextTopics.add(topicId);
-      } else {
-        nextTopics.delete(topicId);
-      }
+  function clearSavedStories() {
+    for (const record of savedStories) {
+      unsaveStory(record.cluster_id);
+    }
+  }
 
-      return { ...current, topics: [...nextTopics] };
-    });
+  function resetPreferences() {
+    updatePreferences(DEFAULT_USER_PREFERENCES);
   }
 
   return (
@@ -259,6 +237,7 @@ export function SettingsPage() {
           <div className="settings-preferences-grid">
             <section className="settings-card" aria-labelledby="settings-display-heading">
               <h2 id="settings-display-heading">Display</h2>
+              <p>These preferences change the local interface immediately in this browser.</p>
 
               <div className="settings-field">
                 <span className="settings-field__label">Theme</span>
@@ -284,35 +263,6 @@ export function SettingsPage() {
                 checked={preferences.compactMode}
                 onChange={(checked) => updatePreferences({ compactMode: checked })}
               />
-              <ToggleSwitch
-                label="Autoplay videos"
-                checked={preferences.autoplayVideos}
-                disabled
-                onChange={() => undefined}
-              />
-
-              <h3>Content</h3>
-
-              <label className="settings-field">
-                <span className="settings-field__label">Default view</span>
-                <select
-                  value={preferences.defaultView}
-                  onChange={(event) => updatePreferences({ defaultView: event.target.value as DefaultViewPreference })}
-                >
-                  {defaultViewOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="settings-field">
-                <span className="settings-field__label">Language</span>
-                <select value={preferences.language} onChange={() => undefined}>
-                  <option value="en">English</option>
-                </select>
-              </label>
 
               <ToggleSwitch
                 label="Show summaries"
@@ -321,50 +271,28 @@ export function SettingsPage() {
               />
             </section>
 
-            <section className="settings-card" aria-labelledby="settings-topics-heading">
-              <h2 id="settings-topics-heading">Topics</h2>
-              <p>Choose topics you want to see more of.</p>
+            <section className="settings-card" aria-labelledby="settings-local-data-heading">
+              <h2 id="settings-local-data-heading">Local Data</h2>
+              <p>Clear data stored only in this browser.</p>
 
-              <div className="settings-topic-list">
-                {TOPIC_PREFERENCES.map((topic) => (
-                  <label key={topic.id} className="settings-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={selectedTopics.has(topic.id)}
-                      onChange={(event) => toggleTopic(topic.id, event.target.checked)}
-                    />
-                    <span>{topic.label}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="settings-custom-topic" aria-disabled="true">
-                <button type="button" disabled>
-                  +
+              <div className="settings-actions">
+                <button type="button" className="secondary-button" onClick={clearSavedStories} disabled={savedCount === 0}>
+                  Clear saved stories
                 </button>
-                <span>Add custom topic</span>
+                <button type="button" className="secondary-button" onClick={resetPreferences}>
+                  Reset preferences
+                </button>
               </div>
+
+              <p className="muted">
+                {savedCount} saved {savedCount === 1 ? "story" : "stories"} in this browser.
+              </p>
             </section>
           </div>
         )}
 
-        {activeTab === "alerts" && (
-          <PlaceholderTab title="Alerts">
-            Alert delivery is reserved for a later notification system and is disabled in this local-only settings pass.
-          </PlaceholderTab>
-        )}
         {activeTab === "sources" && (
           <SourcesTab data={sources} error={sourcesError} loading={sourcesLoading} onRefresh={() => void loadSources()} />
-        )}
-        {activeTab === "account" && (
-          <PlaceholderTab title="Account">
-            Accounts are intentionally not part of this PR, so there are no login, profile, or authentication settings.
-          </PlaceholderTab>
-        )}
-        {activeTab === "privacy" && (
-          <PlaceholderTab title="Privacy">
-            Privacy controls will remain local until Roundup adds user accounts or server-side preference storage.
-          </PlaceholderTab>
         )}
       </main>
     </div>

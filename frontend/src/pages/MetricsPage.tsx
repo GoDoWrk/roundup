@@ -49,6 +49,43 @@ export function MetricsPage() {
     return String(value);
   }
 
+  const metricRows: Array<[string, number | null, "number" | "time"]> = metrics
+    ? [
+        ["latest_articles_fetched", metrics.latest_articles_fetched, "number"],
+        ["latest_articles_stored", metrics.latest_articles_stored, "number"],
+        ["latest_duplicate_articles_skipped", metrics.latest_duplicate_articles_skipped, "number"],
+        ["latest_articles_malformed", metrics.latest_articles_malformed, "number"],
+        ["latest_failed_source_count", metrics.latest_failed_source_count, "number"],
+        ["latest_candidate_clusters_created", metrics.latest_candidate_clusters_created, "number"],
+        ["latest_clusters_updated", metrics.latest_clusters_updated, "number"],
+        ["latest_clusters_hidden", metrics.latest_clusters_hidden, "number"],
+        ["latest_clusters_promoted", metrics.latest_clusters_promoted, "number"],
+        ["latest_visible_clusters", metrics.latest_visible_clusters, "number"],
+        ["articles_pending_clustering", metrics.articles_pending_clustering, "number"],
+        ["summaries_pending", metrics.summaries_pending, "number"],
+        ["active_sources", metrics.active_sources, "number"],
+        ["articles_ingested_total", metrics.articles_ingested_total, "number"],
+        ["articles_deduplicated_total", metrics.articles_deduplicated_total, "number"],
+        ["articles_malformed_total", metrics.articles_malformed_total, "number"],
+        ["ingest_source_failures_total", metrics.ingest_source_failures_total, "number"],
+        ["clusters_created_total", metrics.clusters_created_total, "number"],
+        ["clusters_updated_total", metrics.clusters_updated_total, "number"],
+        ["cluster_candidates_evaluated_total", metrics.cluster_candidates_evaluated_total, "number"],
+        ["cluster_signal_rejected_total", metrics.cluster_signal_rejected_total, "number"],
+        ["cluster_attach_decisions_total", metrics.cluster_attach_decisions_total, "number"],
+        ["cluster_new_decisions_total", metrics.cluster_new_decisions_total, "number"],
+        ["cluster_low_confidence_new_total", metrics.cluster_low_confidence_new_total, "number"],
+        ["cluster_validation_rejected_total", metrics.cluster_validation_rejected_total, "number"],
+        ["clusters_promoted_total", metrics.clusters_promoted_total, "number"],
+        ["clusters_hidden_total", metrics.clusters_hidden_total, "number"],
+        ["clusters_active_total", metrics.clusters_active_total, "number"],
+        ["cluster_promotion_attempts_total", metrics.cluster_promotion_attempts_total, "number"],
+        ["cluster_promotion_failures_total", metrics.cluster_promotion_failures_total, "number"],
+        ["last_ingest_time", metrics.last_ingest_time, "time"],
+        ["last_cluster_time", metrics.last_cluster_time, "time"]
+      ]
+    : [];
+
   return (
     <section className="section">
       <div className="controls">
@@ -76,50 +113,12 @@ export function MetricsPage() {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>articles_ingested_total</td>
-              <td>{valueDisplay(metrics.articles_ingested_total)}</td>
-            </tr>
-            <tr>
-              <td>articles_deduplicated_total</td>
-              <td>{valueDisplay(metrics.articles_deduplicated_total)}</td>
-            </tr>
-            <tr>
-              <td>clusters_created_total</td>
-              <td>{valueDisplay(metrics.clusters_created_total)}</td>
-            </tr>
-            <tr>
-              <td>clusters_updated_total</td>
-              <td>{valueDisplay(metrics.clusters_updated_total)}</td>
-            </tr>
-            <tr>
-              <td>clusters_promoted_total</td>
-              <td>{valueDisplay(metrics.clusters_promoted_total)}</td>
-            </tr>
-            <tr>
-              <td>clusters_hidden_total</td>
-              <td>{valueDisplay(metrics.clusters_hidden_total)}</td>
-            </tr>
-            <tr>
-              <td>clusters_active_total</td>
-              <td>{valueDisplay(metrics.clusters_active_total)}</td>
-            </tr>
-            <tr>
-              <td>cluster_promotion_attempts_total</td>
-              <td>{valueDisplay(metrics.cluster_promotion_attempts_total)}</td>
-            </tr>
-            <tr>
-              <td>cluster_promotion_failures_total</td>
-              <td>{valueDisplay(metrics.cluster_promotion_failures_total)}</td>
-            </tr>
-            <tr>
-              <td>last_ingest_time</td>
-              <td>{formatTimestamp(metrics.last_ingest_time)}</td>
-            </tr>
-            <tr>
-              <td>last_cluster_time</td>
-              <td>{formatTimestamp(metrics.last_cluster_time)}</td>
-            </tr>
+            {metricRows.map(([name, value, type]) => (
+              <tr key={name}>
+                <td>{name}</td>
+                <td>{type === "time" ? formatTimestamp(value) : valueDisplay(value)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}

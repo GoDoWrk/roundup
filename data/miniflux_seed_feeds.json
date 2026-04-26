@@ -30,5 +30,21 @@
   {
     "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "category": "Business"
+  },
+  {
+    "url": "https://feeds.skynews.com/feeds/rss/world.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://abcnews.go.com/abcnews/internationalheadlines",
+    "category": "World News"
+  },
+  {
+    "url": "https://www.cbsnews.com/latest/rss/world",
+    "category": "World News"
+  },
+  {
+    "url": "https://feeds.nbcnews.com/nbcnews/public/world",
+    "category": "World News"
   }
 ]

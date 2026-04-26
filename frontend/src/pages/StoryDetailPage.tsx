@@ -3,10 +3,10 @@ import { Link, useParams } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
 import { ImageWithFallback } from "../components/ImageWithFallback";
-import { useFollowedStories } from "../context/FollowedStoriesContext";
+import { useSavedStories } from "../context/SavedStoriesContext";
 import type { SourceReference, StoryCluster, TimelineEvent } from "../types";
 import { formatReadableTimestamp, formatRelativeTime, formatTimestamp } from "../utils/format";
-import { isRecentlyUpdated } from "../utils/homepage";
+import { isRecentlyUpdated, readerText } from "../utils/homepage";
 
 type TabKey = "timeline" | "facts" | "sources" | "related";
 
@@ -63,9 +63,9 @@ function sourceImageByUrl(sources: SourceReference[]) {
 
 function StoryBrief({ cluster }: { cluster: StoryCluster }) {
   const sections = [
-    { title: "Summary", text: cluster.summary?.trim() ?? "" },
-    { title: "What changed", text: cluster.what_changed?.trim() ?? "" },
-    { title: "Why it matters", text: cluster.why_it_matters?.trim() ?? "" }
+    { title: "Summary", text: readerText(cluster.summary) ?? readerText(cluster.headline) ?? "" },
+    { title: "What changed", text: readerText(cluster.what_changed) ?? "" },
+    { title: "Why it matters", text: readerText(cluster.why_it_matters) ?? "" }
   ].filter((section) => section.text.length > 0);
 
   if (sections.length === 0) {
@@ -125,7 +125,7 @@ function TimelineTab({
                   </div>
                   <div className="story-timeline__body">
                     {eventTime && <time className="story-timeline__time">{eventTime}</time>}
-                    <p className="story-timeline__event">{event.event}</p>
+                    <p className="story-timeline__event">{readerText(event.event) ?? cluster.headline}</p>
                     {event.source_url && eventSource && (
                       <a href={event.source_url} target="_blank" rel="noreferrer" className="story-timeline__source">
                         {eventSource}
@@ -247,7 +247,7 @@ function RelatedTab({ loading, clusters }: { loading: boolean; clusters: StoryCl
 
 export function StoryDetailPage() {
   const { clusterId = "" } = useParams();
-  const { isFollowed, toggleFollowed, markStoryViewed } = useFollowedStories();
+  const { isSaved, toggleSaved } = useSavedStories();
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -280,12 +280,6 @@ export function StoryDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    if (cluster && isFollowed(cluster.cluster_id)) {
-      markStoryViewed(cluster);
-    }
-  }, [cluster, isFollowed, markStoryViewed]);
 
   useEffect(() => {
     setActiveTab("timeline");
@@ -341,7 +335,7 @@ export function StoryDetailPage() {
   const lastUpdatedReadable = cluster ? formatReadableTimestamp(cluster.last_updated) : null;
   const lastUpdatedFallback = cluster ? formatTimestamp(cluster.last_updated) : "";
   const relativeUpdated = cluster ? formatRelativeTime(cluster.last_updated) : "";
-  const followed = cluster ? isFollowed(cluster.cluster_id) : false;
+  const saved = cluster ? isSaved(cluster.cluster_id) : false;
 
   return (
     <div className="public-page story-detail story-detail--tabbed">
@@ -353,20 +347,17 @@ export function StoryDetailPage() {
           <div className="story-detail__header-actions">
             <button
               type="button"
-              className={`story-detail__follow-button${followed ? " story-detail__follow-button--saved" : ""}`}
-              aria-label={followed ? "Unfollow story" : "Follow story"}
-              aria-pressed={followed}
+              className={`story-detail__save-button${saved ? " story-detail__save-button--saved" : ""}`}
+              aria-label={saved ? "Remove saved story" : "Save story"}
+              aria-pressed={saved}
               disabled={!cluster}
               onClick={() => {
                 if (cluster) {
-                  toggleFollowed(cluster);
+                  toggleSaved(cluster);
                 }
               }}
             >
-              {followed ? "Following" : "Follow"}
-            </button>
-            <button type="button" className="story-detail__overflow-button" aria-label="More story actions">
-              ...
+              {saved ? "Saved" : "Save"}
             </button>
           </div>
         </div>

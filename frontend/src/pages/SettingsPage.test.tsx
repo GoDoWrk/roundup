@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
+import { SAVED_STORIES_STORAGE_KEY } from "../utils/savedStories";
 import { USER_PREFERENCES_STORAGE_KEY } from "../utils/userPreferences";
 
 function renderSettings() {
@@ -44,41 +45,79 @@ describe("SettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Compact mode" }));
-    fireEvent.change(screen.getByLabelText("Default view"), { target: { value: "sources" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Show summaries" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "World" }));
 
     expect(container.querySelector(".app-shell")).toHaveClass("app-shell--dark");
     expect(container.querySelector(".app-shell")).toHaveClass("app-shell--compact");
     expect(storedPreferences()).toMatchObject({
       theme: "dark",
       compactMode: true,
-      defaultView: "sources",
       showSummaries: false
     });
-    expect(storedPreferences().topics).not.toContain("world");
 
     unmount();
     renderSettings();
 
     expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("checkbox", { name: "Compact mode" })).toBeChecked();
-    expect(screen.getByLabelText("Default view")).toHaveValue("sources");
     expect(screen.getByRole("checkbox", { name: "Show summaries" })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "World" })).not.toBeChecked();
   });
 
-  it("renders clean disabled placeholders for unfinished settings tabs", () => {
+  it("hides unfinished settings controls and tabs", () => {
     renderSettings();
 
-    expect(screen.getByRole("checkbox", { name: "Autoplay videos" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "+" })).toBeDisabled();
+    expect(screen.queryByRole("checkbox", { name: "Autoplay videos" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Default view")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Language")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Topics" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Alerts" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Account" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Privacy" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
-    expect(screen.getByText(/accounts are intentionally not part/i)).toBeInTheDocument();
+  it("clears browser-local saved stories and resets preferences", () => {
+    window.localStorage.setItem(
+      SAVED_STORIES_STORAGE_KEY,
+      JSON.stringify([
+        {
+          cluster_id: "cluster-1",
+          saved_at: "2026-04-23T00:00:00Z",
+          story: {
+            cluster_id: "cluster-1",
+            headline: "Saved Story",
+            summary: "Summary",
+            what_changed: "",
+            why_it_matters: "",
+            key_facts: [],
+            timeline: [],
+            timeline_events: [],
+            sources: [],
+            source_count: 0,
+            primary_image_url: null,
+            thumbnail_urls: [],
+            topic: "World",
+            region: null,
+            story_type: "general",
+            first_seen: "2026-04-23T00:00:00Z",
+            last_updated: "2026-04-23T00:00:00Z",
+            is_developing: false,
+            is_breaking: false,
+            confidence_score: 0.5,
+            related_cluster_ids: [],
+            score: 0.5,
+            status: "active"
+          }
+        }
+      ])
+    );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Privacy" }));
-    expect(screen.getByText(/server-side preference storage/i)).toBeInTheDocument();
+    renderSettings();
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear saved stories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset preferences" }));
+
+    expect(window.localStorage.getItem(SAVED_STORIES_STORAGE_KEY)).toBe("[]");
+    expect(storedPreferences()).toMatchObject({ theme: "light", compactMode: false, showSummaries: true });
   });
 
   it("loads and renders configured source health data in the Sources tab", async () => {

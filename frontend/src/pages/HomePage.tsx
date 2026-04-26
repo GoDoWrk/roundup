@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchClusterList } from "../api/client";
+import { fetchHomepageClusters } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
 import { FeedControls } from "../components/FeedControls";
-import type { StoryCluster } from "../types";
+import type { HomepageClustersResponse, StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import {
   collectTopics,
+  compareDevelopingClusters,
   getChangedClusterIds,
   getFilteredClusters,
-  selectHomepageSections
+  sortClustersByLatestUpdates,
+  sortClustersForHomepage
 } from "../utils/homepage";
 
-const PAGE_LIMIT = 20;
 const REFRESH_INTERVAL_MS = 30_000;
 
 type SortMode = "top" | "latest";
@@ -46,7 +47,7 @@ function SectionHeader({ id, title, detail }: { id: string; title: string; detai
 
 export function HomePage() {
   const [clusters, setClusters] = useState<StoryCluster[]>([]);
-  const [total, setTotal] = useState(0);
+  const [homepageData, setHomepageData] = useState<HomepageClustersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,17 +73,22 @@ export function HomePage() {
     }
 
     try {
-      const response = await fetchClusterList({ limit: PAGE_LIMIT, offset: 0 });
-      const changedIds = getChangedClusterIds(previousSnapshotRef.current, response.items);
+      const response = await fetchHomepageClusters();
+      const items = [
+        ...response.sections.top_stories,
+        ...response.sections.developing_stories,
+        ...response.sections.just_in
+      ];
+      const changedIds = getChangedClusterIds(previousSnapshotRef.current, items);
       const currentSnapshot = new Map<string, string>();
 
-      for (const cluster of response.items) {
+      for (const cluster of items) {
         currentSnapshot.set(cluster.cluster_id, cluster.last_updated);
       }
 
       previousSnapshotRef.current = currentSnapshot;
-      setClusters(response.items);
-      setTotal(response.total);
+      setHomepageData(response);
+      setClusters(items);
       setLastLoadedAt(Date.now());
       setHighlightedClusterIds(changedIds);
       setUpdatedSinceLastRefresh(changedIds.size);
@@ -91,7 +97,7 @@ export function HomePage() {
       setError((err as Error).message);
       if (!background) {
         setClusters([]);
-        setTotal(0);
+        setHomepageData(null);
         setHighlightedClusterIds(new Set());
         setUpdatedSinceLastRefresh(0);
       }
@@ -122,14 +128,36 @@ export function HomePage() {
     }
   }, [topicFilter, topics]);
 
-  const filteredClusters = useMemo(() => getFilteredClusters(clusters, topicFilter), [clusters, topicFilter]);
-  const sections = useMemo(() => selectHomepageSections(filteredClusters, sortMode), [filteredClusters, sortMode]);
+  const sections = useMemo(() => {
+    if (!homepageData) {
+      return {
+        topStories: [] as StoryCluster[],
+        developingStories: [] as StoryCluster[],
+        justIn: [] as StoryCluster[],
+        allClusters: [] as StoryCluster[]
+      };
+    }
+
+    const rank = sortMode === "latest" ? sortClustersByLatestUpdates : sortClustersForHomepage;
+    const topStories = rank(getFilteredClusters(homepageData.sections.top_stories, topicFilter));
+    const developingStories = [...getFilteredClusters(homepageData.sections.developing_stories, topicFilter)].sort(
+      compareDevelopingClusters
+    );
+    const justIn = sortClustersByLatestUpdates(getFilteredClusters(homepageData.sections.just_in, topicFilter));
+    const allClusters = [...topStories, ...developingStories, ...justIn];
+    return { topStories, developingStories, justIn, allClusters };
+  }, [homepageData, sortMode, topicFilter]);
 
   const visibleCount = sections.allClusters.length;
+  const leadStory = sections.topStories[0] ?? null;
+  const supportingStories = sections.topStories.slice(1, 4);
   const hasStories = visibleCount > 0;
-  const hasLoadedData = clusters.length > 0 || total > 0 || lastLoadedAt !== null;
+  const hasLoadedData = clusters.length > 0 || homepageData !== null || lastLoadedAt !== null;
   const topicFilterLabel = topicFilter === "all" ? "All topics" : topicFilter;
   const lastCheckedReadable = lastLoadedAt ? formatReadableTimestamp(lastLoadedAt) : null;
+  const lastIngestionLabel = homepageData?.status.last_ingestion
+    ? `Last ingestion ${formatRelativeTime(homepageData.status.last_ingestion, Date.now())}`
+    : "Last ingestion unavailable";
   const lastCheckedLabel = lastLoadedAt
     ? `Updated ${formatRelativeTime(lastLoadedAt, Date.now())}${lastCheckedReadable ? ` | ${lastCheckedReadable}` : ""}`
     : "Waiting for live data";
@@ -138,10 +166,10 @@ export function HomePage() {
       ? hasLoadedData && topicFilter !== "all"
         ? `No stories in ${topicFilterLabel}`
         : "No live stories"
-      : total > visibleCount && topicFilter === "all"
-        ? `Showing ${visibleCount} of ${total} clusters`
+      : homepageData && topicFilter === "all"
+        ? `${homepageData.status.visible_clusters} visible | ${homepageData.status.candidate_clusters} candidates`
         : `${visibleCount} live ${visibleCount === 1 ? "cluster" : "clusters"}`;
-  const sortLabel = sortMode === "latest" ? "Latest" : "Relevance";
+  const sortLabel = sortMode === "latest" ? "Latest Updates" : "Top Stories";
 
   return (
     <div className="public-page public-page--dashboard">
@@ -160,8 +188,12 @@ export function HomePage() {
 
         <div className="public-hero__meta" aria-live="polite">
           <span>{liveCountLabel}</span>
+          {homepageData && <span>{homepageData.status.articles_stored_latest_run} stored latest run</span>}
+          {homepageData && <span>{homepageData.status.active_sources} active sources</span>}
+          {homepageData && <span>{homepageData.status.articles_pending} articles pending</span>}
+          <span>{lastIngestionLabel}</span>
           <span>{lastCheckedLabel}</span>
-          <span>{refreshing ? "Live refresh in progress" : "Auto-refreshes every 30s"}</span>
+          <span>{refreshing ? "Live refresh in progress" : "Next page refresh within 30s"}</span>
           <span>Sort: {sortLabel}</span>
           <span>Topic: {topicFilterLabel}</span>
           {updatedSinceLastRefresh > 0 && (
@@ -228,32 +260,34 @@ export function HomePage() {
           </section>
         )}
 
-        {hasStories && sections.leadStory && (
+        {hasStories && (
           <>
-            <section className="dashboard-section" aria-labelledby="top-stories-heading">
-              <SectionHeader id="top-stories-heading" title="Top Stories" detail="Highest-ranked clusters from the live API." />
-              <div className="top-stories-layout">
-                <ClusterCard
-                  cluster={sections.leadStory}
-                  to={`/story/${sections.leadStory.cluster_id}`}
-                  highlighted={highlightedClusterIds.has(sections.leadStory.cluster_id)}
-                  variant="lead"
-                />
-                {sections.supportingStories.length > 0 && (
-                  <div className="supporting-story-stack" aria-label="Supporting top stories">
-                    {sections.supportingStories.map((cluster) => (
-                      <ClusterCard
-                        key={cluster.cluster_id}
-                        cluster={cluster}
-                        to={`/story/${cluster.cluster_id}`}
-                        highlighted={highlightedClusterIds.has(cluster.cluster_id)}
-                        variant="supporting"
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
+            {leadStory && (
+              <section className="dashboard-section" aria-labelledby="top-stories-heading">
+                <SectionHeader id="top-stories-heading" title="Top Stories" detail="Promoted multi-source clusters." />
+                <div className="top-stories-layout">
+                  <ClusterCard
+                    cluster={leadStory}
+                    to={`/story/${leadStory.cluster_id}`}
+                    highlighted={highlightedClusterIds.has(leadStory.cluster_id)}
+                    variant="lead"
+                  />
+                  {supportingStories.length > 0 && (
+                    <div className="supporting-story-stack" aria-label="Supporting top stories">
+                      {supportingStories.map((cluster) => (
+                        <ClusterCard
+                          key={cluster.cluster_id}
+                          cluster={cluster}
+                          to={`/story/${cluster.cluster_id}`}
+                          highlighted={highlightedClusterIds.has(cluster.cluster_id)}
+                          variant="supporting"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {sections.developingStories.length > 0 && (
               <section className="dashboard-section" aria-labelledby="developing-stories-heading">
@@ -268,6 +302,26 @@ export function HomePage() {
                       key={cluster.cluster_id}
                       cluster={cluster}
                       to={`/story/${cluster.cluster_id}`}
+                      highlighted={highlightedClusterIds.has(cluster.cluster_id)}
+                      variant="thumbnail"
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {sections.justIn.length > 0 && (
+              <section className="dashboard-section" aria-labelledby="just-in-heading">
+                <SectionHeader
+                  id="just-in-heading"
+                  title="Just In"
+                  detail="Candidate activity, including single-source stories, kept separate from promoted stories."
+                />
+                <div className="just-in-grid">
+                  {sections.justIn.map((cluster) => (
+                    <ClusterCard
+                      key={cluster.cluster_id}
+                      cluster={cluster}
                       highlighted={highlightedClusterIds.has(cluster.cluster_id)}
                       variant="thumbnail"
                     />
@@ -294,7 +348,7 @@ export function HomePage() {
                     <ClusterCard
                       key={cluster.cluster_id}
                       cluster={cluster}
-                      to={`/story/${cluster.cluster_id}`}
+                      to={cluster.visibility === "candidate" ? undefined : `/story/${cluster.cluster_id}`}
                       highlighted={highlightedClusterIds.has(cluster.cluster_id)}
                     />
                   ))}

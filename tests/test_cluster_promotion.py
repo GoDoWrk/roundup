@@ -266,3 +266,8 @@ def test_promotion_metrics_counters_update(db_session: Session) -> None:
     assert stats.clusters_active_total == 7
     assert stats.cluster_promotion_attempts_total == 2
     assert stats.cluster_promotion_failures_total == 1
+    assert stats.latest_candidate_clusters_created == 0
+    assert stats.latest_clusters_updated == 1
+    assert stats.latest_clusters_hidden == 4
+    assert stats.latest_clusters_promoted == 1
+    assert stats.latest_visible_clusters == 7

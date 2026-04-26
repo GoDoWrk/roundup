@@ -72,13 +72,17 @@ This keeps schema changes and Miniflux setup from racing the app startup.
 - `GET /metrics`
 - `GET /api/articles`
 - `GET /api/clusters`
+- `GET /api/clusters/homepage`
 - `GET /api/clusters/{cluster_id}`
+- `GET /api/sources`
 - `GET /debug/articles`
 - `GET /debug/clusters`
 
 ## Public routes
-- `/` public homepage with live story cards from `/api/clusters`.
+- `/` public homepage with Top Stories, Developing Stories, and Just In sections from `/api/clusters/homepage`.
 - `/story/:clusterId` public story detail view.
+- `/saved` browser-local saved story list.
+- `/search` direct search route, kept out of primary navigation until search becomes core.
 - `/inspect` operator cluster list and debug-only rejected clusters.
 - `/inspect/clusters/:clusterId` full cluster detail or debug fallback.
 - `/inspect/metrics` pipeline metrics with optional auto-refresh.
@@ -115,12 +119,21 @@ Then inspect:
 ```bash
 curl http://localhost:8000/health
 curl "http://localhost:8000/api/clusters?limit=5"
+curl http://localhost:8000/api/clusters/homepage
 curl "http://localhost:8000/api/search?q=transit&limit=5"
+curl http://localhost:8000/api/sources
 curl http://localhost:8000/debug/articles
 curl http://localhost:8000/debug/clusters
 ```
 
-Public UI routes should render at `http://localhost:8080/`, `/saved`, `/search`, `/alerts`, and `/inspect`. Story detail can be opened with any `cluster_id` returned from `/api/clusters`.
+Public UI routes should render at `http://localhost:8080/`, `/saved`, `/search`, and `/inspect`. `/alerts` redirects to `/saved` because alerts/followed stories are not exposed until real notification behavior exists. Story detail can be opened with any public `cluster_id` returned from `/api/clusters` or `/api/clusters/homepage`.
+
+## Homepage promotion settings
+The public homepage keeps promoted stories quality-controlled while still showing current activity:
+- `CLUSTER_MIN_SOURCES_FOR_TOP_STORIES` controls Top Stories promotion.
+- `CLUSTER_MIN_SOURCES_FOR_DEVELOPING_STORIES` controls Developing Stories.
+- `CLUSTER_SHOW_JUST_IN_SINGLE_SOURCE` allows single-source candidate stories in Just In without promoting them as confirmed Top Stories.
+- `CLUSTER_HOMEPAGE_TOP_LIMIT`, `CLUSTER_HOMEPAGE_DEVELOPING_LIMIT`, and `CLUSTER_HOMEPAGE_JUST_IN_LIMIT` cap each section.
 
 ## What to watch
 Promoted clusters in `/debug/clusters` expose:
@@ -132,6 +145,19 @@ Promoted clusters in `/debug/clusters` expose:
 - `promotion_explanation`
 
 Pipeline metrics worth checking:
+- `latest_articles_fetched`
+- `latest_articles_stored`
+- `latest_duplicate_articles_skipped`
+- `latest_articles_malformed`
+- `latest_failed_source_count`
+- `latest_candidate_clusters_created`
+- `latest_clusters_updated`
+- `latest_clusters_hidden`
+- `latest_clusters_promoted`
+- `latest_visible_clusters`
+- `articles_pending_clustering`
+- `summaries_pending`
+- `active_sources`
 - `articles_ingested_total`
 - `articles_deduplicated_total`
 - `articles_malformed_total`

@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.routes import clusters as cluster_routes
+from app.core.config import Settings
 from app.db.models import Article, Cluster, ClusterArticle
 
 
@@ -153,10 +155,76 @@ def test_root_index_lists_debug_endpoints(client) -> None:
     assert payload["docs_url"] == "/docs"
     assert payload["endpoints"]["health"] == "/health"
     assert payload["endpoints"]["clusters"] == "/api/clusters"
+    assert payload["endpoints"]["homepage_clusters"] == "/api/clusters/homepage"
     assert payload["endpoints"]["search"] == "/api/search?q=..."
     assert payload["endpoints"]["sources"] == "/api/sources"
     assert payload["endpoints"]["debug_clusters"] == "/debug/clusters"
     assert payload["endpoints"]["metrics"] == "/metrics"
+
+
+def test_homepage_clusters_sections_promoted_and_candidate_stories(
+    client,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        miniflux_api_token="token",
+        cluster_min_sources_for_api=2,
+        cluster_min_sources_for_top_stories=2,
+        cluster_min_sources_for_developing_stories=2,
+        cluster_homepage_top_limit=1,
+        cluster_homepage_developing_limit=2,
+        cluster_homepage_just_in_limit=4,
+        cluster_show_just_in_single_source=True,
+    )
+    monkeypatch.setattr(cluster_routes, "get_settings", lambda: settings)
+
+    now = datetime.now(timezone.utc)
+    top = _add_visible_cluster(db_session, "homepage-top", now - timedelta(hours=1), with_images=False)
+    top.score = 0.95
+    top.headline = "Top Confirmed Transit Story"
+
+    developing = _cluster("homepage-developing", now)
+    developing.score = 0.72
+    db_session.add(developing)
+    db_session.flush()
+    for idx, publisher in enumerate(["Daily One", "Daily Two"], start=1):
+        article = _article(idx, developing.id, now, publisher)
+        article.dedupe_hash = f"{developing.id}-{idx}"
+        article.url = f"https://example.com/{developing.id}/{idx}"
+        article.canonical_url = article.url
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(ClusterArticle(cluster_id=developing.id, article_id=article.id, similarity_score=0.72, heuristic_breakdown={}))
+
+    candidate = _cluster("homepage-candidate", now - timedelta(minutes=20))
+    candidate.status = "hidden"
+    candidate.score = 1.0
+    candidate.headline = "Single Source Candidate Story"
+    db_session.add(candidate)
+    db_session.flush()
+    article = _article(1, candidate.id, now, "Candidate Wire")
+    article.dedupe_hash = f"{candidate.id}-1"
+    article.url = f"https://example.com/{candidate.id}/1"
+    article.canonical_url = article.url
+    db_session.add(article)
+    db_session.flush()
+    db_session.add(ClusterArticle(cluster_id=candidate.id, article_id=article.id, similarity_score=1.0, heuristic_breakdown={}))
+    db_session.commit()
+
+    response = client.get("/api/clusters/homepage")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["cluster_id"] for item in payload["sections"]["top_stories"]] == ["homepage-top"]
+    assert [item["cluster_id"] for item in payload["sections"]["developing_stories"]] == ["homepage-developing"]
+    assert [item["cluster_id"] for item in payload["sections"]["just_in"]] == ["homepage-candidate"]
+    assert payload["sections"]["just_in"][0]["visibility"] == "candidate"
+    assert payload["sections"]["just_in"][0]["visibility_label"] == "Single source"
+    assert payload["sections"]["just_in"][0]["is_single_source"] is True
+    assert payload["status"]["visible_clusters"] == 2
+    assert payload["status"]["candidate_clusters"] == 1
 
 
 def test_api_clusters_list_and_detail_return_structured_payloads(client, db_session: Session) -> None:
