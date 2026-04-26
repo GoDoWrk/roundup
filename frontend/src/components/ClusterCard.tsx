@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useSavedStories } from "../context/SavedStoriesContext";
+import { useUserPreferences } from "../context/UserPreferencesContext";
 import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import {
@@ -21,6 +22,7 @@ interface ClusterCardProps {
 export function ClusterCard({ cluster, to, highlighted = false, variant = "standard" }: ClusterCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const { isSaved, toggleSaved } = useSavedStories();
+  const { preferences } = useUserPreferences();
   const now = Date.now();
   const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
   const updateCount = getUpdateCount(cluster);
@@ -37,6 +39,7 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   const topic = cluster.topic?.trim();
   const saved = isSaved(cluster.cluster_id);
   const saveLabel = saved ? `Remove saved story: ${cluster.headline}` : `Save story: ${cluster.headline}`;
+  const shouldShowSummary = Boolean(summary) && variant !== "thumbnail" && (preferences.showSummaries || variant === "lead");
 
   useEffect(() => {
     setImageFailed(false);
@@ -66,7 +69,7 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
         <h3 className="story-card__headline">{cluster.headline}</h3>
         {scoreLabel && <span className="story-card__score">{scoreLabel}</span>}
       </div>
-      {summary && variant !== "thumbnail" && (
+      {shouldShowSummary && (
         <p className="story-card__summary">{previewSummary(summary, variant === "supporting" ? 96 : undefined)}</p>
       )}
       {hasValidTimestamp && (

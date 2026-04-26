@@ -221,11 +221,15 @@ describe("route smoke tests", () => {
     expect(screen.getByRole("link", { name: /^Saved$/ })).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders settings placeholder and highlights the settings shortcuts", async () => {
+  it("renders settings preferences and highlights the settings shortcuts", async () => {
     renderAt("/settings");
 
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Display" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Topics" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /^Settings$/ }).some((link) => link.getAttribute("aria-current") === "page")).toBe(
       true
     );

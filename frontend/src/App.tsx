@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   BrowserRouter,
   Link,
@@ -10,12 +10,14 @@ import {
   useParams
 } from "react-router-dom";
 import { SavedStoriesProvider } from "./context/SavedStoriesContext";
+import { UserPreferencesProvider, useUserPreferences } from "./context/UserPreferencesContext";
 import { ClusterDetailPage } from "./pages/ClusterDetailPage";
 import { ClusterListPage } from "./pages/ClusterListPage";
 import { HomePage } from "./pages/HomePage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { SavedStoriesPage } from "./pages/SavedStoriesPage";
 import { SearchPage } from "./pages/SearchPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { StoryDetailPage } from "./pages/StoryDetailPage";
 
 const primaryNavItems = [
@@ -47,24 +49,18 @@ function RoundupMark() {
 }
 
 function AppShell() {
-  const [darkMode, setDarkMode] = useState(() => {
-    try {
-      return window.localStorage.getItem("roundup-dark-mode") === "true";
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("roundup-dark-mode", String(darkMode));
-    } catch {
-      // Local storage can be unavailable in locked-down browsers.
-    }
-  }, [darkMode]);
+  const { preferences, resolvedTheme, updatePreferences } = useUserPreferences();
+  const darkMode = resolvedTheme === "dark";
+  const shellClassName = [
+    "app-shell",
+    darkMode ? "app-shell--dark" : "",
+    preferences.compactMode ? "app-shell--compact" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className={`app-shell${darkMode ? " app-shell--dark" : ""}`}>
+    <div className={shellClassName}>
       <aside className="app-sidebar" aria-label="Roundup navigation">
         <Link className="app-brand" to="/">
           <RoundupMark />
@@ -109,7 +105,7 @@ function AppShell() {
             <input
               type="checkbox"
               checked={darkMode}
-              onChange={(event) => setDarkMode(event.target.checked)}
+              onChange={(event) => updatePreferences({ theme: event.target.checked ? "dark" : "light" })}
               aria-label="Dark mode"
             />
             <span className="theme-switch__track" aria-hidden="true" />
@@ -163,14 +159,6 @@ function AlertsPage() {
   );
 }
 
-function SettingsPage() {
-  return (
-    <PlaceholderPage title="Settings" eyebrow="Preferences">
-      <p>Settings for display, topics, sources, and account preferences will live here.</p>
-    </PlaceholderPage>
-  );
-}
-
 function TopicPlaceholderPage() {
   const { topicSlug = "" } = useParams();
   const topic = useMemo(
@@ -217,9 +205,11 @@ export function AppRoutes() {
     <Routes>
       <Route
         element={
-          <SavedStoriesProvider>
-            <AppShell />
-          </SavedStoriesProvider>
+          <UserPreferencesProvider>
+            <SavedStoriesProvider>
+              <AppShell />
+            </SavedStoriesProvider>
+          </UserPreferencesProvider>
         }
       >
         <Route path="/" element={<HomePage />} />
