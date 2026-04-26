@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
 
 from app.db.models import Article, Cluster
@@ -27,7 +28,8 @@ def _article_image_url(article: Article) -> str | None:
     stored = _valid_image_url(article.image_url)
     if stored is not None:
         return stored
-    return _valid_image_url(extract_image_url(article.raw_payload if isinstance(article.raw_payload, dict) else {}, article.content_text))
+    payload = article.raw_payload if isinstance(article.raw_payload, dict) else {}
+    return _valid_image_url(extract_image_url(payload, article.content_text))
 
 
 def _cluster_image_urls(cluster: Cluster) -> list[str]:
@@ -84,10 +86,43 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
     )
 
 
+def _timeline_from_articles(articles: list[Article]) -> list[TimelineEvent]:
+    return [
+        TimelineEvent(
+            timestamp=article.published_at,
+            event=f"{article.publisher} published: {article.title}",
+            source_url=article.url,
+            source_title=article.title,
+        )
+        for article in articles
+    ]
+
+
+def _story_topic(cluster: Cluster, articles: list[Article]) -> str:
+    stored_topic = str(getattr(cluster, "topic", "") or "").strip()
+    return stored_topic or derive_topic_from_articles(articles)
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _is_developing(cluster: Cluster, source_count: int) -> bool:
+    if cluster.status == "emerging":
+        return True
+    last_updated = _as_aware_utc(cluster.last_updated)
+    return source_count >= 2 and datetime.now(timezone.utc) - last_updated <= timedelta(hours=24)
+
+
 def build_story_cluster(cluster: Cluster) -> StoryCluster:
     source_links = list(cluster.source_links)
+    articles = sorted(
+        (link.article for link in source_links if link.article is not None),
+        key=lambda article: (article.published_at, article.id),
+    )
     timeline_rows = list(cluster.timeline_events)
-    articles = [link.article for link in source_links if link.article is not None]
     thumbnail_urls = _cluster_image_urls(cluster)
 
     timeline = [
@@ -99,6 +134,8 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         )
         for row in timeline_rows
     ]
+    if not timeline:
+        timeline = _timeline_from_articles(articles)
 
     sources = [
         SourceReference(
@@ -115,16 +152,25 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
     return StoryCluster(
         cluster_id=cluster.id,
         headline=cluster.headline,
-        topic=derive_topic_from_articles(articles),
+        topic=_story_topic(cluster, articles),
         summary=cluster.summary,
         what_changed=cluster.what_changed,
         why_it_matters=cluster.why_it_matters,
+        key_facts=[],
+        timeline=timeline,
+        timeline_events=timeline,
+        sources=sources,
+        source_count=len(sources),
         primary_image_url=thumbnail_urls[0] if thumbnail_urls else None,
         thumbnail_urls=thumbnail_urls,
-        timeline=timeline,
-        sources=sources,
+        region=None,
+        story_type="general",
         first_seen=cluster.first_seen,
         last_updated=cluster.last_updated,
+        is_developing=_is_developing(cluster, len(sources)),
+        is_breaking=False,
+        confidence_score=cluster.score,
+        related_cluster_ids=[],
         score=cluster.score,
         status=cluster.status,
     )

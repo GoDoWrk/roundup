@@ -21,12 +21,21 @@ export interface StoryCluster {
   summary: string;
   what_changed: string;
   why_it_matters: string;
-  primary_image_url?: string | null;
-  thumbnail_urls?: string[];
+  key_facts: string[];
   timeline: TimelineEvent[];
+  timeline_events: TimelineEvent[];
   sources: SourceReference[];
+  source_count: number;
+  primary_image_url: string | null;
+  thumbnail_urls: string[];
+  region: string | null;
+  story_type: string;
   first_seen: string;
   last_updated: string;
+  is_developing: boolean;
+  is_breaking: boolean;
+  confidence_score: number;
+  related_cluster_ids: string[];
   score: number;
   status: "emerging" | "active" | "stale";
 }

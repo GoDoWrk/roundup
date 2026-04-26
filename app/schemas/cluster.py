@@ -26,16 +26,25 @@ ClusterStatus = Literal["emerging", "active", "stale"]
 class StoryCluster(BaseModel):
     cluster_id: str = Field(min_length=1)
     headline: str = Field(min_length=1)
-    topic: str
     summary: str = Field(min_length=1)
     what_changed: str = Field(min_length=1)
     why_it_matters: str = Field(min_length=1)
-    primary_image_url: str | None = None
-    thumbnail_urls: list[str] = Field(default_factory=list)
+    key_facts: list[str]
     timeline: list[TimelineEvent]
+    timeline_events: list[TimelineEvent]
     sources: list[SourceReference]
+    source_count: int
+    primary_image_url: str | None
+    thumbnail_urls: list[str]
+    topic: str
+    region: str | None
+    story_type: str
     first_seen: datetime
     last_updated: datetime
+    is_developing: bool
+    is_breaking: bool
+    confidence_score: float
+    related_cluster_ids: list[str]
     score: float
     status: ClusterStatus
 

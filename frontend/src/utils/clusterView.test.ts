@@ -16,7 +16,9 @@ describe("toClusterListRows", () => {
           summary: "Long summary text for preview output in the inspector table.",
           what_changed: "changed",
           why_it_matters: "matters",
+          key_facts: [],
           timeline: [],
+          timeline_events: [],
           sources: [
             {
               article_id: 1,
@@ -26,8 +28,17 @@ describe("toClusterListRows", () => {
               published_at: "2026-04-22T00:00:00Z"
             }
           ],
+          source_count: 1,
+          primary_image_url: null,
+          thumbnail_urls: [],
+          region: null,
+          story_type: "general",
           first_seen: "2026-04-22T00:00:00Z",
           last_updated: "2026-04-22T02:00:00Z",
+          is_developing: true,
+          is_breaking: false,
+          confidence_score: 0.712,
+          related_cluster_ids: [],
           score: 0.712,
           status: "active"
         }
@@ -54,10 +65,21 @@ describe("toClusterListRows", () => {
           summary: "x".repeat(300),
           what_changed: "changed",
           why_it_matters: "matters",
+          key_facts: [],
           timeline: [],
+          timeline_events: [],
           sources: [],
+          source_count: 0,
+          primary_image_url: null,
+          thumbnail_urls: [],
+          region: null,
+          story_type: "general",
           first_seen: "2026-04-22T00:00:00Z",
           last_updated: "2026-04-22T02:00:00Z",
+          is_developing: false,
+          is_breaking: false,
+          confidence_score: 0.712,
+          related_cluster_ids: [],
           score: 0.712,
           status: "active"
         }
