@@ -1107,7 +1107,7 @@ button:disabled {
 }
 
 .story-card--linked.story-card--supporting {
-  display: grid;
+  display: block;
 }
 
 .story-card__link {
@@ -1263,7 +1263,8 @@ button:disabled {
   font-size: 1.18rem;
   line-height: 1.22;
   letter-spacing: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .story-card--lead .story-card__headline {
@@ -1283,7 +1284,8 @@ button:disabled {
   margin: 0;
   line-height: 1.58;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .story-card--supporting .story-card__summary {
