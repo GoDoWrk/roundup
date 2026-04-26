@@ -34,8 +34,8 @@ export function previewSummary(text: string, maxLength = SUMMARY_PREVIEW_LENGTH)
   return `${trimmed.slice(0, maxLength - 1).trimEnd()}...`;
 }
 
-function parseTimestamp(value: string): number {
-  const time = Date.parse(value);
+function parseTimestamp(value: string | null | undefined): number {
+  const time = typeof value === "string" ? Date.parse(value) : Number.NEGATIVE_INFINITY;
   return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
 }
 
@@ -110,7 +110,12 @@ export function getClusterImageUrl(cluster: StoryCluster): string | null {
     return primary;
   }
 
-  const fallback = cluster.thumbnail_urls?.find((url) => url.trim().length > 0);
+  const sourceImage = (cluster.sources ?? []).find((source) => source?.image_url?.trim())?.image_url?.trim();
+  if (sourceImage) {
+    return sourceImage;
+  }
+
+  const fallback = (cluster.thumbnail_urls ?? []).find((url) => url?.trim().length > 0);
   return fallback?.trim() || null;
 }
 
@@ -205,8 +210,8 @@ export function collectSourcePublishers(clusters: StoryCluster[]): string[] {
   const publishers = new Set<string>();
 
   for (const cluster of clusters) {
-    for (const source of cluster.sources) {
-      const publisher = source.publisher.trim();
+    for (const source of cluster.sources ?? []) {
+      const publisher = source?.publisher?.trim();
       if (publisher) {
         publishers.add(publisher);
       }
@@ -221,7 +226,7 @@ export function clusterMatchesPublisher(cluster: StoryCluster, publisher: string
     return true;
   }
 
-  return cluster.sources.some((source) => source.publisher.trim() === publisher);
+  return (cluster.sources ?? []).some((source) => source?.publisher?.trim() === publisher);
 }
 
 export function getChangedClusterIds(

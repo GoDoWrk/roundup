@@ -98,6 +98,9 @@ class ClusterDebugThresholds(BaseModel):
     title_signal_threshold: float
     entity_overlap_threshold: int
     keyword_overlap_threshold: int
+    topic_semantic_score_threshold: float
+    attach_override_title_similarity_threshold: float
+    attach_override_time_proximity_threshold: float
     min_sources_for_api: int
     min_sources_for_top_stories: int
     min_sources_for_developing_stories: int
@@ -108,8 +111,33 @@ class ClusterDebugScoreBreakdown(BaseModel):
     average_title_similarity: float
     average_entity_jaccard: float
     average_keyword_jaccard: float
+    average_semantic_score: float
     average_time_proximity: float
     score_formula: str
+    semantic_formula: str
+
+
+class ClusterDebugJoinDecision(BaseModel):
+    article_id: int
+    article_title: str
+    publisher: str
+    decision: str
+    reason: str
+    selected_cluster_id: str | None
+    selected_score: float
+    title_similarity: float
+    entity_jaccard: float
+    keyword_jaccard: float
+    semantic_score: float
+    entity_overlap: int
+    keyword_overlap: int
+    location_overlap: int
+    source_match: bool
+    topic_match: bool
+    time_proximity: float
+    signal_gate_passed: bool
+    signal_reasons: list[str]
+    warnings: list[str]
 
 
 class ClusterDebugExplanation(BaseModel):
@@ -120,6 +148,8 @@ class ClusterDebugExplanation(BaseModel):
     top_shared_keywords: list[str]
     score_breakdown: ClusterDebugScoreBreakdown
     decision_counts: dict[str, int]
+    recent_join_decisions: list[ClusterDebugJoinDecision]
+    warnings: list[str]
 
 
 class ClusterDebugItem(BaseModel):

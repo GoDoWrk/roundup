@@ -1,14 +1,84 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchClusterList, fetchDebugClusters } from "../api/client";
+import { fetchClusterList, fetchDebugClusters, fetchHealth } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
-import type { ClusterDebugItem, ClusterListResponse } from "../types";
+import type { ClusterDebugItem, ClusterListResponse, HealthResponse } from "../types";
 import { toClusterListRows } from "../utils/clusterView";
 import { formatScore, formatTimestamp } from "../utils/format";
+
+function statusLabel(active: boolean): string {
+  return active ? "OK" : "Needs attention";
+}
+
+function RuntimeHealthPanel({ health }: { health: HealthResponse | null }) {
+  if (!health) {
+    return (
+      <section className="section inspector-health" aria-labelledby="inspector-health-heading">
+        <div className="dashboard-section__header">
+          <h2 id="inspector-health-heading">System Health</h2>
+          <p>Health diagnostics are unavailable. Use Refresh to try again.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="section inspector-health" aria-labelledby="inspector-health-heading">
+      <div className="dashboard-section__header">
+        <h2 id="inspector-health-heading">System Health</h2>
+        <p>
+          Live service status from <code>/health</code>.
+        </p>
+      </div>
+
+      <div className="inspector-health__grid">
+        <div className="inspector-health__card">
+          <span className={`source-status source-status--${health.db === "ok" ? "enabled" : "error"}`}>
+            {health.db === "ok" ? "OK" : "Error"}
+          </span>
+          <strong>API and database</strong>
+          <p>API status {health.status}; database {health.db}.</p>
+        </div>
+
+        <div className="inspector-health__card">
+          <span className={`source-status source-status--${health.miniflux_usable ? "enabled" : "error"}`}>
+            {statusLabel(health.miniflux_usable)}
+          </span>
+          <strong>Miniflux</strong>
+          <p>
+            {health.miniflux_reachable ? "Reachable" : "Not reachable"};{" "}
+            {health.miniflux_configured ? "credentials configured" : "credentials missing"}.
+          </p>
+        </div>
+
+        <div className="inspector-health__card">
+          <span className={`source-status source-status--${health.runtime.ingestion_active ? "enabled" : "unknown"}`}>
+            {health.runtime.ingestion_active ? "Active" : "Idle"}
+          </span>
+          <strong>Ingestion scheduler</strong>
+          <p>
+            Scheduler {health.runtime.scheduler_enabled ? "enabled" : "disabled"} every{" "}
+            {health.runtime.scheduler_interval_seconds}s.
+          </p>
+        </div>
+
+        <div className="inspector-health__card">
+          <span className="source-status source-status--unknown">Configured</span>
+          <strong>Runtime limits</strong>
+          <p>
+            API workers {health.runtime.api_workers}; clustering batch {health.runtime.clustering_batch_size}; inspector
+            workers {health.runtime.inspector_worker_processes}.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export function ClusterListPage() {
   const [clusters, setClusters] = useState<ClusterListResponse | null>(null);
   const [debugClusters, setDebugClusters] = useState<ClusterDebugItem[]>([]);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,12 +87,14 @@ export function ClusterListPage() {
     setError(null);
 
     try {
-      const [clusterList, debug] = await Promise.all([
+      const [clusterList, debug, healthStatus] = await Promise.all([
         fetchClusterList({ limit: 100, offset: 0 }),
-        fetchDebugClusters()
+        fetchDebugClusters(),
+        fetchHealth().catch(() => null)
       ]);
       setClusters(clusterList);
       setDebugClusters(debug.items);
+      setHealth(healthStatus);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -55,6 +127,8 @@ export function ClusterListPage() {
 
   return (
     <div>
+      <RuntimeHealthPanel health={health} />
+
       <section className="section">
         <div className="controls">
           <h2 style={{ margin: 0 }}>Cluster List</h2>

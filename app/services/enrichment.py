@@ -40,6 +40,11 @@ _TERM_BLOCKLIST = {
     "year",
 }
 
+_TIMELINE_LOW_VALUE_PHRASES = {
+    "reported new details on",
+    "published a follow-up update",
+}
+
 
 @dataclass(frozen=True)
 class TimelineEntry:
@@ -236,7 +241,6 @@ def build_timeline_events(
 
     timeline_with_meta: list[dict] = []
     deduplicated_count = 0
-    seen_publishers: set[str] = set()
     seen_terms: set[str] = set()
 
     for article in ordered:
@@ -266,14 +270,13 @@ def build_timeline_events(
             for term in (article.entities + article.keywords)
             if term and term not in seen_terms and _is_meaningful_term(term)
         ]
-        topic_delta = ", ".join(fresh_terms[:3])
+        topic_delta_terms = [term for term in fresh_terms if term.lower() not in {"been", "has", "his"}]
+        topic_delta = ", ".join(topic_delta_terms[:3])
 
-        if publisher not in seen_publishers:
-            event_text = f"{publisher} added coverage: {title}"
-        elif topic_delta:
-            event_text = f"{publisher} reported new details on {topic_delta}."
+        if topic_delta:
+            event_text = f"Update focuses on {topic_delta}."
         else:
-            event_text = f"{publisher} published a follow-up update."
+            event_text = title
 
         timeline_with_meta.append(
             {
@@ -286,13 +289,12 @@ def build_timeline_events(
             }
         )
 
-        seen_publishers.add(publisher)
         seen_terms.update(term for term in article.entities + article.keywords if term and _is_meaningful_term(term))
 
     timeline = [
         TimelineEntry(
             timestamp=row["timestamp"],
-            event=row["event"],
+            event=row["source_title"] if not row["event"] or row["event"].lower() in _TIMELINE_LOW_VALUE_PHRASES else row["event"],
             source_url=row["source_url"],
             source_title=row["source_title"],
         )

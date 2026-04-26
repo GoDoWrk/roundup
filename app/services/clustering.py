@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 import logging
 from dataclasses import dataclass
@@ -26,8 +27,92 @@ from app.services.validation import validate_cluster_record
 
 logger = logging.getLogger(__name__)
 
-ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD = 0.25
-ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD = 0.80
+CLUSTER_KEYWORD_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "been",
+    "being",
+    "blank",
+    "but",
+    "by",
+    "com",
+    "continue",
+    "for",
+    "from",
+    "get",
+    "had",
+    "has",
+    "have",
+    "he",
+    "her",
+    "his",
+    "href",
+    "https",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "not",
+    "of",
+    "on",
+    "or",
+    "our",
+    "said",
+    "says",
+    "she",
+    "that",
+    "the",
+    "their",
+    "they",
+    "this",
+    "to",
+    "was",
+    "were",
+    "will",
+    "with",
+    "you",
+    "your",
+}
+
+CLUSTER_GENERIC_NEWS_TERMS = {
+    "attack",
+    "attacks",
+    "breaking",
+    "ceasefire",
+    "conflict",
+    "crisis",
+    "details",
+    "developing",
+    "latest",
+    "live",
+    "minister",
+    "new",
+    "reported",
+    "reporting",
+    "reports",
+    "story",
+    "update",
+    "updates",
+    "war",
+}
+
+LOCATION_TERMS = {
+    "gaza",
+    "iran",
+    "israel",
+    "lebanon",
+    "mali",
+    "sahel",
+    "syria",
+    "ukraine",
+    "yemen",
+}
 
 
 @dataclass(frozen=True)
@@ -35,8 +120,11 @@ class FeatureVector:
     title: str
     keywords: set[str]
     entities: set[str]
+    locations: set[str]
+    title_tokens: set[str]
     topic: str
     published_at: datetime
+    publishers: set[str]
 
 
 @dataclass(frozen=True)
@@ -45,12 +133,17 @@ class CandidateEvaluation:
     title_similarity: float
     entity_jaccard: float
     keyword_jaccard: float
+    semantic_score: float
     time_proximity: float
     entity_overlap: int
     keyword_overlap: int
+    location_overlap: int
+    source_match: bool
     topic_match: bool
     score: float
     signal_gate_passed: bool
+    signal_reasons: tuple[str, ...]
+    rejection_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -105,24 +198,74 @@ def _time_proximity(article_time: datetime, cluster_time: datetime, window_hours
     return 1.0 - (delta_hours / max(window_hours, 1))
 
 
+def _semantic_score(title_similarity: float, entity_jaccard: float, keyword_jaccard: float) -> float:
+    return 0.50 * title_similarity + 0.30 * entity_jaccard + 0.20 * keyword_jaccard
+
+
+def _tokenize_text(value: str) -> set[str]:
+    return {token.strip().lower() for token in (value or "").replace("/", " ").replace("-", " ").split() if token.strip()}
+
+
+def _semantic_keywords(values: list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
+    keywords: set[str] = set()
+    for value in values or []:
+        keyword = str(value).strip().lower()
+        if keyword and keyword not in CLUSTER_KEYWORD_STOPWORDS and keyword not in CLUSTER_GENERIC_NEWS_TERMS:
+            keywords.add(keyword)
+    return keywords
+
+
+def _semantic_entities(values: list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
+    return {entity.lower() for entity in (str(value).strip() for value in values or []) if entity}
+
+
+def _semantic_locations(*, title: str, keywords: set[str], entities: set[str]) -> set[str]:
+    title_tokens = _tokenize_text(title)
+    candidates = title_tokens.union(keywords).union(_tokenize_text(" ".join(entities)))
+    return {token for token in candidates if token in LOCATION_TERMS}
+
+
+def _title_signature_tokens(title: str) -> set[str]:
+    return {
+        token
+        for token in _tokenize_text(title)
+        if len(token) > 3 and token not in CLUSTER_KEYWORD_STOPWORDS and token not in CLUSTER_GENERIC_NEWS_TERMS
+    }
+
+
 def _article_features(article: Article) -> FeatureVector:
+    keywords = _semantic_keywords(article.keywords)
+    entities = _semantic_entities(article.entities)
     return FeatureVector(
         title=article.normalized_title,
-        keywords=set(article.keywords),
-        entities=set(article.entities),
+        keywords=keywords,
+        entities=entities,
+        locations=_semantic_locations(title=article.title or article.normalized_title, keywords=keywords, entities=entities),
+        title_tokens=_title_signature_tokens(article.normalized_title),
         topic=derive_topic_from_article(article),
         published_at=article.published_at,
+        publishers={(article.publisher or "").strip().lower()} if (article.publisher or "").strip() else set(),
     )
 
 
 def _cluster_features(cluster: Cluster) -> FeatureVector:
     cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
+    keywords = _semantic_keywords(cluster.keywords)
+    entities = _semantic_entities(cluster.entities)
+    publishers = {
+        (link.article.publisher or "").strip().lower()
+        for link in cluster.source_links
+        if link.article is not None and (link.article.publisher or "").strip()
+    }
     return FeatureVector(
         title=cluster.normalized_headline,
-        keywords=set(cluster.keywords),
-        entities=set(cluster.entities),
+        keywords=keywords,
+        entities=entities,
+        locations=_semantic_locations(title=cluster.headline or cluster.normalized_headline, keywords=keywords, entities=entities),
+        title_tokens=_title_signature_tokens(cluster.normalized_headline),
         topic=cluster_topic,
         published_at=cluster.last_updated,
+        publishers=publishers,
     )
 
 
@@ -135,11 +278,18 @@ def _evaluate_candidate(
     title_similarity = _title_similarity(article.title, cluster_features.title)
     entity_jaccard = _jaccard(article.entities, cluster_features.entities)
     keyword_jaccard = _jaccard(article.keywords, cluster_features.keywords)
+    semantic_score = _semantic_score(title_similarity, entity_jaccard, keyword_jaccard)
     time_proximity = _time_proximity(article.published_at, cluster_features.published_at, settings.cluster_time_window_hours)
     topic_match = topic_matches(article.topic, cluster_features.topic)
 
     entity_overlap = len(article.entities.intersection(cluster_features.entities))
     keyword_overlap = len(article.keywords.intersection(cluster_features.keywords))
+    location_overlap = len(article.locations.intersection(cluster_features.locations))
+    source_match = bool(article.publishers.intersection(cluster_features.publishers))
+    shared_title_tokens = article.title_tokens.intersection(cluster_features.title_tokens)
+    generic_only_keyword_overlap = keyword_overlap > 0 and not (
+        article.keywords.intersection(cluster_features.keywords) - CLUSTER_GENERIC_NEWS_TERMS
+    )
 
     score = round(
         0.45 * title_similarity
@@ -149,27 +299,61 @@ def _evaluate_candidate(
         4,
     )
 
-    signal_gate_passed = (
+    signal_reasons: list[str] = []
+    if title_similarity >= settings.cluster_min_title_signal:
+        signal_reasons.append("strong_title_similarity")
+    if entity_overlap >= settings.cluster_min_entity_overlap:
+        signal_reasons.append("meaningful_entity_overlap")
+    if keyword_overlap >= settings.cluster_min_keyword_overlap:
+        signal_reasons.append("meaningful_keyword_overlap")
+    if location_overlap > 0:
+        signal_reasons.append("location_overlap")
+    if topic_match and semantic_score >= settings.cluster_min_topic_semantic_score:
+        signal_reasons.append("topic_semantic_similarity")
+    if (
         topic_match
-        and (
-            title_similarity >= settings.cluster_min_title_signal
-            or entity_overlap >= settings.cluster_min_entity_overlap
-            or keyword_overlap >= settings.cluster_min_keyword_overlap
-            or (time_proximity >= 0.85 and keyword_overlap >= 1)
-        )
-    )
+        and title_similarity >= settings.cluster_attach_override_min_title_similarity
+        and keyword_overlap > 0
+    ):
+        signal_reasons.append("topic_title_keyword_similarity")
+
+    semantic_backstop = (
+        entity_overlap >= max(2, settings.cluster_min_entity_overlap + 1)
+        or (entity_overlap >= settings.cluster_min_entity_overlap and location_overlap > 0)
+    ) and title_similarity >= settings.cluster_attach_override_min_title_similarity
+    signal_gate_passed = bool(signal_reasons) and (topic_match or semantic_backstop)
+    if article.locations and cluster_features.locations and location_overlap == 0 and entity_overlap == 0:
+        signal_gate_passed = False
+        rejection_reason = "location_conflict_without_entity_overlap"
+    elif len(article.title_tokens) >= 2 and len(cluster_features.title_tokens) >= 2 and not shared_title_tokens and entity_overlap == 0:
+        signal_gate_passed = False
+        rejection_reason = "distinct_event_signatures"
+    elif generic_only_keyword_overlap and entity_overlap == 0 and title_similarity < settings.cluster_min_title_signal:
+        signal_gate_passed = False
+        rejection_reason = "generic_keyword_only_overlap"
+    elif not topic_match and not semantic_backstop:
+        rejection_reason = "topic_mismatch"
+    elif not signal_reasons:
+        rejection_reason = "weak_semantic_signals"
+    else:
+        rejection_reason = None
 
     return CandidateEvaluation(
         cluster=cluster,
         title_similarity=round(title_similarity, 4),
         entity_jaccard=round(entity_jaccard, 4),
         keyword_jaccard=round(keyword_jaccard, 4),
+        semantic_score=round(semantic_score, 4),
         time_proximity=round(time_proximity, 4),
         entity_overlap=entity_overlap,
         keyword_overlap=keyword_overlap,
+        location_overlap=location_overlap,
+        source_match=source_match,
         topic_match=topic_match,
         score=score,
         signal_gate_passed=signal_gate_passed,
+        signal_reasons=tuple(signal_reasons),
+        rejection_reason=rejection_reason,
     )
 
 
@@ -187,12 +371,13 @@ def _is_better_candidate(candidate: CandidateEvaluation, incumbent: CandidateEva
     return candidate_rank > incumbent_rank
 
 
-def _load_unclustered_articles(session: Session) -> list[Article]:
+def _load_unclustered_articles(session: Session, limit: int) -> list[Article]:
     stmt: Select[tuple[Article]] = (
         select(Article)
         .outerjoin(ClusterArticle, ClusterArticle.article_id == Article.id)
         .where(ClusterArticle.id.is_(None))
         .order_by(Article.published_at.asc(), Article.id.asc())
+        .limit(limit)
     )
     return list(session.scalars(stmt).all())
 
@@ -275,10 +460,10 @@ def _has_related_topic(left: Cluster, right: Cluster) -> bool:
 
 
 def _related_score(left: Cluster, right: Cluster, settings: Settings) -> tuple[int, int, int, datetime, str] | None:
-    left_entities = set(left.entities or [])
-    right_entities = set(right.entities or [])
-    left_keywords = set(left.keywords or [])
-    right_keywords = set(right.keywords or [])
+    left_entities = _semantic_entities(left.entities)
+    right_entities = _semantic_entities(right.entities)
+    left_keywords = _semantic_keywords(left.keywords)
+    right_keywords = _semantic_keywords(right.keywords)
     entity_overlap = len(left_entities.intersection(right_entities))
     keyword_overlap = len(left_keywords.intersection(right_keywords))
     topic_match = _has_related_topic(left, right)
@@ -334,29 +519,37 @@ def _build_heuristic_breakdown(
             "title_similarity": 0.0,
             "entity_jaccard": 0.0,
             "keyword_jaccard": 0.0,
+            "semantic_score": 0.0,
             "time_proximity": 0.0,
         }
         overlap_counts = {
             "entity_overlap": 0,
             "keyword_overlap": 0,
+            "location_overlap": 0,
         }
         selected_score = 0.0
         selected_cluster_id = None
         signal_gate_passed = False
+        signal_reasons: tuple[str, ...] = ()
+        candidate_rejection_reason = None
     else:
         components = {
             "title_similarity": evaluation.title_similarity,
             "entity_jaccard": evaluation.entity_jaccard,
             "keyword_jaccard": evaluation.keyword_jaccard,
+            "semantic_score": evaluation.semantic_score,
             "time_proximity": evaluation.time_proximity,
         }
         overlap_counts = {
             "entity_overlap": evaluation.entity_overlap,
             "keyword_overlap": evaluation.keyword_overlap,
+            "location_overlap": evaluation.location_overlap,
         }
         selected_score = evaluation.score
         selected_cluster_id = evaluation.cluster.id
         signal_gate_passed = evaluation.signal_gate_passed
+        signal_reasons = evaluation.signal_reasons
+        candidate_rejection_reason = evaluation.rejection_reason
 
     topic_match = evaluation.topic_match if evaluation is not None else False
     selected_topic = evaluation.cluster.topic if evaluation is not None else None
@@ -365,8 +558,9 @@ def _build_heuristic_breakdown(
         "title_signal_threshold": settings.cluster_min_title_signal,
         "entity_overlap_threshold": settings.cluster_min_entity_overlap,
         "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
-        "attach_override_title_similarity_threshold": ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD,
-        "attach_override_time_proximity_threshold": ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD,
+        "topic_semantic_score_threshold": settings.cluster_min_topic_semantic_score,
+        "attach_override_title_similarity_threshold": settings.cluster_attach_override_min_title_similarity,
+        "attach_override_time_proximity_threshold": settings.cluster_attach_override_min_time_proximity,
         "attach_override_keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
     }
 
@@ -375,12 +569,30 @@ def _build_heuristic_breakdown(
         "title_signal_met": components["title_similarity"] >= settings.cluster_min_title_signal,
         "entity_overlap_met": overlap_counts["entity_overlap"] >= settings.cluster_min_entity_overlap,
         "keyword_overlap_met": overlap_counts["keyword_overlap"] >= settings.cluster_min_keyword_overlap,
+        "topic_semantic_score_met": topic_match
+        and components["semantic_score"] >= settings.cluster_min_topic_semantic_score,
         "topic_match_met": topic_match,
         "signal_gate_passed": signal_gate_passed,
         "attach_override_met": attach_override_met,
     }
 
     score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
+    semantic_formula = "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
+
+    warnings: list[str] = []
+    if decision == "attach_existing_cluster":
+        if not signal_gate_passed:
+            warnings.append("attached_without_semantic_gate")
+        if selected_score < settings.cluster_score_threshold:
+            warnings.append("attached_below_score_threshold")
+        if components["time_proximity"] >= settings.cluster_attach_override_min_time_proximity and not signal_reasons:
+            warnings.append("time_proximity_without_semantic_signal")
+        if components["semantic_score"] < settings.cluster_min_topic_semantic_score and not (
+            thresholds_met["title_signal_met"]
+            or thresholds_met["entity_overlap_met"]
+            or thresholds_met["keyword_overlap_met"]
+        ):
+            warnings.append("low_semantic_score")
 
     return {
         "decision": decision,
@@ -390,11 +602,16 @@ def _build_heuristic_breakdown(
         "selected_topic": selected_topic,
         "selected_score": round(selected_score, 4),
         "selected_topic_match": topic_match,
+        "selected_source_match": evaluation.source_match if evaluation is not None else False,
         "score_formula": score_formula,
+        "semantic_formula": semantic_formula,
         "components": components,
         "overlap_counts": overlap_counts,
         "thresholds": thresholds,
         "thresholds_met": thresholds_met,
+        "signal_reasons": list(signal_reasons),
+        "candidate_rejection_reason": candidate_rejection_reason,
+        "warnings": warnings,
         "attach_override_components": attach_override_components or {},
     }
 
@@ -436,8 +653,8 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     avg_similarity = session.scalar(similarity_stmt) or 0.0
 
     for article in articles:
-        keyword_union.update(article.keywords)
-        entity_union.update(article.entities)
+        keyword_union.update(_semantic_keywords(article.keywords))
+        entity_union.update(_semantic_entities(article.entities))
 
     cluster.first_seen = first_seen
     cluster.last_updated = last_updated
@@ -554,8 +771,8 @@ def _create_cluster(session: Session, article: Article) -> Cluster:
         score=0.0,
         status="emerging",
         normalized_headline=article.normalized_title,
-        keywords=article.keywords,
-        entities=article.entities,
+        keywords=sorted(_semantic_keywords(article.keywords)),
+        entities=sorted(_semantic_entities(article.entities)),
         topic=article.topic,
     )
     session.add(cluster)
@@ -577,7 +794,7 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
     promotion_failures = 0
     invalid_cluster_ids: set[str] = set()
 
-    pending = _load_unclustered_articles(session)
+    pending = _load_unclustered_articles(session, settings.clustering_batch_size)
 
     for article in pending:
         article_features = _article_features(article)
@@ -585,11 +802,15 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
         candidates = _load_candidate_clusters(session, article, settings)
 
         best_evaluation: CandidateEvaluation | None = None
+        strongest_evaluation: CandidateEvaluation | None = None
 
         for candidate_cluster in candidates:
             candidates_evaluated += 1
             cluster_features = _cluster_features(candidate_cluster)
             evaluation = _evaluate_candidate(candidate_cluster, article_features, cluster_features, settings)
+
+            if _is_better_candidate(evaluation, strongest_evaluation, settings.cluster_tie_break_epsilon):
+                strongest_evaluation = evaluation
 
             if not evaluation.signal_gate_passed:
                 signal_rejected += 1
@@ -605,39 +826,51 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
             cluster = _create_cluster(session, article)
             created_count += 1
             new_decisions += 1
-            decision_reason = "no_candidate_passed_signal_gate"
+            decision_reason = "no_candidate_clusters" if not candidates else "strongest_candidate_failed_semantic_gate"
             breakdown = _build_heuristic_breakdown(
                 decision="create_new_cluster",
                 decision_reason=decision_reason,
                 candidate_count=len(candidates),
                 settings=settings,
-                evaluation=None,
+                evaluation=strongest_evaluation,
             )
         else:
-            attach_override_met = (
+            semantic_override_met = (
                 best_evaluation.signal_gate_passed
-                and (
-                    best_evaluation.keyword_overlap >= settings.cluster_min_keyword_overlap
-                    or (
-                        best_evaluation.topic_match
-                        and best_evaluation.keyword_overlap >= 1
-                        and best_evaluation.title_similarity >= ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD
-                        and best_evaluation.time_proximity >= ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD
-                    )
+                and best_evaluation.time_proximity >= settings.cluster_attach_override_min_time_proximity
+                and any(
+                    reason
+                    in {
+                        "meaningful_entity_overlap",
+                        "meaningful_keyword_overlap",
+                        "topic_semantic_similarity",
+                        "topic_title_keyword_similarity",
+                    }
+                    for reason in best_evaluation.signal_reasons
                 )
-                and best_evaluation.title_similarity >= ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD
-                and best_evaluation.time_proximity >= ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD
             )
-            should_attach = best_evaluation.score >= settings.cluster_score_threshold or attach_override_met
+            title_override_met = (
+                best_evaluation.signal_gate_passed
+                and best_evaluation.title_similarity >= settings.cluster_attach_override_min_title_similarity
+                and best_evaluation.time_proximity >= settings.cluster_attach_override_min_time_proximity
+                and "strong_title_similarity" in best_evaluation.signal_reasons
+            )
+            attach_override_met = semantic_override_met or title_override_met
+            should_attach = best_evaluation.signal_gate_passed and (
+                best_evaluation.score >= settings.cluster_score_threshold or attach_override_met
+            )
             attach_override_components = {
                 "signal_gate_passed": best_evaluation.signal_gate_passed,
+                "signal_reasons": list(best_evaluation.signal_reasons),
                 "topic_match": best_evaluation.topic_match,
                 "keyword_overlap": best_evaluation.keyword_overlap,
                 "keyword_overlap_threshold": settings.cluster_min_keyword_overlap,
                 "title_similarity": best_evaluation.title_similarity,
-                "title_similarity_threshold": ATTACH_OVERRIDE_TITLE_SIMILARITY_THRESHOLD,
+                "title_similarity_threshold": settings.cluster_attach_override_min_title_similarity,
+                "semantic_score": best_evaluation.semantic_score,
+                "topic_semantic_score_threshold": settings.cluster_min_topic_semantic_score,
                 "time_proximity": best_evaluation.time_proximity,
-                "time_proximity_threshold": ATTACH_OVERRIDE_TIME_PROXIMITY_THRESHOLD,
+                "time_proximity_threshold": settings.cluster_attach_override_min_time_proximity,
             }
 
             if should_attach:
@@ -663,7 +896,7 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                 created_count += 1
                 new_decisions += 1
                 low_confidence_new += 1
-                decision_reason = "best_candidate_below_score_threshold"
+                decision_reason = "best_candidate_below_score_threshold_and_no_safe_override"
                 breakdown = _build_heuristic_breakdown(
                     decision="create_new_cluster",
                     decision_reason=decision_reason,
@@ -675,19 +908,34 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
                 )
 
         _attach_article_to_cluster(session, cluster, article, chosen_score, breakdown)
+        log_payload = {
+            "article_id": article.id,
+            "article_title": article.title,
+            "decision": breakdown["decision"],
+            "reason": decision_reason,
+            "selected_cluster_id": cluster.id,
+            "candidate_cluster_id": breakdown["selected_cluster_id"],
+            "strongest_candidate_cluster_id": breakdown["selected_cluster_id"],
+            "strongest_candidate_topic": breakdown["selected_topic"],
+            "final_score": chosen_score,
+            "candidate_score": breakdown["selected_score"],
+            "title_similarity": breakdown["components"]["title_similarity"],
+            "entity_jaccard": breakdown["components"]["entity_jaccard"],
+            "keyword_jaccard": breakdown["components"]["keyword_jaccard"],
+            "semantic_score": breakdown["components"]["semantic_score"],
+            "entity_overlap": breakdown["overlap_counts"]["entity_overlap"],
+            "keyword_overlap": breakdown["overlap_counts"]["keyword_overlap"],
+            "location_overlap": breakdown["overlap_counts"]["location_overlap"],
+            "source_match": breakdown["selected_source_match"],
+            "topic_match": breakdown["selected_topic_match"],
+            "time_proximity": breakdown["components"]["time_proximity"],
+            "signal_gate_passed": breakdown["thresholds_met"]["signal_gate_passed"],
+            "signal_reasons": breakdown["signal_reasons"],
+            "warnings": breakdown["warnings"],
+        }
         logger.info(
-            "cluster_article_decision article_id=%s cluster_id=%s decision=%s reason=%s score=%.4f title_similarity=%.4f entity_overlap=%s keyword_overlap=%s time_proximity=%.4f topic_match=%s signal_gate_passed=%s",
-            article.id,
-            cluster.id,
-            breakdown["decision"],
-            decision_reason,
-            chosen_score,
-            best_evaluation.title_similarity if best_evaluation is not None else 0.0,
-            best_evaluation.entity_overlap if best_evaluation is not None else 0,
-            best_evaluation.keyword_overlap if best_evaluation is not None else 0,
-            best_evaluation.time_proximity if best_evaluation is not None else 0.0,
-            best_evaluation.topic_match if best_evaluation is not None else False,
-            best_evaluation.signal_gate_passed if best_evaluation is not None else False,
+            "cluster_article_decision %s",
+            json.dumps(log_payload, sort_keys=True, default=str),
         )
         rebuild_result = _rebuild_cluster(session, cluster, settings)
         if rebuild_result.validation_failed:

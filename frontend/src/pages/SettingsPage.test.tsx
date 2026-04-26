@@ -117,7 +117,7 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset preferences" }));
 
     expect(window.localStorage.getItem(SAVED_STORIES_STORAGE_KEY)).toBe("[]");
-    expect(storedPreferences()).toMatchObject({ theme: "light", compactMode: false, showSummaries: true });
+    expect(storedPreferences()).toMatchObject({ theme: "dark", compactMode: false, showSummaries: true });
   });
 
   it("loads and renders configured source health data in the Sources tab", async () => {

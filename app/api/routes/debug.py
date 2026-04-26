@@ -13,6 +13,7 @@ from app.schemas.article import ArticleDebugResponse
 from app.schemas.cluster import (
     ClusterDebugExplanation,
     ClusterDebugItem,
+    ClusterDebugJoinDecision,
     ClusterDebugResponse,
     ClusterDebugScoreBreakdown,
     ClusterDebugThresholds,
@@ -38,6 +39,32 @@ def _top_shared_terms(cluster: Cluster, *, attr: str, limit: int = 5) -> list[st
     return (shared or [term for term, _ in ranked])[:limit]
 
 
+def _location_diversity_warning(cluster: Cluster) -> str | None:
+    location_terms = {
+        "gaza",
+        "iran",
+        "israel",
+        "lebanon",
+        "mali",
+        "sahel",
+        "syria",
+        "ukraine",
+        "yemen",
+    }
+    seen: set[str] = set()
+    for link in cluster.source_links:
+        article = link.article
+        if article is None:
+            continue
+        terms = {str(term).strip().lower() for term in (article.entities + article.keywords) if str(term).strip()}
+        title_terms = {part.strip().lower() for part in (article.title or "").replace("-", " ").split() if part.strip()}
+        seen.update(terms.intersection(location_terms))
+        seen.update(title_terms.intersection(location_terms))
+    if len(seen) >= 3:
+        return "cluster_location_diversity_warning"
+    return None
+
+
 def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     settings = get_settings()
     links = list(cluster.source_links)
@@ -47,9 +74,12 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         "title_similarity": [],
         "entity_jaccard": [],
         "keyword_jaccard": [],
+        "semantic_score": [],
         "time_proximity": [],
         "score": [],
     }
+    recent_join_decisions: list[ClusterDebugJoinDecision] = []
+    warning_counts: Counter[str] = Counter()
 
     threshold_results = {
         "score_threshold_met": cluster.score >= settings.cluster_score_threshold,
@@ -66,7 +96,7 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         decision_counts.update([str(breakdown.get("decision") or "unknown")])
 
         component_values = breakdown.get("components") or {}
-        for key in ("title_similarity", "entity_jaccard", "keyword_jaccard", "time_proximity"):
+        for key in ("title_similarity", "entity_jaccard", "keyword_jaccard", "semantic_score", "time_proximity"):
             value = component_values.get(key)
             if isinstance(value, (int, float)):
                 components[key].append(float(value))
@@ -87,6 +117,34 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         if met.get("attach_override_met"):
             threshold_results["attach_override_seen"] = True
 
+        warnings = [str(item) for item in breakdown.get("warnings") or [] if str(item)]
+        warning_counts.update(warnings)
+        article = link.article
+        recent_join_decisions.append(
+            ClusterDebugJoinDecision(
+                article_id=article.id if article is not None else link.article_id,
+                article_title=article.title if article is not None else "",
+                publisher=article.publisher if article is not None else "",
+                decision=str(breakdown.get("decision") or "unknown"),
+                reason=str(breakdown.get("decision_reason") or ""),
+                selected_cluster_id=breakdown.get("selected_cluster_id"),
+                selected_score=round(float(breakdown.get("selected_score") or 0.0), 4),
+                title_similarity=round(float(component_values.get("title_similarity") or 0.0), 4),
+                entity_jaccard=round(float(component_values.get("entity_jaccard") or 0.0), 4),
+                keyword_jaccard=round(float(component_values.get("keyword_jaccard") or 0.0), 4),
+                semantic_score=round(float(component_values.get("semantic_score") or 0.0), 4),
+                entity_overlap=int((breakdown.get("overlap_counts") or {}).get("entity_overlap") or 0),
+                keyword_overlap=int((breakdown.get("overlap_counts") or {}).get("keyword_overlap") or 0),
+                location_overlap=int((breakdown.get("overlap_counts") or {}).get("location_overlap") or 0),
+                source_match=bool(breakdown.get("selected_source_match")),
+                topic_match=bool(breakdown.get("selected_topic_match")),
+                time_proximity=round(float(component_values.get("time_proximity") or 0.0), 4),
+                signal_gate_passed=bool(met.get("signal_gate_passed")),
+                signal_reasons=[str(item) for item in breakdown.get("signal_reasons") or [] if str(item)],
+                warnings=warnings,
+            )
+        )
+
     def average(values: list[float]) -> float:
         if not values:
             return 0.0
@@ -98,6 +156,7 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
 
     score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
+    semantic_formula = "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
     score_summary = (
         "Score is a weighted blend of title similarity, shared entities, shared keywords, and recency. "
         "Higher scores usually mean a tighter match; lower scores usually mean broader or more mixed coverage."
@@ -110,6 +169,9 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         f"'{cluster_topic}' using a weighted score ({score_formula}). {score_summary} "
         f"The main shared themes were {topic_text}."
     )
+    quality_warning = _location_diversity_warning(cluster)
+    if quality_warning:
+        warning_counts.update([quality_warning])
 
     return ClusterDebugExplanation(
         grouping_reason=grouping_reason,
@@ -118,6 +180,9 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             title_signal_threshold=settings.cluster_min_title_signal,
             entity_overlap_threshold=settings.cluster_min_entity_overlap,
             keyword_overlap_threshold=settings.cluster_min_keyword_overlap,
+            topic_semantic_score_threshold=settings.cluster_min_topic_semantic_score,
+            attach_override_title_similarity_threshold=settings.cluster_attach_override_min_title_similarity,
+            attach_override_time_proximity_threshold=settings.cluster_attach_override_min_time_proximity,
             min_sources_for_api=settings.cluster_min_sources_for_api,
             min_sources_for_top_stories=settings.cluster_min_sources_for_top_stories,
             min_sources_for_developing_stories=settings.cluster_min_sources_for_developing_stories,
@@ -130,10 +195,18 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             average_title_similarity=average(components["title_similarity"]),
             average_entity_jaccard=average(components["entity_jaccard"]),
             average_keyword_jaccard=average(components["keyword_jaccard"]),
+            average_semantic_score=average(components["semantic_score"]),
             average_time_proximity=average(components["time_proximity"]),
             score_formula=score_formula,
+            semantic_formula=semantic_formula,
         ),
         decision_counts={key: int(value) for key, value in sorted(decision_counts.items())},
+        recent_join_decisions=sorted(
+            recent_join_decisions,
+            key=lambda item: item.article_id,
+            reverse=True,
+        )[:8],
+        warnings=[key for key, _ in warning_counts.most_common()],
     )
 
 

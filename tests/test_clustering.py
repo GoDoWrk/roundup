@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -111,6 +113,156 @@ def test_cluster_new_articles_creates_separate_clusters_for_unrelated_coverage(d
     assert db_session.query(Cluster).count() == 2
 
 
+def test_close_time_same_topic_without_semantic_overlap_creates_new_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="time-only-1",
+        title="Transit agency board approves strike settlement",
+        normalized_title="transit agency board approves strike settlement",
+        keywords=["agency", "board", "strike", "settlement"],
+        entities=["Transit Workers Union"],
+        published_at=now - timedelta(minutes=20),
+        publisher="Metro Daily",
+    )
+    first.topic = "Transit"
+    second = _article(
+        dedupe_hash="time-only-2",
+        title="Transit museum opens new photography exhibit",
+        normalized_title="transit museum opens new photography exhibit",
+        keywords=["museum", "photography", "exhibit", "opens"],
+        entities=["City Museum"],
+        published_at=now - timedelta(minutes=5),
+        publisher="Culture Wire",
+    )
+    second.topic = "Transit"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert result.signal_rejected >= 1
+    assert db_session.query(Cluster).count() == 2
+
+    created_links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = created_links[-1].heuristic_breakdown
+    assert second_breakdown["decision"] == "create_new_cluster"
+    assert second_breakdown["decision_reason"] == "strongest_candidate_failed_semantic_gate"
+    assert second_breakdown["components"]["time_proximity"] > 0.9
+    assert second_breakdown["thresholds_met"]["signal_gate_passed"] is False
+
+
+def test_generic_stopword_keyword_overlap_does_not_attach(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="stopword-1",
+        title="Solar farm opens near county airport",
+        normalized_title="solar farm opens near county airport",
+        keywords=["the", "and", "for", "solar"],
+        entities=[],
+        published_at=now - timedelta(minutes=15),
+        publisher="Energy Desk",
+    )
+    first.topic = "Infrastructure"
+    second = _article(
+        dedupe_hash="stopword-2",
+        title="Court hears appeal in fraud case",
+        normalized_title="court hears appeal in fraud case",
+        keywords=["the", "and", "for", "court"],
+        entities=[],
+        published_at=now - timedelta(minutes=5),
+        publisher="Justice Wire",
+    )
+    second.topic = "Infrastructure"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["decision"] == "create_new_cluster"
+    assert second_breakdown["overlap_counts"]["keyword_overlap"] == 0
+    assert second_breakdown["thresholds_met"]["signal_gate_passed"] is False
+
+
+def test_clustering_batch_size_limits_articles_per_cycle(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    fixtures = [
+        ("batch-0", "Harbor ferry terminal reopens after inspection", ["harbor", "ferry", "terminal"], ["Harbor Authority"]),
+        ("batch-1", "County hospital launches rural clinic program", ["county", "hospital", "clinic"], ["County Hospital"]),
+        ("batch-2", "Solar company reports battery plant expansion", ["solar", "battery", "plant"], ["Solar Works"]),
+    ]
+    for index, (dedupe_hash, title, keywords, entities) in enumerate(fixtures):
+        db_session.add(
+            _article(
+                dedupe_hash=dedupe_hash,
+                title=title,
+                normalized_title=title.lower(),
+                keywords=keywords,
+                entities=entities,
+                published_at=now + timedelta(minutes=index),
+            )
+        )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings(clustering_batch_size=2))
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert db_session.query(ClusterArticle).count() == 2
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_weak_text_overlap_with_same_named_entity_and_event_attaches(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="entity-event-1",
+        title="Governor orders emergency inspection after Pine Ridge Dam cracks",
+        normalized_title="governor orders emergency inspection after pine ridge dam cracks",
+        keywords=["governor", "emergency", "inspection", "cracks"],
+        entities=["Pine Ridge Dam"],
+        published_at=now - timedelta(hours=2),
+        publisher="State Ledger",
+    )
+    first.topic = "Pine Ridge Dam"
+    second = _article(
+        dedupe_hash="entity-event-2",
+        title="Officials publish evacuation timeline near Pine Ridge Dam",
+        normalized_title="officials publish evacuation timeline near pine ridge dam",
+        keywords=["officials", "evacuation", "timeline", "near"],
+        entities=["Pine Ridge Dam"],
+        published_at=now - timedelta(minutes=40),
+        publisher="Valley Herald",
+    )
+    second.topic = "Pine Ridge Dam"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    assert db_session.query(Cluster).count() == 1
+
+    attached_link = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())[-1]
+    breakdown = attached_link.heuristic_breakdown
+    assert breakdown["decision"] == "attach_existing_cluster"
+    assert "meaningful_entity_overlap" in breakdown["signal_reasons"]
+    assert breakdown["overlap_counts"]["entity_overlap"] == 1
+
+
 def test_article_attaches_to_existing_cluster_on_subsequent_run(db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     db_session.add(
@@ -153,6 +305,51 @@ def test_article_attaches_to_existing_cluster_on_subsequent_run(db_session: Sess
     links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
     assert len(links) == 2
     assert links[-1].heuristic_breakdown["decision"] == "attach_existing_cluster"
+
+
+def test_cluster_article_decision_log_is_structured(caplog, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="log-1",
+            title="City Council Approves Transit Plan",
+            normalized_title="city council approves transit plan",
+            keywords=["city", "council", "transit", "plan"],
+            entities=["City Council"],
+            published_at=now - timedelta(hours=2),
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="log-2",
+            title="City Council Expands Transit Plan",
+            normalized_title="city council expands transit plan",
+            keywords=["city", "council", "transit", "plan"],
+            entities=["City Council"],
+            published_at=now - timedelta(hours=1),
+        )
+    )
+    db_session.commit()
+
+    with caplog.at_level(logging.INFO, logger="app.services.clustering"):
+        cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    log_records = [record for record in caplog.records if record.getMessage().startswith("cluster_article_decision ")]
+    assert log_records
+    payload = json.loads(log_records[-1].getMessage().split("cluster_article_decision ", 1)[1])
+    assert payload["decision"] == "attach_existing_cluster"
+    assert payload["strongest_candidate_cluster_id"]
+    assert payload["title_similarity"] > 0
+    assert payload["entity_overlap"] == 1
+    assert payload["keyword_overlap"] >= 2
+    assert "location_overlap" in payload
+    assert "source_match" in payload
+    assert payload["selected_cluster_id"]
+    assert "candidate_cluster_id" in payload
+    assert payload["time_proximity"] > 0
+    assert payload["signal_gate_passed"] is True
+    assert payload["reason"] in {"attached_to_existing_cluster", "attached_to_existing_cluster_via_override"}
 
 
 def test_timeline_deduplicates_repetitive_same_publisher_updates(db_session: Session) -> None:
@@ -463,6 +660,84 @@ def test_war_adjacent_articles_do_not_collapse_into_one_cluster(db_session: Sess
 
     assert result.created_count == 2
     assert db_session.query(Cluster).count() == 2
+
+
+def test_mali_camara_story_rejects_gaza_yemen_hezbollah_but_keeps_related_updates(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    fixtures = [
+        _article(
+            dedupe_hash="mali-1",
+            title="Mali defence minister Sadio Camara says army operation secured key town",
+            normalized_title="mali defence minister sadio camara says army operation secured key town",
+            keywords=["mali", "sadio camara", "army", "operation", "town"],
+            entities=["Sadio Camara", "Mali"],
+            published_at=now - timedelta(hours=4),
+            publisher="Sahel Monitor",
+        ),
+        _article(
+            dedupe_hash="mali-2",
+            title="Sadio Camara briefs Mali cabinet on follow-up security operation",
+            normalized_title="sadio camara briefs mali cabinet on follow-up security operation",
+            keywords=["mali", "sadio camara", "cabinet", "security", "operation"],
+            entities=["Sadio Camara", "Mali"],
+            published_at=now - timedelta(hours=3, minutes=30),
+            publisher="Bamako Times",
+        ),
+        _article(
+            dedupe_hash="gaza-1",
+            title="Mediators push for Gaza ceasefire after overnight strikes",
+            normalized_title="mediators push for gaza ceasefire after overnight strikes",
+            keywords=["gaza", "ceasefire", "mediators", "strikes"],
+            entities=["Gaza"],
+            published_at=now - timedelta(hours=3),
+            publisher="World Briefing",
+        ),
+        _article(
+            dedupe_hash="yemen-1",
+            title="Landmine blast in Yemen kills civilians near coastal road",
+            normalized_title="landmine blast in yemen kills civilians near coastal road",
+            keywords=["yemen", "landmine", "civilians", "coastal road"],
+            entities=["Yemen"],
+            published_at=now - timedelta(hours=2, minutes=45),
+            publisher="Global Desk",
+        ),
+        _article(
+            dedupe_hash="lebanon-1",
+            title="Hezbollah and Lebanon officials weigh response after border exchange",
+            normalized_title="hezbollah and lebanon officials weigh response after border exchange",
+            keywords=["hezbollah", "lebanon", "border", "exchange"],
+            entities=["Hezbollah", "Lebanon"],
+            published_at=now - timedelta(hours=2, minutes=30),
+            publisher="Regional Wire",
+        ),
+    ]
+    db_session.add_all(fixtures)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.attach_decisions == 1
+    assert result.created_count == 4
+    assert db_session.query(Cluster).count() == 4
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.article_id.asc())).all())
+    by_article = {link.article.title: link for link in links if link.article is not None}
+
+    mali_first_cluster = by_article["Mali defence minister Sadio Camara says army operation secured key town"].cluster_id
+    mali_second_cluster = by_article["Sadio Camara briefs Mali cabinet on follow-up security operation"].cluster_id
+    assert mali_first_cluster == mali_second_cluster
+
+    assert by_article["Mediators push for Gaza ceasefire after overnight strikes"].cluster_id != mali_first_cluster
+    assert by_article["Landmine blast in Yemen kills civilians near coastal road"].cluster_id != mali_first_cluster
+    assert by_article["Hezbollah and Lebanon officials weigh response after border exchange"].cluster_id != mali_first_cluster
+
+    gaza_breakdown = by_article["Mediators push for Gaza ceasefire after overnight strikes"].heuristic_breakdown
+    assert gaza_breakdown["decision"] == "create_new_cluster"
+    assert gaza_breakdown["candidate_rejection_reason"] in {
+        "location_conflict_without_entity_overlap",
+        "distinct_event_signatures",
+    }
 
 
 def test_what_changed_filters_noise_terms() -> None:

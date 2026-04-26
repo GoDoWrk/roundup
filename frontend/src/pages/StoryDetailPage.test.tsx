@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
@@ -167,7 +167,7 @@ describe("StoryDetailPage", () => {
     expect(screen.getByRole("button", { name: "Load older updates" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Key Facts" }));
-    expect(screen.getByRole("tab", { name: "Key Facts" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Key Facts" })).toHaveAttribute("aria-selected", "true"));
     expect(screen.getByText("3 sources are tracking this story, including Example News.")).toBeInTheDocument();
     expect(screen.queryByText("Final vote support was reported")).not.toBeInTheDocument();
 

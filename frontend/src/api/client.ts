@@ -2,6 +2,7 @@ import type {
   ClusterDebugResponse,
   ClusterListResponse,
   HomepageClustersResponse,
+  HealthResponse,
   SearchResponse,
   SourceListResponse,
   StoryCluster
@@ -58,6 +59,10 @@ export async function fetchSearchResults(options: { q: string; limit?: number })
 
 export async function fetchSources(): Promise<SourceListResponse> {
   return fetchJson<SourceListResponse>("/api/sources");
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  return fetchJson<HealthResponse>("/health");
 }
 
 export async function fetchDebugClusters(): Promise<ClusterDebugResponse> {

@@ -284,7 +284,7 @@ export function StoryDetailPage() {
   useEffect(() => {
     setActiveTab("timeline");
     setVisibleTimelineCount(INITIAL_TIMELINE_COUNT);
-  }, [cluster?.cluster_id]);
+  }, [clusterId]);
 
   const events = useMemo(() => (cluster ? sortEventsByNewest(cluster) : []), [cluster]);
   const sources = useMemo(() => (cluster ? sortSourcesByNewest(cluster) : []), [cluster]);
