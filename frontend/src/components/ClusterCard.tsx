@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import { getFreshnessLabel, isRecentlyUpdated, previewSummary } from "../utils/homepage";
@@ -10,6 +11,7 @@ interface ClusterCardProps {
 }
 
 export function ClusterCard({ cluster, to, highlighted = false }: ClusterCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
   const now = Date.now();
   const sourceCount = cluster.sources.length;
   const summary = cluster.summary.trim();
@@ -20,8 +22,20 @@ export function ClusterCard({ cluster, to, highlighted = false }: ClusterCardPro
   const relativeLabel = formatRelativeTime(cluster.last_updated, now);
   const hasValidTimestamp = readableTimestamp && !relativeLabel.startsWith("(");
   const className = `story-card${recentlyUpdated ? " story-card--fresh" : ""}${highlighted ? " story-card--updated" : ""}${to ? " story-card--linked" : ""}`;
+  const imageUrl = cluster.primary_image_url?.trim() || "";
+  const showImage = imageUrl.length > 0 && !imageFailed;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
   const content = (
     <>
+      {showImage && (
+        <div className="story-card__image-frame">
+          <img src={imageUrl} alt="" className="story-card__image" loading="lazy" onError={() => setImageFailed(true)} />
+        </div>
+      )}
       <div className="story-card__eyebrow">
         <span className="story-card__source-count">
           {sourceCount} source{sourceCount === 1 ? "" : "s"}

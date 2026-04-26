@@ -4,6 +4,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html import unescape
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app.services.topics import derive_topic_from_text
@@ -52,6 +53,7 @@ class NormalizedArticle:
     publisher: str
     published_at: datetime
     content_text: str
+    image_url: str | None
     raw_payload: dict
     normalized_title: str
     keywords: list[str]
@@ -112,12 +114,149 @@ def build_dedupe_hash(canonical_url: str, normalized_title_value: str, published
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def is_valid_image_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    candidate = normalize_whitespace(value)
+    if not candidate:
+        return False
+    parsed = urlparse(candidate)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _append_candidate(candidates: list[str], value: object) -> None:
+    if is_valid_image_url(value):
+        candidates.append(normalize_whitespace(str(value)))
+
+
+def _dedupe_image_urls(candidates: list[str]) -> list[str]:
+    seen: set[str] = set()
+    urls: list[str] = []
+    for candidate in candidates:
+        parsed = urlparse(candidate)
+        normalized = urlunparse(parsed._replace(fragment=""))
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        urls.append(normalized)
+    return urls
+
+
+def _mime_is_image(value: object) -> bool:
+    return isinstance(value, str) and value.lower().split(";", 1)[0].strip().startswith("image/")
+
+
+def _append_nested_metadata_candidates(candidates: list[str], entry: dict) -> None:
+    metadata_keys = ("metadata", "meta", "article_metadata", "open_graph", "opengraph", "twitter")
+    image_keys = ("image", "image_url", "thumbnail", "thumbnail_url", "lead_image_url", "og:image", "twitter:image")
+
+    for key in metadata_keys:
+        nested = entry.get(key)
+        if not isinstance(nested, dict):
+            continue
+        for image_key in image_keys:
+            value = nested.get(image_key)
+            if isinstance(value, dict):
+                _append_candidate(candidates, value.get("url") or value.get("href") or value.get("src"))
+            else:
+                _append_candidate(candidates, value)
+
+
+def _append_media_candidates(candidates: list[str], entry: dict) -> None:
+    thumbnail_value = entry.get("media_thumbnail")
+    thumbnail_items = thumbnail_value if isinstance(thumbnail_value, list) else [thumbnail_value]
+    for item in thumbnail_items:
+        if isinstance(item, dict):
+            _append_candidate(candidates, item.get("url") or item.get("href") or item.get("src"))
+
+    media_value = entry.get("media_content")
+    media_items = media_value if isinstance(media_value, list) else [media_value]
+    for item in media_items:
+        if not isinstance(item, dict):
+            continue
+        medium = str(item.get("medium") or "").lower()
+        mime_type = item.get("type") or item.get("mime_type")
+        if medium == "image" or _mime_is_image(mime_type):
+            _append_candidate(candidates, item.get("url") or item.get("href") or item.get("src"))
+
+    raw_links = entry.get("links") or []
+    links = raw_links if isinstance(raw_links, list) else [raw_links]
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        rel = str(link.get("rel") or "").lower()
+        mime_type = link.get("type")
+        if rel in {"enclosure", "thumbnail", "image"} or _mime_is_image(mime_type):
+            _append_candidate(candidates, link.get("href") or link.get("url"))
+
+
+def _append_enclosure_candidates(candidates: list[str], entry: dict) -> None:
+    raw_enclosures = entry.get("enclosures") or entry.get("enclosure") or []
+    enclosures = raw_enclosures if isinstance(raw_enclosures, list) else [raw_enclosures]
+    for enclosure in enclosures:
+        if not isinstance(enclosure, dict):
+            continue
+        mime_type = enclosure.get("mime_type") or enclosure.get("type")
+        if _mime_is_image(mime_type):
+            _append_candidate(candidates, enclosure.get("url") or enclosure.get("href"))
+
+
+def _append_html_metadata_candidates(candidates: list[str], html: str) -> None:
+    if not html:
+        return
+
+    meta_pattern = re.compile(r"<meta\b(?P<attrs>[^>]*?)>", re.IGNORECASE)
+    attr_pattern = re.compile(r"([A-Za-z_:.-]+)\s*=\s*(['\"])(.*?)\2", re.IGNORECASE | re.DOTALL)
+    desired = {"og:image", "twitter:image", "twitter:image:src"}
+    fallback_images: list[str] = []
+
+    for match in meta_pattern.finditer(html):
+        attrs = {name.lower(): unescape(value.strip()) for name, _, value in attr_pattern.findall(match.group("attrs"))}
+        name = attrs.get("property") or attrs.get("name")
+        if name and name.lower() in desired:
+            _append_candidate(candidates, attrs.get("content"))
+
+    img_pattern = re.compile(r"<img\b(?P<attrs>[^>]*?)>", re.IGNORECASE)
+    for match in img_pattern.finditer(html):
+        attrs = {name.lower(): unescape(value.strip()) for name, _, value in attr_pattern.findall(match.group("attrs"))}
+        src = attrs.get("src")
+        if is_valid_image_url(src):
+            fallback_images.append(normalize_whitespace(str(src)))
+
+    candidates.extend(fallback_images)
+
+
+def extract_image_url(entry: dict, content: str = "") -> str | None:
+    try:
+        candidates: list[str] = []
+        for key in ("image_url", "thumbnail_url", "lead_image_url"):
+            _append_candidate(candidates, entry.get(key))
+
+        image_value = entry.get("image")
+        if isinstance(image_value, dict):
+            _append_candidate(candidates, image_value.get("url") or image_value.get("href") or image_value.get("src"))
+        else:
+            _append_candidate(candidates, image_value)
+
+        _append_nested_metadata_candidates(candidates, entry)
+        _append_media_candidates(candidates, entry)
+        _append_enclosure_candidates(candidates, entry)
+        _append_html_metadata_candidates(candidates, content)
+
+        urls = _dedupe_image_urls(candidates)
+        return urls[0] if urls else None
+    except Exception:
+        return None
+
+
 def normalize_miniflux_entry(entry: dict) -> NormalizedArticle:
     title = normalize_whitespace(str(entry.get("title") or "Untitled article"))
     url = normalize_whitespace(str(entry.get("url") or ""))
     canonical_url = canonicalize_url(url)
 
     content = normalize_whitespace(str(entry.get("content") or ""))
+    image_url = extract_image_url(entry, content)
     publisher = normalize_whitespace(
         str((entry.get("feed") or {}).get("title") or entry.get("author") or "unknown")
     )
@@ -139,6 +278,7 @@ def normalize_miniflux_entry(entry: dict) -> NormalizedArticle:
         publisher=publisher or "unknown",
         published_at=published_at,
         content_text=content[:10000],
+        image_url=image_url,
         raw_payload=entry,
         normalized_title=normalized_title_value,
         keywords=keywords,

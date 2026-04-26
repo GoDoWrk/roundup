@@ -49,6 +49,8 @@ describe("StoryDetailPage", () => {
           summary: "A major transit plan moved forward after new budget support and public review.",
           what_changed: "City leaders approved the revised transit budget framework.",
           why_it_matters: "The change affects service frequency and longer-term route planning.",
+          primary_image_url: "https://cdn.example.com/hero.jpg",
+          thumbnail_urls: ["https://cdn.example.com/hero.jpg", "https://cdn.example.com/second.jpg"],
           timeline: [
             {
               timestamp: "2026-04-22T00:30:00Z",
@@ -69,14 +71,16 @@ describe("StoryDetailPage", () => {
               title: "Transit Budget Coverage",
               url: "https://example.com/a",
               publisher: "Example News",
-              published_at: "2026-04-22T00:00:00Z"
+              published_at: "2026-04-22T00:00:00Z",
+              image_url: "https://cdn.example.com/hero.jpg"
             },
             {
               article_id: 2,
               title: "Vote Coverage",
               url: "https://example.com/b",
               publisher: "Example News",
-              published_at: "2026-04-22T03:00:00Z"
+              published_at: "2026-04-22T03:00:00Z",
+              image_url: "https://cdn.example.com/second.jpg"
             }
           ],
           first_seen: "2026-04-22T00:00:00Z",
@@ -87,9 +91,14 @@ describe("StoryDetailPage", () => {
       }
     });
 
-    renderAt("/story/cluster-1");
+    const { container } = renderAt("/story/cluster-1");
 
     expect(await screen.findByText("Transit Plan Advances")).toBeInTheDocument();
+    expect(container.querySelector(".story-detail__hero-media img")).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/hero.jpg"
+    );
+    expect(container.querySelectorAll(".story-detail__image-strip img")).toHaveLength(2);
     expect(screen.getByText("Summary")).toBeInTheDocument();
     expect(screen.getByText("What changed")).toBeInTheDocument();
     expect(screen.getByText("Why it matters")).toBeInTheDocument();
@@ -107,6 +116,8 @@ describe("StoryDetailPage", () => {
           summary: "A short summary is still shown.",
           what_changed: "",
           why_it_matters: "",
+          primary_image_url: null,
+          thumbnail_urls: [],
           timeline: [],
           sources: [],
           first_seen: "2026-04-22T00:00:00Z",

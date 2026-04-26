@@ -133,6 +133,7 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             publisher=normalized.publisher,
             published_at=normalized.published_at,
             content_text=normalized.content_text,
+            image_url=normalized.image_url,
             raw_payload=normalized.raw_payload,
             normalized_title=normalized.normalized_title,
             keywords=normalized.keywords,

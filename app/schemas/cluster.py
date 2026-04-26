@@ -17,6 +17,7 @@ class SourceReference(BaseModel):
     url: str = Field(min_length=1)
     publisher: str = Field(min_length=1)
     published_at: datetime
+    image_url: str | None = None
 
 
 ClusterStatus = Literal["emerging", "active", "stale"]
@@ -29,6 +30,8 @@ class StoryCluster(BaseModel):
     summary: str = Field(min_length=1)
     what_changed: str = Field(min_length=1)
     why_it_matters: str = Field(min_length=1)
+    primary_image_url: str | None = None
+    thumbnail_urls: list[str] = Field(default_factory=list)
     timeline: list[TimelineEvent]
     sources: list[SourceReference]
     first_seen: datetime

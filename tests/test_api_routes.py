@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Article, Cluster, ClusterArticle
 
 
-def _article(idx: int, cluster_id: str, now: datetime, publisher: str) -> Article:
+def _article(idx: int, cluster_id: str, now: datetime, publisher: str, image_url: str | None = None) -> Article:
     return Article(
         external_id=None,
         title=f"Transit update {idx}",
@@ -16,6 +16,7 @@ def _article(idx: int, cluster_id: str, now: datetime, publisher: str) -> Articl
         publisher=publisher,
         published_at=now - timedelta(hours=idx),
         content_text="Body",
+        image_url=image_url,
         raw_payload={"id": idx},
         normalized_title=f"transit update {idx}",
         keywords=["transit", "update", "city"],
@@ -61,7 +62,13 @@ def test_api_clusters_list_and_detail_return_structured_payloads(client, db_sess
     db_session.flush()
 
     for idx, publisher in enumerate(["Daily One", "Daily Two", "Daily Three"], start=1):
-        article = _article(idx, cluster.id, now, publisher)
+        article = _article(
+            idx,
+            cluster.id,
+            now,
+            publisher,
+            image_url=f"https://cdn.example.com/{cluster.id}/{idx}.jpg" if idx != 2 else None,
+        )
         db_session.add(article)
         db_session.flush()
         db_session.add(
@@ -81,17 +88,37 @@ def test_api_clusters_list_and_detail_return_structured_payloads(client, db_sess
     assert {"total", "limit", "offset", "items"} <= set(list_payload.keys())
 
     item = next(row for row in list_payload["items"] if row["cluster_id"] == "api-cluster")
-    assert {"headline", "summary", "what_changed", "why_it_matters", "timeline", "sources", "score", "status"} <= set(
-        item.keys()
-    )
+    assert {
+        "headline",
+        "summary",
+        "what_changed",
+        "why_it_matters",
+        "primary_image_url",
+        "thumbnail_urls",
+        "timeline",
+        "sources",
+        "score",
+        "status",
+    } <= set(item.keys())
     assert "topic" in item
+    assert item["primary_image_url"] == "https://cdn.example.com/api-cluster/1.jpg"
+    assert item["thumbnail_urls"] == [
+        "https://cdn.example.com/api-cluster/1.jpg",
+        "https://cdn.example.com/api-cluster/3.jpg",
+    ]
     assert len(item["sources"]) == 3
+    assert item["sources"][0]["image_url"] == "https://cdn.example.com/api-cluster/1.jpg"
 
     detail_response = client.get("/api/clusters/api-cluster")
     assert detail_response.status_code == 200
     detail_payload = detail_response.json()
     assert detail_payload["cluster_id"] == "api-cluster"
     assert "topic" in detail_payload
+    assert detail_payload["primary_image_url"] == "https://cdn.example.com/api-cluster/1.jpg"
+    assert detail_payload["thumbnail_urls"] == [
+        "https://cdn.example.com/api-cluster/1.jpg",
+        "https://cdn.example.com/api-cluster/3.jpg",
+    ]
     assert len(detail_payload["sources"]) == 3
     assert isinstance(detail_payload["timeline"], list)
 

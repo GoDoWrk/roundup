@@ -11,6 +11,7 @@ export interface SourceReference {
   url: string;
   publisher: string;
   published_at: string;
+  image_url?: string | null;
 }
 
 export interface StoryCluster {
@@ -20,6 +21,8 @@ export interface StoryCluster {
   summary: string;
   what_changed: string;
   why_it_matters: string;
+  primary_image_url?: string | null;
+  thumbnail_urls?: string[];
   timeline: TimelineEvent[];
   sources: SourceReference[];
   first_seen: string;
