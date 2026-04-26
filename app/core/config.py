@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     demo_mode: bool = False
     sample_miniflux_data_path: str | None = None
 
+    api_workers: int = 1
+    ingestion_concurrency: int = 1
+    summarization_concurrency: int = 1
+    clustering_batch_size: int = 100
+    clustering_concurrency: int = 1
+    inspector_worker_processes: int = 1
+    scheduler_enabled: bool = True
     scheduler_interval_seconds: int = 600
 
     cluster_score_threshold: float = 0.55
@@ -45,10 +52,13 @@ class Settings(BaseSettings):
     cluster_min_title_signal: float = 0.72
     cluster_min_entity_overlap: int = 1
     cluster_min_keyword_overlap: int = 2
+    cluster_min_topic_semantic_score: float = 0.38
+    cluster_attach_override_min_title_similarity: float = 0.30
+    cluster_attach_override_min_time_proximity: float = 0.80
     cluster_stale_hours: int = 48
     cluster_emerging_hours: int = 24
     cluster_emerging_source_count: int = 3
-    cluster_min_sources_for_api: int = 2
+    cluster_min_sources_for_api: int = 3
     cluster_min_headline_words: int = 3
     cluster_min_detail_words: int = 8
     timeline_dedupe_window_hours: int = 6
@@ -111,6 +121,20 @@ class Settings(BaseSettings):
             errors.append("MINIFLUX_FETCH_LIMIT must be greater than 0.")
         if self.miniflux_timeout_seconds <= 0:
             errors.append("MINIFLUX_TIMEOUT_SECONDS must be greater than 0.")
+        if self.api_workers <= 0:
+            errors.append("API_WORKERS must be greater than 0.")
+        if self.ingestion_concurrency <= 0:
+            errors.append("INGESTION_CONCURRENCY must be greater than 0.")
+        if self.summarization_concurrency <= 0:
+            errors.append("SUMMARIZATION_CONCURRENCY must be greater than 0.")
+        if self.clustering_batch_size <= 0:
+            errors.append("CLUSTERING_BATCH_SIZE must be greater than 0.")
+        if self.clustering_concurrency <= 0:
+            errors.append("CLUSTERING_CONCURRENCY must be greater than 0.")
+        if self.inspector_worker_processes <= 0:
+            errors.append("INSPECTOR_WORKER_PROCESSES must be greater than 0.")
+        if self.scheduler_interval_seconds <= 0:
+            errors.append("SCHEDULER_INTERVAL_SECONDS must be greater than 0.")
 
         sample_path = self.sample_data_path
         if sample_path is not None and not sample_path.exists():
@@ -120,6 +144,9 @@ class Settings(BaseSettings):
             )
 
         if mode == "worker":
+            if not self.scheduler_enabled:
+                return errors
+
             if self.demo_mode:
                 if sample_path is None:
                     errors.append(

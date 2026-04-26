@@ -49,7 +49,7 @@ describe("ClusterCard", () => {
   });
 
   it("renders and hides a cluster image when the image fails", () => {
-    const { container } = render(
+    const { container, getByText } = render(
       <SavedStoriesProvider>
         <FollowedStoriesProvider>
           <ClusterCard
@@ -85,6 +85,8 @@ describe("ClusterCard", () => {
 
     const image = container.querySelector(".story-card__image");
     expect(image).toHaveAttribute("src", "https://cdn.example.com/story.jpg");
+    getByText("Relevance 0.80");
+    getByText("Confidence 0.80");
     fireEvent.error(image as Element);
     expect(container.querySelector(".story-card__image")).toBeNull();
   });
@@ -140,5 +142,38 @@ describe("ClusterCard", () => {
     );
 
     expect(container.querySelector(".story-card__summary")).toBeNull();
+  });
+
+  it("renders safe fallbacks for missing optional runtime fields", () => {
+    const { getByLabelText, getByText } = render(
+      <SavedStoriesProvider>
+        <FollowedStoriesProvider>
+          <ClusterCard
+            cluster={
+              {
+                cluster_id: "cluster-missing",
+                headline: "   ",
+                topic: null,
+                summary: null,
+                sources: null,
+                source_count: null,
+                primary_image_url: null,
+                thumbnail_urls: null,
+                timeline: null,
+                timeline_events: null,
+                last_updated: null,
+                confidence_score: null,
+                score: null
+              } as never
+            }
+          />
+        </FollowedStoriesProvider>
+      </SavedStoriesProvider>
+    );
+
+    getByText("Untitled story");
+    getByText(/0 sources/i);
+    getByText(/0 updates/i);
+    getByLabelText("Save story: Untitled story");
   });
 });

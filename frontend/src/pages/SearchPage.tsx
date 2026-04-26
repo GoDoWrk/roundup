@@ -109,6 +109,7 @@ export function SearchPage() {
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -161,7 +162,7 @@ export function SearchPage() {
           setLoading(false);
         }
       });
-  }, [query]);
+  }, [query, retryCount]);
 
   const visibleResults = useMemo(() => {
     const items = response?.items ?? [];
@@ -173,6 +174,13 @@ export function SearchPage() {
     const nextQuery = draftQuery.trim();
     setQuery(nextQuery);
     setSearchParams(nextQuery ? { q: nextQuery } : {}, { replace: true });
+  }
+
+  function retrySearch() {
+    const nextQuery = draftQuery.trim() || query;
+    setQuery(nextQuery);
+    setSearchParams(nextQuery ? { q: nextQuery } : {}, { replace: true });
+    setRetryCount((count) => count + 1);
   }
 
   const hasQuery = query.length > 0;
@@ -235,6 +243,9 @@ export function SearchPage() {
             <p className="eyebrow">Search error</p>
             <h2>Could not load search results</h2>
             <p>{error}</p>
+            <button type="button" className="secondary-action" onClick={retrySearch}>
+              Retry search
+            </button>
           </section>
         )}
 

@@ -177,5 +177,6 @@ describe("SearchPage", () => {
 
     expect(await screen.findByText("Could not load search results")).toBeInTheDocument();
     expect(screen.getByText(/returned 500/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry search" })).toBeInTheDocument();
   });
 });

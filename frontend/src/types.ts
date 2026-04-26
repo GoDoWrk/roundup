@@ -103,11 +103,37 @@ export interface SourceListResponse {
   items: SourceHealthItem[];
 }
 
+export interface RuntimeSettings {
+  api_workers: number;
+  inspector_worker_processes: number;
+  scheduler_enabled: boolean;
+  scheduler_interval_seconds: number;
+  ingestion_concurrency: number;
+  summarization_concurrency: number;
+  clustering_batch_size: number;
+  clustering_concurrency: number;
+  ingestion_active: boolean;
+}
+
+export interface HealthResponse {
+  status: string;
+  app: string;
+  db: string;
+  miniflux_configured: boolean;
+  miniflux_reachable: boolean;
+  miniflux_usable: boolean;
+  runtime: RuntimeSettings;
+  timestamp: string;
+}
+
 export interface ClusterDebugThresholds {
   score_threshold: number;
   title_signal_threshold: number;
   entity_overlap_threshold: number;
   keyword_overlap_threshold: number;
+  topic_semantic_score_threshold: number;
+  attach_override_title_similarity_threshold: number;
+  attach_override_time_proximity_threshold: number;
   min_sources_for_api: number;
 }
 
@@ -116,8 +142,31 @@ export interface ClusterDebugScoreBreakdown {
   average_title_similarity: number;
   average_entity_jaccard: number;
   average_keyword_jaccard: number;
+  average_semantic_score: number;
   average_time_proximity: number;
   score_formula: string;
+  semantic_formula: string;
+}
+
+export interface ClusterDebugJoinDecision {
+  article_id: number;
+  article_title: string;
+  publisher: string;
+  decision: string;
+  reason: string;
+  selected_cluster_id: string | null;
+  selected_score: number;
+  title_similarity: number;
+  entity_jaccard: number;
+  keyword_jaccard: number;
+  semantic_score: number;
+  entity_overlap: number;
+  keyword_overlap: number;
+  topic_match: boolean;
+  time_proximity: number;
+  signal_gate_passed: boolean;
+  signal_reasons: string[];
+  warnings: string[];
 }
 
 export interface ClusterDebugExplanation {
@@ -128,6 +177,8 @@ export interface ClusterDebugExplanation {
   top_shared_keywords: string[];
   score_breakdown: ClusterDebugScoreBreakdown;
   decision_counts: Record<string, number>;
+  recent_join_decisions: ClusterDebugJoinDecision[];
+  warnings: string[];
 }
 
 export interface ClusterDebugItem {

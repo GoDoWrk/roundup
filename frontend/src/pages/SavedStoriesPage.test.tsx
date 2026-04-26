@@ -132,7 +132,10 @@ describe("SavedStoriesPage", () => {
     expect(rows[0]).toHaveTextContent("3 sources");
     expect(rows[0]).toHaveTextContent("2 updates");
     expect(rows[0]).toHaveTextContent(/Saved/);
-    expect(container.querySelector(".saved-story-row__image img")).toHaveAttribute("src", "https://cdn.example.com/newer.jpg");
+    expect(container.querySelector(".story-card--saved .story-card__image")).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/newer.jpg"
+    );
 
     fireEvent.click(within(rows[0]).getByRole("button", { name: /remove saved story: newer saved story/i }));
 
@@ -153,5 +156,16 @@ describe("SavedStoriesPage", () => {
     expect(await screen.findByText("No longer in live feed")).toBeInTheDocument();
     expect(screen.getByText("Stale saved story")).toBeInTheDocument();
     expect(window.localStorage.getItem(SAVED_STORIES_STORAGE_KEY)).toContain("Stale saved story");
+  });
+
+  it("renders an intentional local-storage empty state", async () => {
+    mockFetch({});
+
+    renderAt("/saved");
+
+    expect(await screen.findByRole("heading", { name: "Saved Stories" })).toBeInTheDocument();
+    expect(screen.getByText("Your saved list is empty")).toBeInTheDocument();
+    expect(screen.getByText(/stored in this browser until account sync is added/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Browse top stories" })).toHaveAttribute("href", "/");
   });
 });

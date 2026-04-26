@@ -9,6 +9,7 @@ import { HomePage } from "./HomePage";
 type Reply = {
   status?: number;
   body: unknown;
+  metricsBody?: string;
 };
 
 function renderHome() {
@@ -30,6 +31,13 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function textResponse(body: string, status = 200) {
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+
 function mockFetch(reply: Reply | (() => Promise<Response>)) {
   if (typeof reply === "function") {
     vi.stubGlobal("fetch", vi.fn(reply));
@@ -38,7 +46,14 @@ function mockFetch(reply: Reply | (() => Promise<Response>)) {
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => jsonResponse(reply.body, reply.status ?? 200))
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/metrics")) {
+        return textResponse(reply.metricsBody ?? "");
+      }
+
+      return jsonResponse(reply.body, reply.status ?? 200);
+    })
   );
 }
 
@@ -102,7 +117,7 @@ function clusterResponse(items: StoryCluster[]) {
 }
 
 function leadCard() {
-  return screen.getAllByTestId("story-card").find((card) => card.getAttribute("data-card-variant") === "lead");
+  return screen.getAllByTestId("story-card").find((card) => card.getAttribute("data-card-variant") === "featured");
 }
 
 afterEach(() => {
@@ -117,7 +132,16 @@ describe("HomePage", () => {
     const pending = new Promise<Response>((resolve) => {
       resolveFetch = resolve;
     });
-    vi.stubGlobal("fetch", vi.fn(() => pending));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).startsWith("/metrics")) {
+          return Promise.resolve(textResponse(""));
+        }
+
+        return pending;
+      })
+    );
 
     renderHome();
     expect(await screen.findByText("Checking Roundup for current stories")).toBeInTheDocument();
@@ -161,7 +185,7 @@ describe("HomePage", () => {
 
     const topStories = await screen.findByRole("region", { name: "Top Stories" });
     const cards = within(topStories).getAllByTestId("story-card");
-    expect(cards[0]).toHaveAttribute("data-card-variant", "lead");
+    expect(cards[0]).toHaveAttribute("data-card-variant", "featured");
     expect(cards[0]).toHaveTextContent("Highest score story");
     expect(cards[0]).toHaveTextContent("3 sources");
     expect(within(cards[0]).getByRole("link", { name: /highest score story/i })).toHaveAttribute("href", "/story/cluster-2");
@@ -201,7 +225,7 @@ describe("HomePage", () => {
     renderHome();
     await waitFor(() => expect(leadCard()).toHaveTextContent("Older but higher score"));
 
-    fireEvent.click(screen.getByRole("button", { name: /sort: latest/i }));
+    fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "latest" } });
 
     await waitFor(() => expect(leadCard()).toHaveTextContent("Newer but lower score"));
   });
@@ -286,11 +310,14 @@ describe("HomePage", () => {
       clusterResponse([buildCluster("cluster-1", "Transit Plan Revised", 0.78, "2026-04-23T01:30:00Z")])
     ];
 
-    const intervalHandlers: Array<() => void> = [];
-    vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler) => {
-      intervalHandlers.push(() => {
-        if (typeof handler === "function") {
-          handler();
+    const intervalHandlers: Array<{ delay?: number; run: () => void }> = [];
+    vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler, delay?: number) => {
+      intervalHandlers.push({
+        delay,
+        run: () => {
+          if (typeof handler === "function") {
+            handler();
+          }
         }
       });
 
@@ -300,7 +327,11 @@ describe("HomePage", () => {
     let callCount = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).startsWith("/metrics")) {
+          return textResponse("");
+        }
+
         const payload = responses[Math.min(callCount, responses.length - 1)];
         callCount += 1;
         return jsonResponse(payload);
@@ -312,11 +343,29 @@ describe("HomePage", () => {
     expect(callCount).toBe(1);
 
     await act(async () => {
-      intervalHandlers[0]?.();
+      intervalHandlers.find((handler) => handler.delay === 30000)?.run();
     });
 
     await waitFor(() => expect(screen.getByText("Transit Plan Revised")).toBeInTheDocument());
     expect(screen.getByText("Updated since last refresh")).toBeInTheDocument();
     expect(callCount).toBe(2);
+  });
+
+  it("labels homepage status chips with separate refresh and pipeline timestamps", async () => {
+    mockFetch({
+      status: 200,
+      body: clusterResponse([buildCluster("cluster-1", "Status story", 0.9, "2026-04-23T02:00:00Z")]),
+      metricsBody: "last_ingest_time 1777152000\nlast_cluster_time 1777152060\n"
+    });
+
+    renderHome();
+    await screen.findByText("Status story");
+
+    expect(screen.getByText("Live feed")).toBeInTheDocument();
+    expect(screen.getByText("Page refreshed")).toBeInTheDocument();
+    expect(screen.getByText("Last ingestion")).toBeInTheDocument();
+    expect(screen.getByText("Last cluster update")).toBeInTheDocument();
+    expect(screen.getByText("Next auto-refresh")).toBeInTheDocument();
+    expect(screen.getAllByText("Top / Most Important").length).toBeGreaterThan(0);
   });
 });

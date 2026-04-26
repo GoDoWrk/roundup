@@ -35,7 +35,7 @@ const DEFAULT_VIEW_VALUES: DefaultViewPreference[] = ["timeline", "summary", "so
 const TOPIC_IDS = new Set(TOPIC_PREFERENCES.map((topic) => topic.id));
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
-  theme: "light",
+  theme: "dark",
   compactMode: false,
   autoplayVideos: false,
   defaultView: "timeline",

@@ -64,6 +64,7 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
                         "title_similarity": 0.8,
                         "entity_jaccard": 0.7,
                         "keyword_jaccard": 0.6,
+                        "semantic_score": 0.73,
                         "time_proximity": 0.9,
                     },
                     "thresholds_met": {
@@ -72,6 +73,8 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
                         "entity_overlap_met": True,
                         "keyword_overlap_met": True,
                     },
+                    "signal_reasons": ["strong_title_similarity", "meaningful_entity_overlap"],
+                    "warnings": [],
                 },
             )
         )
@@ -98,8 +101,15 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     assert "threshold_results" in explanation
     assert "score_breakdown" in explanation
     assert explanation["score_breakdown"]["score_formula"]
+    assert explanation["score_breakdown"]["semantic_formula"]
+    assert "average_semantic_score" in explanation["score_breakdown"]
     assert explanation["top_shared_entities"]
     assert explanation["decision_counts"]
+    assert explanation["recent_join_decisions"]
+    assert "warnings" in explanation
+    join = explanation["recent_join_decisions"][0]
+    assert "semantic_score" in join
+    assert "signal_reasons" in join
 
 
 def test_api_clusters_filters_out_clusters_below_min_source_count(client, db_session: Session) -> None:
