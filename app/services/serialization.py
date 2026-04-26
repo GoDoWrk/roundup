@@ -5,6 +5,7 @@ from urllib.parse import urlparse, urlunparse
 from app.db.models import Article, Cluster
 from app.schemas.article import ArticleDebugItem, ArticleResponse
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.services.normalizer import extract_image_url
 from app.services.topics import derive_topic_from_article, derive_topic_from_articles
 
 MAX_CLUSTER_THUMBNAILS = 4
@@ -22,6 +23,13 @@ def _valid_image_url(value: str | None) -> str | None:
     return urlunparse(parsed._replace(fragment=""))
 
 
+def _article_image_url(article: Article) -> str | None:
+    stored = _valid_image_url(article.image_url)
+    if stored is not None:
+        return stored
+    return _valid_image_url(extract_image_url(article.raw_payload if isinstance(article.raw_payload, dict) else {}, article.content_text))
+
+
 def _cluster_image_urls(cluster: Cluster) -> list[str]:
     ranked_links = sorted(
         [link for link in cluster.source_links if link.article is not None],
@@ -36,7 +44,7 @@ def _cluster_image_urls(cluster: Cluster) -> list[str]:
     seen: set[str] = set()
     urls: list[str] = []
     for link in ranked_links:
-        candidate = _valid_image_url(link.article.image_url)
+        candidate = _article_image_url(link.article)
         if candidate is None:
             continue
         key = candidate.lower()
@@ -56,7 +64,7 @@ def article_to_response(article: Article) -> ArticleResponse:
         url=article.url,
         publisher=article.publisher,
         published_at=article.published_at,
-        image_url=_valid_image_url(article.image_url),
+        image_url=_article_image_url(article),
         topic=derive_topic_from_article(article),
     )
 
@@ -69,7 +77,7 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         normalized_title=article.normalized_title,
         publisher=article.publisher,
         published_at=article.published_at,
-        image_url=_valid_image_url(article.image_url),
+        image_url=_article_image_url(article),
         keywords=list(article.keywords),
         entities=list(article.entities),
         topic=derive_topic_from_article(article),
@@ -99,7 +107,7 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
             url=article.url,
             publisher=article.publisher,
             published_at=article.published_at,
-            image_url=_valid_image_url(article.image_url),
+            image_url=_article_image_url(article),
         )
         for article in articles
     ]

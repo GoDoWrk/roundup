@@ -43,6 +43,8 @@ STOPWORDS = {
     "would",
 }
 
+IMAGE_EXTENSIONS = {".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
+
 
 @dataclass(frozen=True)
 class NormalizedArticle:
@@ -147,6 +149,26 @@ def _mime_is_image(value: object) -> bool:
     return isinstance(value, str) and value.lower().split(";", 1)[0].strip().startswith("image/")
 
 
+def _url_path_looks_like_image(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(normalize_whitespace(value))
+    path = parsed.path.lower()
+    return any(path.endswith(extension) for extension in IMAGE_EXTENSIONS)
+
+
+def _enclosure_may_be_image(enclosure: dict) -> bool:
+    mime_type = enclosure.get("mime_type") or enclosure.get("type")
+    url = enclosure.get("url") or enclosure.get("href")
+    if _mime_is_image(mime_type):
+        return True
+    if mime_type in {None, ""}:
+        return _url_path_looks_like_image(url)
+    if isinstance(mime_type, str) and mime_type.lower().split(";", 1)[0].strip() == "application/octet-stream":
+        return _url_path_looks_like_image(url)
+    return False
+
+
 def _append_nested_metadata_candidates(candidates: list[str], entry: dict) -> None:
     metadata_keys = ("metadata", "meta", "article_metadata", "open_graph", "opengraph", "twitter")
     image_keys = ("image", "image_url", "thumbnail", "thumbnail_url", "lead_image_url", "og:image", "twitter:image")
@@ -197,8 +219,7 @@ def _append_enclosure_candidates(candidates: list[str], entry: dict) -> None:
     for enclosure in enclosures:
         if not isinstance(enclosure, dict):
             continue
-        mime_type = enclosure.get("mime_type") or enclosure.get("type")
-        if _mime_is_image(mime_type):
+        if _enclosure_may_be_image(enclosure):
             _append_candidate(candidates, enclosure.get("url") or enclosure.get("href"))
 
 

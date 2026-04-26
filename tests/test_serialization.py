@@ -85,3 +85,23 @@ def test_build_story_cluster_uses_similarity_as_newest_tiebreaker_and_falls_back
     empty_payload = build_story_cluster(empty_cluster)
     assert empty_payload.primary_image_url is None
     assert empty_payload.thumbnail_urls == []
+
+
+def test_build_story_cluster_falls_back_to_raw_payload_image_when_column_is_empty() -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _cluster(now)
+    article = _article(1, now, None)
+    article.raw_payload = {
+        "enclosures": [
+            {
+                "url": "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700",
+                "mime_type": "application/octet-stream",
+            }
+        ]
+    }
+    cluster.source_links = [ClusterArticle(article=article, similarity_score=0.8)]
+
+    payload = build_story_cluster(cluster)
+
+    assert payload.primary_image_url == "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700"
+    assert payload.sources[0].image_url == "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700"

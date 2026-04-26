@@ -43,6 +43,17 @@ def test_extract_image_url_reads_miniflux_image_enclosures() -> None:
     assert extract_image_url(entry) == "https://cdn.example.com/photo.webp"
 
 
+def test_extract_image_url_accepts_image_url_enclosure_with_octet_stream_mime() -> None:
+    entry = {
+        "enclosures": [
+            {"url": "https://cdn.example.com/download", "mime_type": "application/octet-stream"},
+            {"url": "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700", "mime_type": "application/octet-stream"},
+        ]
+    }
+
+    assert extract_image_url(entry) == "https://i.guim.co.uk/img/media/example/master/2336.jpg?width=700"
+
+
 def test_extract_image_url_reads_html_metadata_before_img_fallback() -> None:
     content = """
     <html>
