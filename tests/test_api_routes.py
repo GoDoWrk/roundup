@@ -76,7 +76,7 @@ ENRICHED_STORY_FIELDS = {
 }
 
 
-def _add_visible_cluster(db_session: Session, cluster_id: str, now: datetime, *, with_images: bool) -> None:
+def _add_visible_cluster(db_session: Session, cluster_id: str, now: datetime, *, with_images: bool) -> Cluster:
     cluster = _cluster(cluster_id, now)
     db_session.add(cluster)
     db_session.flush()
@@ -104,13 +104,21 @@ def _add_visible_cluster(db_session: Session, cluster_id: str, now: datetime, *,
                 heuristic_breakdown={"decision": "attach_existing_cluster", "selected_score": 0.72},
             )
         )
+    return cluster
 
 
-def _assert_enriched_story_contract(payload: dict, *, image_expected: bool, developing_expected: bool = True) -> None:
+def _assert_enriched_story_contract(
+    payload: dict,
+    *,
+    image_expected: bool,
+    developing_expected: bool = True,
+    related_cluster_ids: list[str] | None = None,
+) -> None:
     assert ENRICHED_STORY_FIELDS <= set(payload.keys())
     assert payload["source_count"] == 3
     assert len(payload["sources"]) == 3
-    assert payload["key_facts"] == []
+    assert payload["key_facts"]
+    assert any("3 sources" in fact for fact in payload["key_facts"])
     assert payload["timeline_events"] == payload["timeline"]
     assert len(payload["timeline_events"]) == 3
     assert isinstance(payload["topic"], str)
@@ -120,7 +128,7 @@ def _assert_enriched_story_contract(payload: dict, *, image_expected: bool, deve
     assert payload["is_developing"] is developing_expected
     assert payload["is_breaking"] is False
     assert payload["confidence_score"] == payload["score"]
-    assert payload["related_cluster_ids"] == []
+    assert payload["related_cluster_ids"] == (related_cluster_ids or [])
 
     if image_expected:
         assert payload["primary_image_url"] == "https://images.example.com/transit-enclosure.jpg"
@@ -150,8 +158,9 @@ def test_root_index_lists_debug_endpoints(client) -> None:
 
 def test_api_clusters_list_and_detail_return_structured_payloads(client, db_session: Session) -> None:
     now = datetime.now(timezone.utc)
-    _add_visible_cluster(db_session, "api-cluster", now, with_images=True)
+    api_cluster = _add_visible_cluster(db_session, "api-cluster", now, with_images=True)
     _add_visible_cluster(db_session, "no-image-cluster", now - timedelta(days=2), with_images=False)
+    api_cluster.related_cluster_ids = ["no-image-cluster"]
 
     db_session.commit()
 
@@ -161,13 +170,13 @@ def test_api_clusters_list_and_detail_return_structured_payloads(client, db_sess
     assert {"total", "limit", "offset", "items"} <= set(list_payload.keys())
 
     item = next(row for row in list_payload["items"] if row["cluster_id"] == "api-cluster")
-    _assert_enriched_story_contract(item, image_expected=True)
+    _assert_enriched_story_contract(item, image_expected=True, related_cluster_ids=["no-image-cluster"])
 
     detail_response = client.get("/api/clusters/api-cluster")
     assert detail_response.status_code == 200
     detail_payload = detail_response.json()
     assert detail_payload["cluster_id"] == "api-cluster"
-    _assert_enriched_story_contract(detail_payload, image_expected=True)
+    _assert_enriched_story_contract(detail_payload, image_expected=True, related_cluster_ids=["no-image-cluster"])
 
     no_image_response = client.get("/api/clusters/no-image-cluster")
     assert no_image_response.status_code == 200

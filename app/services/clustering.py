@@ -13,6 +13,7 @@ from app.core.config import Settings
 from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
 from app.services.enrichment import (
     build_headline,
+    build_key_facts,
     build_status,
     build_summary,
     build_timeline_events,
@@ -252,6 +253,72 @@ def _promotion_blockers(
     return blockers
 
 
+def _source_count_subquery():
+    return (
+        select(func.count())
+        .select_from(ClusterArticle)
+        .where(ClusterArticle.cluster_id == Cluster.id)
+        .scalar_subquery()
+    )
+
+
+def _normalized_topic(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _has_related_topic(left: Cluster, right: Cluster) -> bool:
+    left_topic = _normalized_topic(left.topic)
+    right_topic = _normalized_topic(right.topic)
+    if not left_topic or not right_topic or left_topic == "general" or right_topic == "general":
+        return False
+    return topic_matches(left.topic, right.topic)
+
+
+def _related_score(left: Cluster, right: Cluster, settings: Settings) -> tuple[int, int, int, datetime, str] | None:
+    left_entities = set(left.entities or [])
+    right_entities = set(right.entities or [])
+    left_keywords = set(left.keywords or [])
+    right_keywords = set(right.keywords or [])
+    entity_overlap = len(left_entities.intersection(right_entities))
+    keyword_overlap = len(left_keywords.intersection(right_keywords))
+    topic_match = _has_related_topic(left, right)
+
+    if not topic_match and entity_overlap == 0 and keyword_overlap < settings.cluster_min_keyword_overlap:
+        return None
+
+    score = int(topic_match) * 4 + entity_overlap * 3 + keyword_overlap
+    return (score, entity_overlap, keyword_overlap, right.last_updated, right.id)
+
+
+def _refresh_related_clusters(session: Session, settings: Settings) -> None:
+    source_count = _source_count_subquery()
+    legacy_source_count_error = f"cluster must have at least {settings.cluster_min_sources_for_api} sources"
+    clusters = list(
+        session.scalars(
+            select(Cluster)
+            .where(
+                Cluster.status != "hidden",
+                source_count >= settings.cluster_min_sources_for_api,
+                (Cluster.validation_error.is_(None) | (Cluster.validation_error == legacy_source_count_error)),
+            )
+            .order_by(Cluster.last_updated.desc(), Cluster.id.asc())
+        ).all()
+    )
+
+    for cluster in clusters:
+        ranked: list[tuple[tuple[int, int, int, datetime, str], str]] = []
+        for candidate in clusters:
+            if candidate.id == cluster.id:
+                continue
+            score = _related_score(cluster, candidate, settings)
+            if score is None:
+                continue
+            ranked.append((score, candidate.id))
+
+        ranked.sort(reverse=True)
+        cluster.related_cluster_ids = [cluster_id for _, cluster_id in ranked[:4]]
+
+
 def _build_heuristic_breakdown(
     *,
     decision: str,
@@ -378,6 +445,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     cluster.summary = build_summary(cluster.id, articles)
     cluster.what_changed = build_what_changed(cluster.id, articles)
     cluster.why_it_matters = build_why_it_matters(cluster.id, articles)
+    cluster.key_facts = build_key_facts(cluster.id, articles)
     cluster.normalized_headline = normalize_title(cluster.headline)
     cluster.keywords = sorted(keyword_union)
     cluster.entities = sorted(entity_union)
@@ -638,6 +706,8 @@ def cluster_new_articles(session: Session, settings: Settings) -> ClusteringRunR
         promotion_failures += int(rebuild_result.promotion_failed)
         if rebuild_result.validation_failed:
             invalid_cluster_ids.add(cluster.id)
+
+    _refresh_related_clusters(session, settings)
 
     source_count_subquery = (
         select(func.count())

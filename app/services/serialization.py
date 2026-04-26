@@ -6,6 +6,7 @@ from urllib.parse import urlparse, urlunparse
 from app.db.models import Article, Cluster
 from app.schemas.article import ArticleDebugItem, ArticleResponse
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.services.enrichment import build_key_facts
 from app.services.normalizer import extract_image_url
 from app.services.topics import derive_topic_from_article, derive_topic_from_articles
 
@@ -116,6 +117,12 @@ def _is_developing(cluster: Cluster, source_count: int) -> bool:
     return source_count >= 2 and datetime.now(timezone.utc) - last_updated <= timedelta(hours=24)
 
 
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def build_story_cluster(cluster: Cluster) -> StoryCluster:
     source_links = list(cluster.source_links)
     articles = sorted(
@@ -149,6 +156,10 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         for article in articles
     ]
 
+    key_facts = _string_list(getattr(cluster, "key_facts", []))
+    if not key_facts:
+        key_facts = build_key_facts(cluster.id, articles)
+
     return StoryCluster(
         cluster_id=cluster.id,
         headline=cluster.headline,
@@ -156,7 +167,7 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         summary=cluster.summary,
         what_changed=cluster.what_changed,
         why_it_matters=cluster.why_it_matters,
-        key_facts=[],
+        key_facts=key_facts,
         timeline=timeline,
         timeline_events=timeline,
         sources=sources,
@@ -170,7 +181,7 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         is_developing=_is_developing(cluster, len(sources)),
         is_breaking=False,
         confidence_score=cluster.score,
-        related_cluster_ids=[],
+        related_cluster_ids=_string_list(getattr(cluster, "related_cluster_ids", [])),
         score=cluster.score,
         status=cluster.status,
     )

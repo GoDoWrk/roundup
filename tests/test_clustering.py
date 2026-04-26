@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
 from app.services.enrichment import build_what_changed
-from app.services.clustering import cluster_new_articles
+from app.services.clustering import _refresh_related_clusters, cluster_new_articles
 from app.services.topics import derive_topic_from_text
 
 
@@ -253,6 +253,8 @@ def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session:
     assert cluster is not None
     assert cluster.validation_error is None
     assert len(cluster.source_links) == 3
+    assert cluster.key_facts
+    assert any("3 sources" in fact for fact in cluster.key_facts)
 
 
 def test_cluster_topics_are_persisted_for_articles_and_clusters(db_session: Session) -> None:
@@ -328,6 +330,108 @@ def test_topic_mismatch_forces_new_cluster(db_session: Session) -> None:
 
     assert result.created_count == 2
     assert db_session.query(Cluster).count() == 2
+
+
+def _cluster_with_sources(
+    db_session: Session,
+    *,
+    cluster_id: str,
+    now: datetime,
+    topic: str,
+    keywords: list[str],
+    entities: list[str],
+    status: str = "active",
+    validation_error: str | None = None,
+) -> Cluster:
+    cluster = Cluster(
+        id=cluster_id,
+        headline=f"{topic} Story Advances",
+        summary="Multiple sources are covering the story with enough detail for public display.",
+        what_changed="Coverage moved from initial reports to broader updates.",
+        why_it_matters="Sustained coverage indicates continuing public relevance.",
+        first_seen=now - timedelta(hours=1),
+        last_updated=now,
+        score=0.7,
+        status=status,
+        normalized_headline=f"{topic.lower()} story advances",
+        keywords=keywords,
+        entities=entities,
+        topic=topic,
+        validation_error=validation_error,
+    )
+    db_session.add(cluster)
+    db_session.flush()
+
+    for index, publisher in enumerate(["Daily One", "Daily Two"], start=1):
+        article = _article(
+            dedupe_hash=f"{cluster_id}-{index}",
+            title=f"{topic} update {index}",
+            normalized_title=f"{topic.lower()} update {index}",
+            keywords=keywords,
+            entities=entities,
+            published_at=now - timedelta(minutes=index),
+            publisher=publisher,
+        )
+        article.topic = topic
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(
+                cluster_id=cluster.id,
+                article_id=article.id,
+                similarity_score=0.7,
+                heuristic_breakdown={"decision": "attach_existing_cluster"},
+            )
+        )
+
+    return cluster
+
+
+def test_related_clusters_require_semantic_overlap_and_public_visibility(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    base = _cluster_with_sources(
+        db_session,
+        cluster_id="base-story",
+        now=now,
+        topic="Transit",
+        keywords=["transit", "budget", "service"],
+        entities=["City Council"],
+    )
+    related = _cluster_with_sources(
+        db_session,
+        cluster_id="related-story",
+        now=now - timedelta(minutes=3),
+        topic="Transit",
+        keywords=["transit", "routes", "service"],
+        entities=["City Council"],
+    )
+    hidden = _cluster_with_sources(
+        db_session,
+        cluster_id="hidden-related-story",
+        now=now - timedelta(minutes=4),
+        topic="Transit",
+        keywords=["transit", "budget", "service"],
+        entities=["City Council"],
+        status="hidden",
+        validation_error="manual block",
+    )
+    time_only = _cluster_with_sources(
+        db_session,
+        cluster_id="time-only-story",
+        now=now - timedelta(minutes=1),
+        topic="Weather",
+        keywords=["storm", "rain", "forecast"],
+        entities=["Weather Service"],
+    )
+
+    db_session.flush()
+    _refresh_related_clusters(db_session, _settings(cluster_min_sources_for_api=2))
+
+    assert base.related_cluster_ids == [related.id]
+    assert related.related_cluster_ids == [base.id]
+    assert hidden.id not in base.related_cluster_ids
+    assert time_only.id not in base.related_cluster_ids
+    assert base.id not in time_only.related_cluster_ids
 
 
 def test_war_adjacent_articles_do_not_collapse_into_one_cluster(db_session: Session) -> None:

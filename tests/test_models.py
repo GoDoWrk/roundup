@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
+from app.db.models import Cluster
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
 
 
@@ -75,3 +77,27 @@ def test_story_cluster_accepts_valid_payload() -> None:
     assert model.primary_image_url == "https://cdn.example.com/a.jpg"
     assert model.timeline_events == model.timeline
     assert model.source_count == 1
+
+
+def test_cluster_story_enrichment_defaults_to_empty_lists(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    cluster = Cluster(
+        id="enrichment-defaults",
+        headline="Transit Plan Advances",
+        summary="Summary",
+        what_changed="Change",
+        why_it_matters="Impact",
+        first_seen=now,
+        last_updated=now,
+        score=0.5,
+        status="active",
+        normalized_headline="transit plan advances",
+        keywords=["transit"],
+        entities=["City Council"],
+        topic="Transit",
+    )
+    db_session.add(cluster)
+    db_session.flush()
+
+    assert cluster.key_facts == []
+    assert cluster.related_cluster_ids == []

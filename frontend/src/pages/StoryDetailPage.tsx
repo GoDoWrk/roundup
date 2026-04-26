@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
-import type { StoryCluster } from "../types";
-import { formatReadableTimestamp, formatTimestamp } from "../utils/format";
+import { ClusterCard } from "../components/ClusterCard";
+import type { SourceReference, StoryCluster, TimelineEvent } from "../types";
+import { formatReadableTimestamp, formatRelativeTime, formatTimestamp } from "../utils/format";
 import { isRecentlyUpdated } from "../utils/homepage";
+
+type TabKey = "timeline" | "facts" | "sources" | "related";
+
+const INITIAL_TIMELINE_COUNT = 6;
+
+const tabs: Array<{ id: TabKey; label: string }> = [
+  { id: "timeline", label: "Timeline" },
+  { id: "facts", label: "Key Facts" },
+  { id: "sources", label: "Sources" },
+  { id: "related", label: "Related" }
+];
+
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
 
 function formatEventTimestamp(value: string): string {
   return formatReadableTimestamp(value) ?? "";
@@ -22,30 +38,199 @@ function sourceLabel(sourceTitle: string, sourceUrl: string): string {
   }
 }
 
-function sortEventsChronologically(cluster: StoryCluster) {
-  const parseTime = (value: string) => {
-    const time = Date.parse(value);
-    return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
-  };
+function parseTime(value: string): number {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
 
-  return [...cluster.timeline].sort((left, right) => {
-    const leftTime = parseTime(left.timestamp);
-    const rightTime = parseTime(right.timestamp);
-    return leftTime - rightTime;
-  });
+function sortEventsByNewest(cluster: StoryCluster) {
+  const events = asArray(cluster.timeline_events?.length ? cluster.timeline_events : cluster.timeline);
+  return [...events].sort((left, right) => parseTime(right.timestamp) - parseTime(left.timestamp));
 }
 
 function sortSourcesByNewest(cluster: StoryCluster) {
-  const parseTime = (value: string) => {
-    const time = Date.parse(value);
-    return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
-  };
+  return [...asArray(cluster.sources)].sort((left, right) => parseTime(right.published_at) - parseTime(left.published_at));
+}
 
-  return [...cluster.sources].sort((left, right) => {
-    const leftTime = parseTime(left.published_at);
-    const rightTime = parseTime(right.published_at);
-    return rightTime - leftTime;
-  });
+function sourceImageByUrl(sources: SourceReference[]) {
+  const entries = sources
+    .filter((source) => source.url?.trim() && source.image_url?.trim())
+    .map((source) => [source.url, source.image_url] as const);
+  return new Map(entries);
+}
+
+function StoryBrief({ cluster }: { cluster: StoryCluster }) {
+  const sections = [
+    { title: "Summary", text: cluster.summary?.trim() ?? "" },
+    { title: "What changed", text: cluster.what_changed?.trim() ?? "" },
+    { title: "Why it matters", text: cluster.why_it_matters?.trim() ?? "" }
+  ].filter((section) => section.text.length > 0);
+
+  if (sections.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="story-brief" aria-label="Story brief">
+      {sections.map((section) => (
+        <article key={section.title} className="story-brief__item">
+          <h2>{section.title}</h2>
+          <p>{section.text}</p>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function TimelineTab({
+  cluster,
+  events,
+  visibleCount,
+  onLoadOlder,
+  thumbnailBySourceUrl
+}: {
+  cluster: StoryCluster;
+  events: TimelineEvent[];
+  visibleCount: number;
+  onLoadOlder: () => void;
+  thumbnailBySourceUrl: Map<string, string | null | undefined>;
+}) {
+  const visibleEvents = events.slice(0, visibleCount);
+  const hasOlderEvents = events.length > visibleCount;
+
+  return (
+    <div className="story-tab-panel__content">
+      <StoryBrief cluster={cluster} />
+
+      {events.length === 0 ? (
+        <section className="story-empty-state">
+          <h2>No timeline updates yet</h2>
+          <p>Roundup has not generated timeline events for this story yet.</p>
+        </section>
+      ) : (
+        <section className="story-timeline-panel" aria-label="Timeline updates ordered newest to oldest">
+          <ol className="story-timeline story-timeline--visual">
+            {visibleEvents.map((event, index) => {
+              const eventTime = formatEventTimestamp(event.timestamp);
+              const eventSource = event.source_url ? sourceLabel(event.source_title, event.source_url) : "";
+              const thumbnail = event.source_url ? thumbnailBySourceUrl.get(event.source_url) : null;
+
+              return (
+                <li key={`${event.timestamp}-${event.event}-${index}`} className="story-timeline__item">
+                  <div className="story-timeline__marker-column" aria-hidden="true">
+                    {index === 0 && <span className="story-timeline__latest-label">Latest</span>}
+                    <span className={`story-timeline__dot${index === 0 ? " story-timeline__dot--latest" : ""}`} />
+                  </div>
+                  <div className="story-timeline__body">
+                    {eventTime && <time className="story-timeline__time">{eventTime}</time>}
+                    <p className="story-timeline__event">{event.event}</p>
+                    {event.source_url && eventSource && (
+                      <a href={event.source_url} target="_blank" rel="noreferrer" className="story-timeline__source">
+                        {eventSource}
+                      </a>
+                    )}
+                  </div>
+                  {thumbnail && (
+                    <img className="story-timeline__thumbnail" src={thumbnail} alt="" loading="lazy" />
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+
+          {hasOlderEvents && (
+            <button type="button" className="story-detail__load-older" onClick={onLoadOlder}>
+              Load older updates
+            </button>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function KeyFactsTab({ facts }: { facts: string[] }) {
+  if (facts.length === 0) {
+    return (
+      <section className="story-empty-state">
+        <h2>No key facts available</h2>
+        <p>Roundup has not extracted stable key facts from the current source set.</p>
+      </section>
+    );
+  }
+
+  return (
+    <ul className="story-key-facts">
+      {facts.map((fact, index) => (
+        <li key={`${fact}-${index}`}>{fact}</li>
+      ))}
+    </ul>
+  );
+}
+
+function SourcesTab({ sources }: { sources: SourceReference[] }) {
+  if (sources.length === 0) {
+    return (
+      <section className="story-empty-state">
+        <h2>No sources available</h2>
+        <p>No public source articles are attached to this story right now.</p>
+      </section>
+    );
+  }
+
+  return (
+    <ul className="story-sources story-sources--cards">
+      {sources.map((source) => {
+        const publishedAt = formatReadableTimestamp(source.published_at);
+        const title = source.title?.trim() || sourceLabel("", source.url);
+
+        return (
+          <li key={source.article_id} className="story-sources__item">
+            {source.image_url && <img className="story-sources__image" src={source.image_url} alt="" loading="lazy" />}
+            <div className="story-sources__copy">
+              {source.publisher?.trim() && <div className="story-sources__publisher">{source.publisher}</div>}
+              {source.url ? (
+                <a href={source.url} target="_blank" rel="noreferrer" className="story-sources__link">
+                  {title}
+                </a>
+              ) : (
+                <span className="story-sources__link">{title}</span>
+              )}
+              {publishedAt && <time className="story-sources__published">{publishedAt}</time>}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function RelatedTab({ loading, clusters }: { loading: boolean; clusters: StoryCluster[] }) {
+  if (loading) {
+    return (
+      <section className="story-empty-state" aria-busy="true">
+        <h2>Loading related stories</h2>
+        <p>Checking public cluster links for this story.</p>
+      </section>
+    );
+  }
+
+  if (clusters.length === 0) {
+    return (
+      <section className="story-empty-state">
+        <h2>No related stories yet</h2>
+        <p>Roundup has not linked this story to other public clusters.</p>
+      </section>
+    );
+  }
+
+  return (
+    <div className="story-related-grid">
+      {clusters.map((related) => (
+        <ClusterCard key={related.cluster_id} cluster={related} to={`/story/${related.cluster_id}`} variant="thumbnail" />
+      ))}
+    </div>
+  );
 }
 
 export function StoryDetailPage() {
@@ -53,7 +238,10 @@ export function StoryDetailPage() {
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<TabKey>("timeline");
+  const [visibleTimelineCount, setVisibleTimelineCount] = useState(INITIAL_TIMELINE_COUNT);
+  const [relatedClusters, setRelatedClusters] = useState<StoryCluster[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!clusterId) {
@@ -81,68 +269,93 @@ export function StoryDetailPage() {
   }, [load]);
 
   useEffect(() => {
-    setFailedImages(new Set());
-  }, [cluster?.cluster_id, cluster?.primary_image_url]);
+    setActiveTab("timeline");
+    setVisibleTimelineCount(INITIAL_TIMELINE_COUNT);
+  }, [cluster?.cluster_id]);
 
-  const events = useMemo(() => (cluster ? sortEventsChronologically(cluster) : []), [cluster]);
+  const events = useMemo(() => (cluster ? sortEventsByNewest(cluster) : []), [cluster]);
   const sources = useMemo(() => (cluster ? sortSourcesByNewest(cluster) : []), [cluster]);
-  const thumbnailUrls = useMemo(
-    () => (cluster?.thumbnail_urls ?? []).filter((url) => url.trim().length > 0 && !failedImages.has(url)),
-    [cluster?.thumbnail_urls, failedImages]
+  const facts = useMemo(() => asArray(cluster?.key_facts).filter((fact) => fact.trim().length > 0), [cluster?.key_facts]);
+  const relatedIds = useMemo(
+    () => asArray(cluster?.related_cluster_ids).filter((id) => id.trim().length > 0),
+    [cluster?.related_cluster_ids]
   );
-  const primaryImageUrl = cluster?.primary_image_url?.trim() ?? "";
-  const showHeroImage = primaryImageUrl.length > 0 && !failedImages.has(primaryImageUrl);
+  const thumbnailBySourceUrl = useMemo(() => sourceImageByUrl(sources), [sources]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRelated() {
+      if (relatedIds.length === 0) {
+        setRelatedClusters([]);
+        setRelatedLoading(false);
+        return;
+      }
+
+      setRelatedLoading(true);
+      const results = await Promise.all(
+        relatedIds.map(async (id) => {
+          try {
+            return await fetchClusterDetail(id);
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setRelatedClusters(results.filter((item): item is StoryCluster => item !== null));
+        setRelatedLoading(false);
+      }
+    }
+
+    void loadRelated();
+    return () => {
+      cancelled = true;
+    };
+  }, [relatedIds]);
+
   const recentlyUpdated = cluster ? isRecentlyUpdated(cluster.last_updated) : false;
-  const summaryText = cluster?.summary.trim() ?? "";
-  const whatChangedText = cluster?.what_changed.trim() ?? "";
-  const whyItMattersText = cluster?.why_it_matters.trim() ?? "";
-  const sourceCount = cluster?.sources.length ?? 0;
-  const firstSeenLabel = cluster ? formatTimestamp(cluster.first_seen) : "";
-  const lastUpdatedLabel = cluster ? formatTimestamp(cluster.last_updated) : "";
+  const sourceCount = cluster?.source_count ?? cluster?.sources?.length ?? 0;
+  const updateCount = events.length;
   const firstSeenReadable = cluster ? formatReadableTimestamp(cluster.first_seen) : null;
   const lastUpdatedReadable = cluster ? formatReadableTimestamp(cluster.last_updated) : null;
-  const storySections = [
-    { title: "Summary", text: summaryText, className: "story-detail__section--lede" },
-    { title: "What changed", text: whatChangedText },
-    { title: "Why it matters", text: whyItMattersText }
-  ].filter((section) => section.text.length > 0);
-  const markImageFailed = (url: string) => {
-    setFailedImages((current) => {
-      const next = new Set(current);
-      next.add(url);
-      return next;
-    });
-  };
+  const lastUpdatedFallback = cluster ? formatTimestamp(cluster.last_updated) : "";
+  const relativeUpdated = cluster ? formatRelativeTime(cluster.last_updated) : "";
 
   return (
-    <div className="public-page story-detail">
-      <header className={`story-detail__hero${showHeroImage ? " story-detail__hero--with-image" : ""}`}>
-        <div className="story-detail__hero-copy">
-          <p className="eyebrow">Live story detail</p>
+    <div className="public-page story-detail story-detail--tabbed">
+      <header className="story-detail__header">
+        <div className="story-detail__header-top">
+          <Link className="story-detail__back-link" to="/">
+            Back to all clusters
+          </Link>
+          <div className="story-detail__header-actions">
+            <button type="button" className="story-detail__follow-button" aria-label="Follow story">
+              Follow
+            </button>
+            <button type="button" className="story-detail__overflow-button" aria-label="More story actions">
+              ...
+            </button>
+          </div>
+        </div>
+
+        <div className="story-detail__headline-block">
           <h1>{cluster?.headline || "Story detail"}</h1>
           {cluster && (
-            <div className="story-detail__meta">
+            <div className="story-detail__meta" aria-label="Story metadata">
+              <span>
+                {updateCount} update{updateCount === 1 ? "" : "s"}
+              </span>
               <span>
                 {sourceCount} source{sourceCount === 1 ? "" : "s"}
               </span>
+              {lastUpdatedReadable && <span>Last updated {relativeUpdated.startsWith("(") ? lastUpdatedReadable : relativeUpdated}</span>}
               {recentlyUpdated && <span className="story-detail__fresh">Recently updated</span>}
               {firstSeenReadable && <span>First seen {firstSeenReadable}</span>}
-              {lastUpdatedReadable && <span>Last updated {lastUpdatedReadable}</span>}
             </div>
           )}
         </div>
-
-        <div className="story-detail__actions">
-          <Link className="secondary-button story-detail__back" to="/">
-            Back to home
-          </Link>
-        </div>
-
-        {showHeroImage && (
-          <div className="story-detail__hero-media">
-            <img src={primaryImageUrl} alt="" onError={() => markImageFailed(primaryImageUrl)} />
-          </div>
-        )}
       </header>
 
       <main className="story-detail__body">
@@ -171,90 +384,49 @@ export function StoryDetailPage() {
         )}
 
         {!loading && !error && cluster && (
-          <>
-            {thumbnailUrls.length > 0 && (
-              <section className="story-detail__image-strip" aria-label="Story images">
-                {thumbnailUrls.map((url) => (
-                  <img key={url} src={url} alt="" loading="lazy" onError={() => markImageFailed(url)} />
-                ))}
-              </section>
-            )}
+          <section className="story-tabs-card">
+            <div className="story-tabs" role="tablist" aria-label="Story sections">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  id={`story-tab-${tab.id}`}
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`story-panel-${tab.id}`}
+                  className={`story-tabs__button${activeTab === tab.id ? " story-tabs__button--active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-            {storySections.map((section) => (
-              <section key={section.title} className={`story-detail__section ${section.className ?? ""}`.trim()}>
-                <h2>{section.title}</h2>
-                <p>{section.text}</p>
-              </section>
-            ))}
+            <div
+              role="tabpanel"
+              id={`story-panel-${activeTab}`}
+              aria-labelledby={`story-tab-${activeTab}`}
+              className="story-tab-panel"
+            >
+              {activeTab === "timeline" && (
+                <TimelineTab
+                  cluster={cluster}
+                  events={events}
+                  visibleCount={visibleTimelineCount}
+                  onLoadOlder={() => setVisibleTimelineCount((count) => count + INITIAL_TIMELINE_COUNT)}
+                  thumbnailBySourceUrl={thumbnailBySourceUrl}
+                />
+              )}
+              {activeTab === "facts" && <KeyFactsTab facts={facts} />}
+              {activeTab === "sources" && <SourcesTab sources={sources} />}
+              {activeTab === "related" && <RelatedTab loading={relatedLoading} clusters={relatedClusters} />}
+            </div>
 
-            {events.length > 0 && (
-              <section className="story-detail__section">
-                <h2>Timeline</h2>
-                <ol className="story-timeline">
-                  {events.map((event, index) => {
-                    const eventTime = formatEventTimestamp(event.timestamp);
-                    const eventSource = event.source_url ? sourceLabel(event.source_title, event.source_url) : "";
-
-                    return (
-                      <li key={`${event.timestamp}-${index}`} className="story-timeline__item">
-                        {eventTime && <div className="story-timeline__time">{eventTime}</div>}
-                        <div className="story-timeline__body">
-                          <p className="story-timeline__event">{event.event}</p>
-                          {event.source_url && eventSource && (
-                            <a href={event.source_url} target="_blank" rel="noreferrer" className="story-timeline__source">
-                              {eventSource}
-                            </a>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </section>
-            )}
-
-            {sources.length > 0 && (
-              <section className="story-detail__section">
-                <h2>Sources</h2>
-                <ul className="story-sources">
-                  {sources.map((source) => {
-                    const sourceName = source.url ? sourceLabel(source.title, source.url) : "";
-                    const publishedAt = formatReadableTimestamp(source.published_at);
-
-                    return (
-                      <li key={source.article_id} className="story-sources__item">
-                        {source.publisher.trim() && <div className="story-sources__publisher">{source.publisher}</div>}
-                        {source.url && sourceName && (
-                          <a href={source.url} target="_blank" rel="noreferrer" className="story-sources__link">
-                            {sourceName}
-                          </a>
-                        )}
-                        {publishedAt && <div className="story-sources__published">{publishedAt}</div>}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-
-            <section className="story-detail__section story-detail__section--meta">
-              <h2>Story details</h2>
-              <dl className="story-detail__stats">
-                <div>
-                  <dt>Source count</dt>
-                  <dd>{sourceCount}</dd>
-                </div>
-                <div>
-                  <dt>First seen</dt>
-                  <dd>{firstSeenReadable || firstSeenLabel}</dd>
-                </div>
-                <div>
-                  <dt>Last updated</dt>
-                  <dd>{lastUpdatedReadable || lastUpdatedLabel}</dd>
-                </div>
-              </dl>
-            </section>
-          </>
+            <footer className="story-detail__api-note">
+              API: <code>GET /api/clusters/{cluster.cluster_id}</code>
+              {lastUpdatedReadable && <span>Updated {lastUpdatedReadable || lastUpdatedFallback}</span>}
+            </footer>
+          </section>
         )}
       </main>
     </div>

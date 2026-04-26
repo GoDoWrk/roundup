@@ -185,6 +185,45 @@ def build_why_it_matters(cluster_id: str, articles: list[Article]) -> str:
     )
 
 
+def build_key_facts(cluster_id: str, articles: list[Article]) -> list[str]:
+    if not articles:
+        return []
+
+    ordered = sorted(articles, key=lambda a: (a.published_at, a.id))
+    publishers = sorted({a.publisher for a in ordered if a.publisher})
+    earliest = ordered[0].published_at
+    latest = ordered[-1].published_at
+    span_hours = max(0, int((latest - earliest).total_seconds() // 3600))
+    facts: list[str] = []
+
+    if publishers:
+        source_word = "source" if len(ordered) == 1 else "sources"
+        publisher_text = ", ".join(publishers[:3])
+        if len(publishers) > 3:
+            publisher_text = f"{publisher_text}, and {len(publishers) - 3} more"
+        facts.append(f"{len(ordered)} {source_word} are tracking this story, including {publisher_text}.")
+
+    if span_hours > 0:
+        facts.append(f"Coverage spans about {span_hours} hours from first report to latest update.")
+    else:
+        facts.append("Coverage is concentrated within the same reporting hour.")
+
+    repeated_entities = _top_terms(ordered, attr="entities", limit=3, min_count=2)
+    if repeated_entities:
+        facts.append(f"Repeated named entities include {', '.join(repeated_entities)}.")
+
+    repeated_keywords = [
+        keyword for keyword in _top_terms(ordered, attr="keywords", limit=4, min_count=2) if keyword not in repeated_entities
+    ]
+    if repeated_keywords:
+        facts.append(f"Recurring themes include {', '.join(repeated_keywords[:3])}.")
+
+    latest_publisher = ordered[-1].publisher or "A source"
+    facts.append(f"Latest update came from {latest_publisher}.")
+
+    return facts[:5]
+
+
 def build_timeline_events(
     articles: list[Article],
     *,

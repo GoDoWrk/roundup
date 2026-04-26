@@ -63,6 +63,8 @@ class Cluster(Base):
     normalized_headline: Mapped[str] = mapped_column(Text, nullable=False, default="")
     keywords: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    key_facts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    related_cluster_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
     validation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 

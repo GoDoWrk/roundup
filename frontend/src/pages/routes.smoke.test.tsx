@@ -188,7 +188,7 @@ describe("route smoke tests", () => {
     fireEvent.click(await screen.findByRole("link", { name: /transit plan advances/i }));
 
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
-    expect(await screen.findByText("Live story detail")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Back to all clusters" })).toBeInTheDocument();
     expect(await screen.findByText("A major transit plan moved forward after new budget support.")).toBeInTheDocument();
   });
 
