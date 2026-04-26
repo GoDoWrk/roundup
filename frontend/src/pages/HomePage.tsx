@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchClusterList } from "../api/client";
-import { FeedControls } from "../components/FeedControls";
 import { ClusterCard } from "../components/ClusterCard";
+import { FeedControls } from "../components/FeedControls";
 import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import {
-  collectSourcePublishers,
+  collectTopics,
   getChangedClusterIds,
   getFilteredClusters,
-  sortClustersByLatestUpdates,
-  sortClustersForHomepage
+  selectHomepageSections
 } from "../utils/homepage";
 
 const PAGE_LIMIT = 20;
@@ -17,9 +16,10 @@ const REFRESH_INTERVAL_MS = 30_000;
 
 type SortMode = "top" | "latest";
 
-function SkeletonCard() {
+function SkeletonCard({ variant = "standard" }: { variant?: "standard" | "lead" | "supporting" | "thumbnail" }) {
   return (
-    <article className="story-card story-card--skeleton" aria-hidden="true">
+    <article className={`story-card story-card--${variant} story-card--skeleton`} aria-hidden="true">
+      <div className="story-card__image-frame" />
       <div className="story-card__eyebrow">
         <span className="story-skeleton story-skeleton--line story-skeleton--tiny" />
         <span className="story-skeleton story-skeleton--pill" />
@@ -35,6 +35,15 @@ function SkeletonCard() {
   );
 }
 
+function SectionHeader({ id, title, detail }: { id: string; title: string; detail?: string }) {
+  return (
+    <div className="dashboard-section__header">
+      <h2 id={id}>{title}</h2>
+      {detail && <p>{detail}</p>}
+    </div>
+  );
+}
+
 export function HomePage() {
   const [clusters, setClusters] = useState<StoryCluster[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,7 +52,8 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("top");
-  const [publisherFilter, setPublisherFilter] = useState("all");
+  const [topicFilter, setTopicFilter] = useState("all");
+  const [showAllClusters, setShowAllClusters] = useState(false);
   const [highlightedClusterIds, setHighlightedClusterIds] = useState<Set<string>>(new Set());
   const [updatedSinceLastRefresh, setUpdatedSinceLastRefresh] = useState(0);
   const requestInFlight = useRef(false);
@@ -104,45 +114,42 @@ export function HomePage() {
     return () => window.clearInterval(handle);
   }, [load]);
 
-  const publishers = useMemo(() => collectSourcePublishers(clusters), [clusters]);
+  const topics = useMemo(() => collectTopics(clusters), [clusters]);
 
   useEffect(() => {
-    if (publisherFilter !== "all" && !publishers.includes(publisherFilter)) {
-      setPublisherFilter("all");
+    if (topicFilter !== "all" && !topics.includes(topicFilter)) {
+      setTopicFilter("all");
     }
-  }, [publisherFilter, publishers]);
+  }, [topicFilter, topics]);
 
-  const visibleClusters = useMemo(() => {
-    const filtered = getFilteredClusters(clusters, publisherFilter);
-    const sorted = sortMode === "latest" ? sortClustersByLatestUpdates(filtered) : sortClustersForHomepage(filtered);
-    return sorted.slice(0, PAGE_LIMIT);
-  }, [clusters, publisherFilter, sortMode]);
+  const filteredClusters = useMemo(() => getFilteredClusters(clusters, topicFilter), [clusters, topicFilter]);
+  const sections = useMemo(() => selectHomepageSections(filteredClusters, sortMode), [filteredClusters, sortMode]);
 
-  const visibleCount = visibleClusters.length;
+  const visibleCount = sections.allClusters.length;
   const hasStories = visibleCount > 0;
   const hasLoadedData = clusters.length > 0 || total > 0 || lastLoadedAt !== null;
-  const sourceFilterLabel = publisherFilter === "all" ? "All sources" : publisherFilter;
+  const topicFilterLabel = topicFilter === "all" ? "All topics" : topicFilter;
   const lastCheckedReadable = lastLoadedAt ? formatReadableTimestamp(lastLoadedAt) : null;
   const lastCheckedLabel = lastLoadedAt
-    ? `Last checked ${formatRelativeTime(lastLoadedAt, Date.now())}${lastCheckedReadable ? ` | ${lastCheckedReadable}` : ""}`
-    : "Waiting for the first live update";
+    ? `Updated ${formatRelativeTime(lastLoadedAt, Date.now())}${lastCheckedReadable ? ` | ${lastCheckedReadable}` : ""}`
+    : "Waiting for live data";
   const liveCountLabel =
     visibleCount === 0
-      ? hasLoadedData && publisherFilter !== "all"
-        ? `No stories from ${sourceFilterLabel}`
+      ? hasLoadedData && topicFilter !== "all"
+        ? `No stories in ${topicFilterLabel}`
         : "No live stories"
-      : total > visibleCount
-        ? `Showing ${visibleCount} of ${total} live stories`
-        : `${visibleCount} live ${visibleCount === 1 ? "story" : "stories"}`;
-  const sortLabel = sortMode === "latest" ? "Latest updates" : "Top / Most Important";
+      : total > visibleCount && topicFilter === "all"
+        ? `Showing ${visibleCount} of ${total} clusters`
+        : `${visibleCount} live ${visibleCount === 1 ? "cluster" : "clusters"}`;
+  const sortLabel = sortMode === "latest" ? "Latest" : "Relevance";
 
   return (
-    <div className="public-page">
+    <div className="public-page public-page--dashboard">
       <header className="public-hero">
         <div className="public-hero__copy">
           <p className="eyebrow">Updated live</p>
           <h1>Top Stories</h1>
-          <p>Current story clusters ranked by importance and freshness.</p>
+          <p>Current Roundup clusters organized into a fast, consumer-ready news dashboard.</p>
         </div>
 
         <div className="public-hero__actions">
@@ -155,8 +162,8 @@ export function HomePage() {
           <span>{liveCountLabel}</span>
           <span>{lastCheckedLabel}</span>
           <span>{refreshing ? "Live refresh in progress" : "Auto-refreshes every 30s"}</span>
-          <span>{sortLabel}</span>
-          {publisherFilter !== "all" && <span>{sourceFilterLabel}</span>}
+          <span>Sort: {sortLabel}</span>
+          <span>Topic: {topicFilterLabel}</span>
           {updatedSinceLastRefresh > 0 && (
             <span className="public-hero__accent">{updatedSinceLastRefresh} updated since last refresh</span>
           )}
@@ -165,10 +172,10 @@ export function HomePage() {
 
       <FeedControls
         sortMode={sortMode}
-        publishers={publishers}
-        publisherFilter={publisherFilter}
+        topics={topics}
+        topicFilter={topicFilter}
         onSortModeChange={setSortMode}
-        onPublisherFilterChange={setPublisherFilter}
+        onTopicFilterChange={setTopicFilter}
       />
 
       <main className="public-feed">
@@ -182,27 +189,30 @@ export function HomePage() {
           <section className="state-panel state-panel--loading" aria-busy="true">
             <p className="eyebrow">Loading live feed</p>
             <h2>Checking Roundup for current stories</h2>
-            <p>Pulling the latest cluster data and preparing the feed.</p>
-            <div className="story-grid story-grid--skeleton" aria-hidden="true">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <SkeletonCard key={index} />
-              ))}
+            <p>Pulling the latest cluster data and preparing the dashboard.</p>
+            <div className="top-stories-layout top-stories-layout--skeleton" aria-hidden="true">
+              <SkeletonCard variant="lead" />
+              <div className="supporting-story-stack">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <SkeletonCard key={index} variant="supporting" />
+                ))}
+              </div>
             </div>
           </section>
         )}
 
-        {!loading && !error && !hasStories && hasLoadedData && publisherFilter !== "all" && (
+        {!loading && !error && !hasStories && hasLoadedData && topicFilter !== "all" && (
           <section className="state-panel">
             <p className="eyebrow">Filtered view</p>
-            <h2>No stories from {publisherFilter}</h2>
-            <p>Try a different source filter or return to all stories to keep scanning the live feed.</p>
-            <button className="secondary-action" onClick={() => setPublisherFilter("all")} type="button">
-              Show all stories
+            <h2>No stories in {topicFilter}</h2>
+            <p>Try a different topic or return to all topics to keep scanning the live feed.</p>
+            <button className="secondary-action" onClick={() => setTopicFilter("all")} type="button">
+              Show all topics
             </button>
           </section>
         )}
 
-        {!loading && !error && !hasStories && hasLoadedData && publisherFilter === "all" && (
+        {!loading && !error && !hasStories && hasLoadedData && topicFilter === "all" && (
           <section className="state-panel">
             <p className="eyebrow">Nothing to show yet</p>
             <h2>No live stories available</h2>
@@ -218,17 +228,80 @@ export function HomePage() {
           </section>
         )}
 
-        {hasStories && (
-          <section className="story-grid" aria-label="Live story clusters">
-            {visibleClusters.map((cluster) => (
-              <ClusterCard
-                key={cluster.cluster_id}
-                cluster={cluster}
-                to={`/story/${cluster.cluster_id}`}
-                highlighted={highlightedClusterIds.has(cluster.cluster_id)}
-              />
-            ))}
-          </section>
+        {hasStories && sections.leadStory && (
+          <>
+            <section className="dashboard-section" aria-labelledby="top-stories-heading">
+              <SectionHeader id="top-stories-heading" title="Top Stories" detail="Highest-ranked clusters from the live API." />
+              <div className="top-stories-layout">
+                <ClusterCard
+                  cluster={sections.leadStory}
+                  to={`/story/${sections.leadStory.cluster_id}`}
+                  highlighted={highlightedClusterIds.has(sections.leadStory.cluster_id)}
+                  variant="lead"
+                />
+                {sections.supportingStories.length > 0 && (
+                  <div className="supporting-story-stack" aria-label="Supporting top stories">
+                    {sections.supportingStories.map((cluster) => (
+                      <ClusterCard
+                        key={cluster.cluster_id}
+                        cluster={cluster}
+                        to={`/story/${cluster.cluster_id}`}
+                        highlighted={highlightedClusterIds.has(cluster.cluster_id)}
+                        variant="supporting"
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {sections.developingStories.length > 0 && (
+              <section className="dashboard-section" aria-labelledby="developing-stories-heading">
+                <SectionHeader
+                  id="developing-stories-heading"
+                  title="Developing Stories"
+                  detail="Recently updated clusters with live movement."
+                />
+                <div className="developing-story-grid">
+                  {sections.developingStories.map((cluster) => (
+                    <ClusterCard
+                      key={cluster.cluster_id}
+                      cluster={cluster}
+                      to={`/story/${cluster.cluster_id}`}
+                      highlighted={highlightedClusterIds.has(cluster.cluster_id)}
+                      variant="thumbnail"
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <div className="dashboard-actions">
+              <button type="button" className="secondary-button" onClick={() => setShowAllClusters((current) => !current)}>
+                {showAllClusters ? "Hide all clusters" : "View all clusters"}
+              </button>
+            </div>
+
+            {showAllClusters && (
+              <section className="dashboard-section" aria-labelledby="all-clusters-heading">
+                <SectionHeader
+                  id="all-clusters-heading"
+                  title="All Clusters"
+                  detail="Full fetched result set from the current API request."
+                />
+                <div className="story-grid">
+                  {sections.allClusters.map((cluster) => (
+                    <ClusterCard
+                      key={cluster.cluster_id}
+                      cluster={cluster}
+                      to={`/story/${cluster.cluster_id}`}
+                      highlighted={highlightedClusterIds.has(cluster.cluster_id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
       </main>
     </div>

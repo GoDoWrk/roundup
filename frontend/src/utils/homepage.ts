@@ -2,6 +2,8 @@ import type { StoryCluster } from "../types";
 
 const RECENT_UPDATE_WINDOW_MS = 60 * 60 * 1000;
 const SUMMARY_PREVIEW_LENGTH = 180;
+const TOP_SUPPORTING_COUNT = 3;
+const DEVELOPING_STORY_COUNT = 4;
 
 export function previewSummary(text: string, maxLength = SUMMARY_PREVIEW_LENGTH): string {
   const trimmed = text.trim();
@@ -51,6 +53,98 @@ export function sortClustersByLatestUpdates(clusters: StoryCluster[]): StoryClus
 
     return left.cluster_id.localeCompare(right.cluster_id);
   });
+}
+
+export function collectTopics(clusters: StoryCluster[]): string[] {
+  const topics = new Set<string>();
+
+  for (const cluster of clusters) {
+    const topic = cluster.topic?.trim();
+    if (topic) {
+      topics.add(topic);
+    }
+  }
+
+  return Array.from(topics).sort((left, right) => left.localeCompare(right));
+}
+
+export function clusterMatchesTopic(cluster: StoryCluster, topic: string): boolean {
+  if (topic === "all") {
+    return true;
+  }
+
+  return cluster.topic?.trim() === topic;
+}
+
+export function getFilteredClusters(clusters: StoryCluster[], topic: string): StoryCluster[] {
+  if (topic === "all") {
+    return clusters;
+  }
+
+  return clusters.filter((cluster) => clusterMatchesTopic(cluster, topic));
+}
+
+export function getClusterImageUrl(cluster: StoryCluster): string | null {
+  const primary = cluster.primary_image_url?.trim();
+  if (primary) {
+    return primary;
+  }
+
+  const fallback = cluster.thumbnail_urls?.find((url) => url.trim().length > 0);
+  return fallback?.trim() || null;
+}
+
+export function getUpdateCount(cluster: StoryCluster): number {
+  const timelineEvents = cluster.timeline_events ?? [];
+  if (timelineEvents.length > 0) {
+    return timelineEvents.length;
+  }
+
+  return (cluster.timeline ?? []).length;
+}
+
+function compareDevelopingClusters(left: StoryCluster, right: StoryCluster): number {
+  if (left.is_developing !== right.is_developing) {
+    return left.is_developing ? -1 : 1;
+  }
+
+  const updatedDiff = parseTimestamp(right.last_updated) - parseTimestamp(left.last_updated);
+  if (updatedDiff !== 0) {
+    return updatedDiff;
+  }
+
+  const scoreDiff = scoreValue(right.score) - scoreValue(left.score);
+  if (Math.abs(scoreDiff) > 1e-9) {
+    return scoreDiff > 0 ? 1 : -1;
+  }
+
+  return left.cluster_id.localeCompare(right.cluster_id);
+}
+
+export interface HomepageSections {
+  leadStory: StoryCluster | null;
+  supportingStories: StoryCluster[];
+  developingStories: StoryCluster[];
+  allClusters: StoryCluster[];
+}
+
+export function selectHomepageSections(clusters: StoryCluster[], sortMode: "top" | "latest"): HomepageSections {
+  const allClusters = sortMode === "latest" ? sortClustersByLatestUpdates(clusters) : sortClustersForHomepage(clusters);
+  const leadStory = allClusters[0] ?? null;
+  const supportingStories = allClusters.slice(1, 1 + TOP_SUPPORTING_COUNT);
+  const usedTopStoryIds = new Set([leadStory?.cluster_id, ...supportingStories.map((cluster) => cluster.cluster_id)]);
+
+  const developingStories = [...clusters]
+    .filter((cluster) => !usedTopStoryIds.has(cluster.cluster_id))
+    .sort(compareDevelopingClusters)
+    .slice(0, DEVELOPING_STORY_COUNT);
+
+  return {
+    leadStory,
+    supportingStories,
+    developingStories,
+    allClusters
+  };
 }
 
 export function isRecentlyUpdated(lastUpdated: string, referenceTime = Date.now()): boolean {
@@ -108,14 +202,6 @@ export function clusterMatchesPublisher(cluster: StoryCluster, publisher: string
   }
 
   return cluster.sources.some((source) => source.publisher.trim() === publisher);
-}
-
-export function getFilteredClusters(clusters: StoryCluster[], publisher: string): StoryCluster[] {
-  if (publisher === "all") {
-    return clusters;
-  }
-
-  return clusters.filter((cluster) => clusterMatchesPublisher(cluster, publisher));
 }
 
 export function getChangedClusterIds(

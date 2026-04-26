@@ -2,28 +2,37 @@ import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
-import { getFreshnessLabel, isRecentlyUpdated, previewSummary } from "../utils/homepage";
+import {
+  getClusterImageUrl,
+  getFreshnessLabel,
+  getUpdateCount,
+  isRecentlyUpdated,
+  previewSummary
+} from "../utils/homepage";
 
 interface ClusterCardProps {
   cluster: StoryCluster;
   to?: string;
   highlighted?: boolean;
+  variant?: "standard" | "lead" | "supporting" | "thumbnail";
 }
 
-export function ClusterCard({ cluster, to, highlighted = false }: ClusterCardProps) {
+export function ClusterCard({ cluster, to, highlighted = false, variant = "standard" }: ClusterCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const now = Date.now();
-  const sourceCount = cluster.sources.length;
-  const summary = cluster.summary.trim();
+  const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
+  const updateCount = getUpdateCount(cluster);
+  const summary = cluster.summary?.trim() ?? "";
   const freshnessLabel = getFreshnessLabel(cluster.last_updated, now);
   const recentlyUpdated = isRecentlyUpdated(cluster.last_updated, now);
   const scoreLabel = Number.isFinite(cluster.score) ? cluster.score.toFixed(2) : null;
   const readableTimestamp = formatReadableTimestamp(cluster.last_updated);
   const relativeLabel = formatRelativeTime(cluster.last_updated, now);
   const hasValidTimestamp = readableTimestamp && !relativeLabel.startsWith("(");
-  const className = `story-card${recentlyUpdated ? " story-card--fresh" : ""}${highlighted ? " story-card--updated" : ""}${to ? " story-card--linked" : ""}`;
-  const imageUrl = cluster.primary_image_url?.trim() || "";
+  const className = `story-card story-card--${variant}${recentlyUpdated ? " story-card--fresh" : ""}${highlighted ? " story-card--updated" : ""}${to ? " story-card--linked" : ""}`;
+  const imageUrl = getClusterImageUrl(cluster) ?? "";
   const showImage = imageUrl.length > 0 && !imageFailed;
+  const topic = cluster.topic?.trim();
 
   useEffect(() => {
     setImageFailed(false);
@@ -31,14 +40,20 @@ export function ClusterCard({ cluster, to, highlighted = false }: ClusterCardPro
 
   const content = (
     <>
-      {showImage && (
-        <div className="story-card__image-frame">
+      <div className={`story-card__image-frame${showImage ? "" : " story-card__image-frame--placeholder"}`}>
+        {showImage ? (
           <img src={imageUrl} alt="" className="story-card__image" loading="lazy" onError={() => setImageFailed(true)} />
-        </div>
-      )}
+        ) : (
+          <span aria-hidden="true">{topic?.slice(0, 1).toUpperCase() || "R"}</span>
+        )}
+      </div>
       <div className="story-card__eyebrow">
-        <span className="story-card__source-count">
+        {topic && <span className="story-card__topic">{topic}</span>}
+        <span className="story-card__meta-count">
           {sourceCount} source{sourceCount === 1 ? "" : "s"}
+        </span>
+        <span className="story-card__meta-count">
+          {updateCount} update{updateCount === 1 ? "" : "s"}
         </span>
         {freshnessLabel && recentlyUpdated && <span className="story-card__freshness">{freshnessLabel}</span>}
         {highlighted && <span className="story-card__refresh-badge">Updated since last refresh</span>}
@@ -47,7 +62,9 @@ export function ClusterCard({ cluster, to, highlighted = false }: ClusterCardPro
         <h3 className="story-card__headline">{cluster.headline}</h3>
         {scoreLabel && <span className="story-card__score">{scoreLabel}</span>}
       </div>
-      {summary && <p className="story-card__summary">{previewSummary(summary)}</p>}
+      {summary && variant !== "thumbnail" && (
+        <p className="story-card__summary">{previewSummary(summary, variant === "supporting" ? 96 : undefined)}</p>
+      )}
       {hasValidTimestamp && (
         <div className="story-card__footer">
           <span>{relativeLabel}</span>
@@ -59,14 +76,14 @@ export function ClusterCard({ cluster, to, highlighted = false }: ClusterCardPro
 
   if (to) {
     return (
-      <Link to={to} className={className} data-testid="story-card">
+      <Link to={to} className={className} data-testid="story-card" data-card-variant={variant}>
         {content}
       </Link>
     );
   }
 
   return (
-    <article className={className} data-testid="story-card">
+    <article className={className} data-testid="story-card" data-card-variant={variant}>
       {content}
     </article>
   );

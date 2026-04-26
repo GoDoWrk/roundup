@@ -2,21 +2,33 @@ type SortMode = "top" | "latest";
 
 interface FeedControlsProps {
   sortMode: SortMode;
-  publishers: string[];
-  publisherFilter: string;
+  topics: string[];
+  topicFilter: string;
   onSortModeChange: (mode: SortMode) => void;
-  onPublisherFilterChange: (publisher: string) => void;
+  onTopicFilterChange: (topic: string) => void;
 }
 
 export function FeedControls({
   sortMode,
-  publishers,
-  publisherFilter,
+  topics,
+  topicFilter,
   onSortModeChange,
-  onPublisherFilterChange
+  onTopicFilterChange
 }: FeedControlsProps) {
   return (
     <section className="feed-controls" aria-label="Feed controls">
+      <label className="feed-controls__filter">
+        <span>Topic</span>
+        <select value={topicFilter} onChange={(event) => onTopicFilterChange(event.target.value)}>
+          <option value="all">All topics</option>
+          {topics.map((topic) => (
+            <option key={topic} value={topic}>
+              {topic}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <div className="feed-controls__group" role="toolbar" aria-label="Sort stories">
         <button
           type="button"
@@ -24,7 +36,7 @@ export function FeedControls({
           aria-pressed={sortMode === "top"}
           onClick={() => onSortModeChange("top")}
         >
-          Top / Most Important
+          Sort: Relevance
         </button>
         <button
           type="button"
@@ -34,23 +46,9 @@ export function FeedControls({
           aria-pressed={sortMode === "latest"}
           onClick={() => onSortModeChange("latest")}
         >
-          Latest Updates
+          Sort: Latest
         </button>
       </div>
-
-      {publishers.length > 1 && (
-        <label className="feed-controls__filter">
-          <span>Source</span>
-          <select value={publisherFilter} onChange={(event) => onPublisherFilterChange(event.target.value)}>
-            <option value="all">All sources</option>
-            {publishers.map((publisher) => (
-              <option key={publisher} value={publisher}>
-                {publisher}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
     </section>
   );
 }
