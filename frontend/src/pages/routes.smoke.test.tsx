@@ -113,8 +113,8 @@ describe("route smoke tests", () => {
                   }
                 ],
                 source_count: 1,
-                primary_image_url: null,
-                thumbnail_urls: [],
+                primary_image_url: "https://images.example.com/transit.jpg",
+                thumbnail_urls: ["https://images.example.com/transit.jpg"],
                 topic: "Transit",
                 region: null,
                 story_type: "general",
@@ -187,8 +187,8 @@ describe("route smoke tests", () => {
                 }
               ],
               source_count: 1,
-              primary_image_url: null,
-              thumbnail_urls: [],
+              primary_image_url: "https://images.example.com/transit.jpg",
+              thumbnail_urls: ["https://images.example.com/transit.jpg"],
               topic: "Transit",
               region: null,
               story_type: "general",

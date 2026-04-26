@@ -6,7 +6,6 @@ import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import {
   getClusterImageUrl,
-  getUpdateCount,
   isRecentlyUpdated,
   previewSummary,
   readerText
@@ -24,7 +23,6 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   const { preferences } = useUserPreferences();
   const now = Date.now();
   const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
-  const updateCount = getUpdateCount(cluster);
   const summary = readerText(cluster.summary) ?? "";
   const recentlyUpdated = isRecentlyUpdated(cluster.last_updated, now);
   const isCandidate = cluster.visibility === "candidate" || cluster.status === "hidden";
@@ -38,15 +36,11 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   const saveLabel = saved ? `Remove saved story: ${cluster.headline}` : `Save story: ${cluster.headline}`;
   const shouldShowSummary = Boolean(summary) && variant !== "thumbnail" && (preferences.showSummaries || variant === "lead");
   const sourceLabel =
-    sourceCount > 0 ? `${sourceCount} source${sourceCount === 1 ? "" : "s"}` : "Sources pending";
-  const updateLabel =
-    updateCount > 0 ? `${updateCount} update${updateCount === 1 ? "" : "s"}` : "No updates yet";
+    sourceCount > 1 ? `${sourceCount} sources` : sourceCount === 1 ? "Single source" : "Sources pending";
   const statusLabels = [
     sourceCount === 1 || cluster.is_single_source ? "Single source" : null,
     sourceCount !== 1 && cluster.is_developing ? "Developing" : null,
-    sourceCount !== 1 && !cluster.is_developing && isCandidate ? "Developing" : null,
-    recentlyUpdated ? "Updated recently" : null,
-    highlighted ? "Updated" : null
+    sourceCount !== 1 && !cluster.is_developing && isCandidate ? "Developing" : null
   ].filter((label): label is string => Boolean(label));
 
   const content = (
@@ -58,9 +52,7 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
         imageClassName="story-card__image"
       />
       <div className="story-card__eyebrow">
-        {topic && <span className="story-card__topic">{topic}</span>}
-        <span className="story-card__meta-count">{sourceLabel}</span>
-        <span className="story-card__meta-count">{updateLabel}</span>
+        {sourceCount !== 1 && <span className="story-card__meta-count">{sourceLabel}</span>}
         {statusLabels.map((label) => (
           <span
             key={label}

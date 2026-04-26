@@ -73,8 +73,8 @@ function buildCluster(
       }
     ],
     source_count: 1,
-    primary_image_url: null,
-    thumbnail_urls: [],
+    primary_image_url: `https://images.example.com/${clusterId}.jpg`,
+    thumbnail_urls: [`https://images.example.com/${clusterId}.jpg`],
     region: null,
     story_type: "general",
     first_seen: "2026-04-23T00:00:00Z",
@@ -165,14 +165,14 @@ describe("HomePage", () => {
     renderHome();
     expect(await screen.findByText("Checking Roundup for current stories")).toBeInTheDocument();
     resolveFetch(jsonResponse(clusterResponse([])));
-    await waitFor(() => expect(screen.getByText("No live stories available")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("No image-ready stories available")).toBeInTheDocument());
   });
 
   it("renders an empty state when the API returns no clusters", async () => {
     mockFetch({ status: 200, body: clusterResponse([]) });
 
     renderHome();
-    expect(await screen.findByText("No live stories available")).toBeInTheDocument();
+    expect(await screen.findByText("No image-ready stories available")).toBeInTheDocument();
   });
 
   it("renders an error state when the API request fails", async () => {
@@ -250,7 +250,7 @@ describe("HomePage", () => {
     await waitFor(() => expect(leadCard()).toHaveTextContent("Newer but lower score"));
   });
 
-  it("filters the homepage by real cluster topic values", async () => {
+  it("hides topic filtering until cluster taxonomy is reliable", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -261,11 +261,7 @@ describe("HomePage", () => {
 
     renderHome();
     expect(await screen.findByText("World story")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "Technology" } });
-
-    expect(await screen.findByText("Technology story")).toBeInTheDocument();
-    expect(screen.queryByText("World story")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Topic")).not.toBeInTheDocument();
   });
 
   it("prioritizes developing stories by is_developing and latest update after top stories", async () => {
@@ -295,7 +291,7 @@ describe("HomePage", () => {
     expect(cards[2]).toHaveTextContent("Recent active");
   });
 
-  it("renders just in candidate stories without a public detail link", async () => {
+  it("renders just in candidate stories with a public detail link", async () => {
     mockFetch({
       status: 200,
       body: homepageResponse({
@@ -316,22 +312,26 @@ describe("HomePage", () => {
     const card = within(justIn).getByTestId("story-card");
     expect(card).toHaveTextContent("Single source item");
     expect(card).toHaveTextContent("Single source");
-    expect(within(card).queryByRole("link", { name: /single source item/i })).not.toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: /single source item/i })).toHaveAttribute(
+      "href",
+      "/story/candidate-1"
+    );
   });
 
-  it("renders a placeholder visual when no image is available", async () => {
+  it("does not render clusters without thumbnails on the homepage", async () => {
     mockFetch({
       status: 200,
-      body: clusterResponse([buildCluster("cluster-1", "Image missing story", 0.9, "2026-04-23T02:00:00Z")])
+      body: clusterResponse([
+        buildCluster("cluster-1", "Image missing story", 0.9, "2026-04-23T02:00:00Z", {
+          primary_image_url: null,
+          thumbnail_urls: []
+        })
+      ])
     });
 
     renderHome();
-    await screen.findByText("Image missing story");
-
-    const lead = leadCard();
-    expect(lead).toBeTruthy();
-    expect((lead as HTMLElement).querySelector("img")).toBeNull();
-    expect(within(lead as HTMLElement).getByText("W")).toBeInTheDocument();
+    expect(await screen.findByText("No image-ready stories available")).toBeInTheDocument();
+    expect(screen.queryByText("Image missing story")).not.toBeInTheDocument();
   });
 
   it("expands all fetched clusters from the View all clusters action", async () => {
@@ -382,13 +382,14 @@ describe("HomePage", () => {
     renderHome();
     await waitFor(() => expect(screen.getByText("Transit Plan Advances")).toBeInTheDocument());
     expect(callCount).toBe(1);
+    expect(window.setInterval).toHaveBeenCalledWith(expect.any(Function), 300000);
 
     await act(async () => {
       intervalHandlers[0]?.();
     });
 
     await waitFor(() => expect(screen.getByText("Transit Plan Revised")).toBeInTheDocument());
-    expect(screen.getByText("Updated")).toBeInTheDocument();
+    expect(screen.getByText("1 updated since last refresh")).toBeInTheDocument();
     expect(callCount).toBe(2);
   });
 });

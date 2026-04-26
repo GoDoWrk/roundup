@@ -226,6 +226,10 @@ def test_homepage_clusters_sections_promoted_and_candidate_stories(
     assert payload["status"]["visible_clusters"] == 2
     assert payload["status"]["candidate_clusters"] == 1
 
+    detail_response = client.get("/api/clusters/homepage-candidate")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["cluster_id"] == "homepage-candidate"
+
 
 def test_api_clusters_list_and_detail_return_structured_payloads(client, db_session: Session) -> None:
     now = datetime.now(timezone.utc)

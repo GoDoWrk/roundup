@@ -8,12 +8,13 @@ import {
   collectTopics,
   compareDevelopingClusters,
   getChangedClusterIds,
+  hasClusterImage,
   getFilteredClusters,
   sortClustersByLatestUpdates,
   sortClustersForHomepage
 } from "../utils/homepage";
 
-const REFRESH_INTERVAL_MS = 30_000;
+const REFRESH_INTERVAL_MS = 5 * 60_000;
 
 type SortMode = "top" | "latest";
 
@@ -138,12 +139,11 @@ export function HomePage() {
       };
     }
 
+    const imageReady = (items: StoryCluster[]) => getFilteredClusters(items, topicFilter).filter(hasClusterImage);
     const rank = sortMode === "latest" ? sortClustersByLatestUpdates : sortClustersForHomepage;
-    const topStories = rank(getFilteredClusters(homepageData.sections.top_stories, topicFilter));
-    const developingStories = [...getFilteredClusters(homepageData.sections.developing_stories, topicFilter)].sort(
-      compareDevelopingClusters
-    );
-    const justIn = sortClustersByLatestUpdates(getFilteredClusters(homepageData.sections.just_in, topicFilter));
+    const topStories = rank(imageReady(homepageData.sections.top_stories));
+    const developingStories = [...imageReady(homepageData.sections.developing_stories)].sort(compareDevelopingClusters);
+    const justIn = sortClustersByLatestUpdates(imageReady(homepageData.sections.just_in));
     const allClusters = [...topStories, ...developingStories, ...justIn];
     return { topStories, developingStories, justIn, allClusters };
   }, [homepageData, sortMode, topicFilter]);
@@ -193,9 +193,8 @@ export function HomePage() {
           {homepageData && <span>{homepageData.status.articles_pending} articles pending</span>}
           <span>{lastIngestionLabel}</span>
           <span>{lastCheckedLabel}</span>
-          <span>{refreshing ? "Live refresh in progress" : "Next page refresh within 30s"}</span>
+          <span>{refreshing ? "Live refresh in progress" : "Auto refresh every 5m"}</span>
           <span>Sort: {sortLabel}</span>
-          <span>Topic: {topicFilterLabel}</span>
           {updatedSinceLastRefresh > 0 && (
             <span className="public-hero__accent">{updatedSinceLastRefresh} updated since last refresh</span>
           )}
@@ -247,8 +246,8 @@ export function HomePage() {
         {!loading && !error && !hasStories && hasLoadedData && topicFilter === "all" && (
           <section className="state-panel">
             <p className="eyebrow">Nothing to show yet</p>
-            <h2>No live stories available</h2>
-            <p>The feed will populate automatically once live clusters are available from the backend.</p>
+            <h2>No image-ready stories available</h2>
+            <p>The feed only shows stories with thumbnails. Inspector can still show clusters that are missing images.</p>
           </section>
         )}
 
@@ -322,6 +321,7 @@ export function HomePage() {
                     <ClusterCard
                       key={cluster.cluster_id}
                       cluster={cluster}
+                      to={`/story/${cluster.cluster_id}`}
                       highlighted={highlightedClusterIds.has(cluster.cluster_id)}
                       variant="thumbnail"
                     />

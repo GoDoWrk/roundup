@@ -119,6 +119,10 @@ export function getClusterImageUrl(cluster: StoryCluster): string | null {
   return fallback?.trim() || null;
 }
 
+export function hasClusterImage(cluster: StoryCluster): boolean {
+  return getClusterImageUrl(cluster) !== null;
+}
+
 export function getUpdateCount(cluster: StoryCluster): number {
   const timelineEvents = cluster.timeline_events ?? [];
   if (timelineEvents.length > 0) {

@@ -74,6 +74,19 @@ def _visibility_label(cluster: Cluster, fallback: str) -> str:
     return fallback
 
 
+def _is_detail_visible(cluster: Cluster, source_count: int, settings) -> bool:
+    if cluster.validation_error is not None and not _is_legacy_source_count_validation_error(cluster.validation_error, settings):
+        return False
+
+    if cluster.status != "hidden" and source_count >= settings.cluster_min_sources_for_api:
+        return True
+
+    candidate_min_sources = 1 if settings.cluster_show_just_in_single_source else 2
+    return source_count >= candidate_min_sources and (
+        cluster.status == "hidden" or source_count < settings.cluster_min_sources_for_top_stories
+    )
+
+
 @router.get("", response_model=ClusterListResponse)
 def list_clusters(
     limit: int = Query(default=50, ge=1, le=500),
@@ -245,14 +258,6 @@ def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> Story
         ],
     )
     source_count = len(cluster.source_links) if cluster is not None else 0
-    if (
-        cluster is None
-        or cluster.status == "hidden"
-        or source_count < settings.cluster_min_sources_for_api
-        or (
-            cluster.validation_error is not None
-            and not _is_legacy_source_count_validation_error(cluster.validation_error, settings)
-        )
-    ):
+    if cluster is None or not _is_detail_visible(cluster, source_count, settings):
         raise HTTPException(status_code=404, detail="Cluster not found")
     return build_story_cluster(cluster)
