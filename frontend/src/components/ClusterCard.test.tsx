@@ -9,6 +9,7 @@ describe("ClusterCard", () => {
         cluster={{
           cluster_id: "cluster-1",
           headline: "Transit Plan Advances",
+          topic: "Transit Plan",
           summary: "   ",
           what_changed: "",
           why_it_matters: "",
@@ -19,7 +20,6 @@ describe("ClusterCard", () => {
           source_count: 0,
           primary_image_url: null,
           thumbnail_urls: [],
-          topic: "general",
           region: null,
           story_type: "general",
           first_seen: "2026-04-23T00:00:00Z",

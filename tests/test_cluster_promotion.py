@@ -82,7 +82,7 @@ def test_one_source_cluster_stays_hidden(db_session: Session) -> None:
     assert cluster.status == "hidden"
     assert _source_count(db_session, cluster.id) == 1
     assert cluster.promoted_at is None
-    assert cluster.validation_error is not None
+    assert cluster.validation_error is None
 
 
 def test_two_source_cluster_stays_hidden_when_threshold_is_three(db_session: Session) -> None:
@@ -196,6 +196,54 @@ def test_unrelated_article_does_not_promote_hidden_cluster(db_session: Session) 
 
     total_clusters = int(db_session.scalar(select(func.count()).select_from(Cluster)) or 0)
     assert total_clusters == 2
+
+
+def test_hidden_cluster_with_enough_sources_can_be_promoted_without_new_articles(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    settings = _settings()
+
+    cluster = Cluster(
+        id="stuck-hidden-cluster",
+        headline="City Council Transit Expansion Update",
+        summary="Three outlets are covering the transit expansion with consistent facts and new detail.",
+        what_changed="Coverage moved from the initial announcement to broader reporting on funding and routes.",
+        why_it_matters="The change affects transit availability and costs, and sustained updates indicate continuing relevance.",
+        first_seen=now - timedelta(hours=4),
+        last_updated=now - timedelta(hours=1),
+        score=0.22,
+        status="hidden",
+        normalized_headline="city council transit expansion update",
+        keywords=["city", "council", "transit", "expansion"],
+        entities=["City Council", "Transit Authority"],
+        validation_error=None,
+    )
+    db_session.add(cluster)
+    db_session.flush()
+
+    for idx in range(3):
+        article = _transit_article(idx + 1, now - timedelta(hours=3 - idx), f"Source {idx + 1}")
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(
+                cluster_id=cluster.id,
+                article_id=article.id,
+                similarity_score=0.22,
+                heuristic_breakdown={"decision": "attach_existing_cluster", "selected_score": 0.22},
+            )
+        )
+
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, settings)
+    db_session.commit()
+
+    promoted = db_session.get(Cluster, cluster.id)
+    assert promoted is not None
+    assert promoted.status == "active"
+    assert promoted.promoted_at is not None
+    assert promoted.validation_error is None
+    assert result.promoted_count == 1
 
 
 def test_promotion_metrics_counters_update(db_session: Session) -> None:

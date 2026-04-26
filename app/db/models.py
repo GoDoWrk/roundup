@@ -29,6 +29,7 @@ class Article(Base):
     normalized_title: Mapped[str] = mapped_column(Text, nullable=False)
     keywords: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
     dedupe_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
 
     cluster_link: Mapped[ClusterArticle | None] = relationship(back_populates="article", uselist=False)
@@ -36,6 +37,8 @@ class Article(Base):
     __table_args__ = (
         Index("ix_articles_published_at", "published_at"),
         Index("ix_articles_canonical_url", "canonical_url"),
+        Index("ix_articles_publisher", "publisher"),
+        Index("ix_articles_topic", "topic"),
     )
 
 
@@ -59,6 +62,7 @@ class Cluster(Base):
     normalized_headline: Mapped[str] = mapped_column(Text, nullable=False, default="")
     keywords: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
     validation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -72,6 +76,7 @@ class Cluster(Base):
     __table_args__ = (
         Index("ix_clusters_last_updated", "last_updated"),
         Index("ix_clusters_status", "status"),
+        Index("ix_clusters_topic", "topic"),
     )
 
 

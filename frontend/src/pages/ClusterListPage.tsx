@@ -87,7 +87,8 @@ export function ClusterListPage() {
                 return (
                   <tr key={row.clusterId}>
                     <td>
-                    <Link to={`/inspect/clusters/${row.clusterId}`}>{row.headline}</Link>
+                      <Link to={`/inspect/clusters/${row.clusterId}`}>{row.headline}</Link>
+                      <div className="muted">{row.topic || "general"}</div>
                       <div>
                         <QualityBadges text={row.headline} />
                       </div>
@@ -97,13 +98,28 @@ export function ClusterListPage() {
                     <td>{formatTimestamp(row.lastUpdated)}</td>
                     <td>{formatScore(row.score)}</td>
                     <td>
-                      {!debugRow?.promoted_at && <span className="muted">no recent promotion</span>}
+                      {!debugRow?.promoted_at && debugRow?.promotion_blockers?.length ? (
+                        <div className="quality-warn">
+                          <span className="muted">blocked</span>
+                          {debugRow.promotion_blockers.map((reason) => (
+                            <code key={reason}>{reason}</code>
+                          ))}
+                        </div>
+                      ) : null}
+                      {!debugRow?.promoted_at && !debugRow?.promotion_blockers?.length && (
+                        <span className="muted">no recent promotion</span>
+                      )}
                       {debugRow?.promoted_at &&
                         (isRecentlyPromoted(debugRow.promoted_at) ? (
                           <span className="quality-ok">recently promoted</span>
                         ) : (
                           <span className="muted">promoted {formatTimestamp(debugRow.promoted_at)}</span>
                         ))}
+                      {debugRow?.promotion_explanation && (
+                        <div className="muted" style={{ marginTop: "0.35rem" }}>
+                          {debugRow.promotion_explanation}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span>{row.summaryPreview}</span>
@@ -143,6 +159,7 @@ export function ClusterListPage() {
                 <tr key={row.cluster_id}>
                   <td>
                     <Link to={`/clusters/${row.cluster_id}`}>{row.headline || row.cluster_id}</Link>
+                    <div className="muted">{row.topic || "general"}</div>
                   </td>
                   <td>{row.status}</td>
                   <td>{formatScore(row.score)}</td>
@@ -157,7 +174,11 @@ export function ClusterListPage() {
                         <span className="muted">promoted {formatTimestamp(row.promoted_at)}</span>
                       )
                     ) : (
-                      <span className="muted">{row.promotion_eligible ? "eligible, awaiting publish" : "not promoted"}</span>
+                      <div className="quality-warn">
+                        <span className="muted">{row.promotion_eligible ? "eligible, awaiting publish" : "not promoted"}</span>
+                        {!row.promotion_eligible &&
+                          row.promotion_blockers.map((reason) => <code key={reason}>{reason}</code>)}
+                      </div>
                     )}
                   </td>
                   <td>{row.validation_error || "(none provided)"}</td>

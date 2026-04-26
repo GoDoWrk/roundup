@@ -3,12 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
-from sqlalchemy import Select, select
-from sqlalchemy.orm import Session
-
-from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
+from app.db.models import Article, Cluster
 from app.schemas.article import ArticleDebugItem, ArticleResponse
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.services.topics import derive_topic_from_article, derive_topic_from_articles
 
 
 IMAGE_FIELD_NAMES = (
@@ -31,6 +29,7 @@ def article_to_response(article: Article) -> ArticleResponse:
         url=article.url,
         publisher=article.publisher,
         published_at=article.published_at,
+        topic=derive_topic_from_article(article),
     )
 
 
@@ -44,6 +43,7 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         published_at=article.published_at,
         keywords=list(article.keywords),
         entities=list(article.entities),
+        topic=derive_topic_from_article(article),
     )
 
 
@@ -125,12 +125,9 @@ def _timeline_from_articles(articles: list[Article]) -> list[TimelineEvent]:
     ]
 
 
-def _topic_from_cluster(cluster: Cluster) -> str:
-    for value in list(cluster.keywords or []) + list(cluster.entities or []):
-        topic = str(value).strip()
-        if topic:
-            return topic
-    return "general"
+def _story_topic(cluster: Cluster, articles: list[Article]) -> str:
+    stored_topic = str(getattr(cluster, "topic", "") or "").strip()
+    return stored_topic or derive_topic_from_articles(articles)
 
 
 def _as_aware_utc(value: datetime) -> datetime:
@@ -146,21 +143,13 @@ def _is_developing(cluster: Cluster, source_count: int) -> bool:
     return source_count >= 2 and datetime.now(timezone.utc) - last_updated <= timedelta(hours=24)
 
 
-def build_story_cluster(session: Session, cluster: Cluster) -> StoryCluster:
-    sources_stmt: Select[tuple[Article]] = (
-        select(Article)
-        .join(ClusterArticle, ClusterArticle.article_id == Article.id)
-        .where(ClusterArticle.cluster_id == cluster.id)
-        .order_by(Article.published_at.asc(), Article.id.asc())
+def build_story_cluster(cluster: Cluster) -> StoryCluster:
+    source_links = list(cluster.source_links)
+    articles = sorted(
+        (link.article for link in source_links if link.article is not None),
+        key=lambda article: (article.published_at, article.id),
     )
-    articles = list(session.scalars(sources_stmt).all())
-
-    timeline_stmt: Select[tuple[ClusterTimelineEvent]] = (
-        select(ClusterTimelineEvent)
-        .where(ClusterTimelineEvent.cluster_id == cluster.id)
-        .order_by(ClusterTimelineEvent.timestamp.asc(), ClusterTimelineEvent.id.asc())
-    )
-    timeline_rows = list(session.scalars(timeline_stmt).all())
+    timeline_rows = list(cluster.timeline_events)
 
     timeline = [
         TimelineEvent(
@@ -189,6 +178,7 @@ def build_story_cluster(session: Session, cluster: Cluster) -> StoryCluster:
     return StoryCluster(
         cluster_id=cluster.id,
         headline=cluster.headline,
+        topic=_story_topic(cluster, articles),
         summary=cluster.summary,
         what_changed=cluster.what_changed,
         why_it_matters=cluster.why_it_matters,
@@ -199,7 +189,6 @@ def build_story_cluster(session: Session, cluster: Cluster) -> StoryCluster:
         source_count=len(sources),
         primary_image_url=image_urls[0] if image_urls else None,
         thumbnail_urls=image_urls,
-        topic=_topic_from_cluster(cluster),
         region=None,
         story_type="general",
         first_seen=cluster.first_seen,

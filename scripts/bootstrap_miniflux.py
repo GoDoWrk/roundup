@@ -5,8 +5,9 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from ipaddress import ip_address
 from pathlib import Path
-from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -22,6 +23,33 @@ logger = logging.getLogger("bootstrap_miniflux")
 class SeedFeed:
     url: str
     category: str
+
+
+def _is_safe_feed_url(feed_url: str) -> bool:
+    parsed = urlparse(feed_url.strip())
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return False
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return False
+
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return False
+
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return True
+
+    return not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
 
 
 def _load_seed_feeds(path: Path, default_category: str) -> list[SeedFeed]:
@@ -46,6 +74,10 @@ def _load_seed_feeds(path: Path, default_category: str) -> list[SeedFeed]:
 
         if not feed_url:
             logger.warning("miniflux_seed_feed_skipped reason=missing_url index=%s", idx)
+            continue
+
+        if not _is_safe_feed_url(feed_url):
+            logger.warning("miniflux_seed_feed_skipped reason=unsafe_url url=%s index=%s", feed_url, idx)
             continue
 
         key = feed_url.lower()

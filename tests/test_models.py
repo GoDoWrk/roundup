@@ -45,7 +45,7 @@ def _valid_story_cluster() -> dict:
         "source_count": 1,
         "primary_image_url": None,
         "thumbnail_urls": [],
-        "topic": "general",
+        "topic": "Transit",
         "region": None,
         "story_type": "general",
         "first_seen": now,

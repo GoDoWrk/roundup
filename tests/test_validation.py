@@ -58,7 +58,7 @@ def test_validation_rejects_weak_or_repetitive_text() -> None:
     assert "placeholder" in result.error or "repetitive" in result.error
 
 
-def test_validation_rejects_cluster_when_source_count_below_threshold() -> None:
+def test_validation_ignores_source_count_and_focuses_on_text_quality() -> None:
     cluster = _cluster()
     result = validate_cluster_record(
         cluster,
@@ -68,6 +68,5 @@ def test_validation_rejects_cluster_when_source_count_below_threshold() -> None:
         min_detail_words=8,
     )
 
-    assert not result.is_valid
-    assert result.error is not None
-    assert "at least 3 sources" in result.error
+    assert result.is_valid
+    assert result.error is None

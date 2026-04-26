@@ -8,7 +8,7 @@
 - `timeline` and `timeline_events` contain the same event objects. Stored cluster timeline events are used first; if a cluster has no timeline rows yet, the API falls back to article publish timestamps and titles.
 - `sources` lists associated articles, and `source_count` is computed from that list.
 - `primary_image_url` and `thumbnail_urls` are extracted only from existing article `raw_payload` image fields or image enclosures. If no image URL exists, they return `null` and `[]`.
-- `topic` uses the first available cluster keyword or entity. If none exists, it returns `"general"`.
+- `topic` uses the stored cluster topic when available, otherwise it is derived from associated article topics and falls back to `"General"`.
 - `last_updated`, `confidence_score`, and `is_developing` are derived from existing cluster timestamps, score, status, and source count.
 
 ## Safe defaults

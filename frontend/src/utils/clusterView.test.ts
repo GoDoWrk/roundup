@@ -12,6 +12,7 @@ describe("toClusterListRows", () => {
         {
           cluster_id: "cluster-1",
           headline: "Headline",
+          topic: "Transit Plan",
           summary: "Long summary text for preview output in the inspector table.",
           what_changed: "changed",
           why_it_matters: "matters",
@@ -30,7 +31,6 @@ describe("toClusterListRows", () => {
           source_count: 1,
           primary_image_url: null,
           thumbnail_urls: [],
-          topic: "general",
           region: null,
           story_type: "general",
           first_seen: "2026-04-22T00:00:00Z",
@@ -61,6 +61,7 @@ describe("toClusterListRows", () => {
         {
           cluster_id: "cluster-2",
           headline: "Headline",
+          topic: "Transit Plan",
           summary: "x".repeat(300),
           what_changed: "changed",
           why_it_matters: "matters",
@@ -71,7 +72,6 @@ describe("toClusterListRows", () => {
           source_count: 0,
           primary_image_url: null,
           thumbnail_urls: [],
-          topic: "general",
           region: null,
           story_type: "general",
           first_seen: "2026-04-22T00:00:00Z",

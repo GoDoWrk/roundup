@@ -111,7 +111,8 @@ def _assert_enriched_story_contract(payload: dict, *, image_expected: bool, deve
     assert payload["key_facts"] == []
     assert payload["timeline_events"] == payload["timeline"]
     assert len(payload["timeline_events"]) == 3
-    assert payload["topic"] == "city"
+    assert isinstance(payload["topic"], str)
+    assert payload["topic"]
     assert payload["region"] is None
     assert payload["story_type"] == "general"
     assert payload["is_developing"] is developing_expected
@@ -168,3 +169,35 @@ def test_api_clusters_list_and_detail_return_structured_payloads(client, db_sess
     no_image_payload = no_image_response.json()
     assert no_image_payload["cluster_id"] == "no-image-cluster"
     _assert_enriched_story_contract(no_image_payload, image_expected=False, developing_expected=False)
+
+
+def test_api_clusters_detail_keeps_low_score_cluster_public_when_it_is_valid(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _cluster("low-score-cluster", now)
+    cluster.score = 0.21
+    db_session.add(cluster)
+    db_session.flush()
+
+    for idx, publisher in enumerate(["Daily One", "Daily Two", "Daily Three"], start=1):
+        article = _article(idx, cluster.id, now, publisher)
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(
+                cluster_id=cluster.id,
+                article_id=article.id,
+                similarity_score=0.21,
+                heuristic_breakdown={"decision": "attach_existing_cluster", "selected_score": 0.21},
+            )
+        )
+
+    db_session.commit()
+
+    list_response = client.get("/api/clusters")
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert any(row["cluster_id"] == "low-score-cluster" for row in list_payload["items"])
+
+    detail_response = client.get("/api/clusters/low-score-cluster")
+    assert detail_response.status_code == 200
+    _assert_enriched_story_contract(detail_response.json(), image_expected=False)

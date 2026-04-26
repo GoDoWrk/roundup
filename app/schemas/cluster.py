@@ -35,7 +35,7 @@ class StoryCluster(BaseModel):
     source_count: int
     primary_image_url: str | None
     thumbnail_urls: list[str]
-    topic: str | None
+    topic: str
     region: str | None
     story_type: str
     first_seen: datetime
@@ -69,6 +69,7 @@ class ClusterDebugScoreBreakdown(BaseModel):
     average_entity_jaccard: float
     average_keyword_jaccard: float
     average_time_proximity: float
+    score_formula: str
 
 
 class ClusterDebugExplanation(BaseModel):
@@ -85,6 +86,7 @@ class ClusterDebugItem(BaseModel):
     cluster_id: str
     status: str
     score: float
+    topic: str
     source_count: int
     visibility_threshold: int
     promotion_eligible: bool
@@ -92,6 +94,7 @@ class ClusterDebugItem(BaseModel):
     previous_status: str | None
     promotion_reason: str | None
     promotion_explanation: str | None
+    promotion_blockers: list[str]
     validation_error: str | None
     headline: str
     summary: str
