@@ -53,6 +53,7 @@ export function StoryDetailPage() {
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!clusterId) {
@@ -79,8 +80,18 @@ export function StoryDetailPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setFailedImages(new Set());
+  }, [cluster?.cluster_id, cluster?.primary_image_url]);
+
   const events = useMemo(() => (cluster ? sortEventsChronologically(cluster) : []), [cluster]);
   const sources = useMemo(() => (cluster ? sortSourcesByNewest(cluster) : []), [cluster]);
+  const thumbnailUrls = useMemo(
+    () => (cluster?.thumbnail_urls ?? []).filter((url) => url.trim().length > 0 && !failedImages.has(url)),
+    [cluster?.thumbnail_urls, failedImages]
+  );
+  const primaryImageUrl = cluster?.primary_image_url?.trim() ?? "";
+  const showHeroImage = primaryImageUrl.length > 0 && !failedImages.has(primaryImageUrl);
   const recentlyUpdated = cluster ? isRecentlyUpdated(cluster.last_updated) : false;
   const summaryText = cluster?.summary.trim() ?? "";
   const whatChangedText = cluster?.what_changed.trim() ?? "";
@@ -95,10 +106,17 @@ export function StoryDetailPage() {
     { title: "What changed", text: whatChangedText },
     { title: "Why it matters", text: whyItMattersText }
   ].filter((section) => section.text.length > 0);
+  const markImageFailed = (url: string) => {
+    setFailedImages((current) => {
+      const next = new Set(current);
+      next.add(url);
+      return next;
+    });
+  };
 
   return (
     <div className="public-page story-detail">
-      <header className="story-detail__hero">
+      <header className={`story-detail__hero${showHeroImage ? " story-detail__hero--with-image" : ""}`}>
         <div className="story-detail__hero-copy">
           <p className="eyebrow">Live story detail</p>
           <h1>{cluster?.headline || "Story detail"}</h1>
@@ -119,6 +137,12 @@ export function StoryDetailPage() {
             Back to home
           </Link>
         </div>
+
+        {showHeroImage && (
+          <div className="story-detail__hero-media">
+            <img src={primaryImageUrl} alt="" onError={() => markImageFailed(primaryImageUrl)} />
+          </div>
+        )}
       </header>
 
       <main className="story-detail__body">
@@ -148,6 +172,14 @@ export function StoryDetailPage() {
 
         {!loading && !error && cluster && (
           <>
+            {thumbnailUrls.length > 0 && (
+              <section className="story-detail__image-strip" aria-label="Story images">
+                {thumbnailUrls.map((url) => (
+                  <img key={url} src={url} alt="" loading="lazy" onError={() => markImageFailed(url)} />
+                ))}
+              </section>
+            )}
+
             {storySections.map((section) => (
               <section key={section.title} className={`story-detail__section ${section.className ?? ""}`.trim()}>
                 <h2>{section.title}</h2>

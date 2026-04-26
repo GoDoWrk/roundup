@@ -17,6 +17,7 @@ class SourceReference(BaseModel):
     url: str = Field(min_length=1)
     publisher: str = Field(min_length=1)
     published_at: datetime
+    image_url: str | None = None
 
 
 ClusterStatus = Literal["emerging", "active", "stale"]

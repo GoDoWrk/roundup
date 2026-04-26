@@ -1,25 +1,62 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from app.db.models import Article, Cluster
 from app.schemas.article import ArticleDebugItem, ArticleResponse
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.services.normalizer import extract_image_url
 from app.services.topics import derive_topic_from_article, derive_topic_from_articles
 
+MAX_CLUSTER_THUMBNAILS = 4
 
-IMAGE_FIELD_NAMES = (
-    "image",
-    "image_url",
-    "thumbnail",
-    "thumbnail_url",
-    "cover_image",
-    "cover_image_url",
-    "lead_image_url",
-)
 
-IMAGE_URL_FIELD_NAMES = ("url", "src", "href")
+def _valid_image_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return urlunparse(parsed._replace(fragment=""))
+
+
+def _article_image_url(article: Article) -> str | None:
+    stored = _valid_image_url(article.image_url)
+    if stored is not None:
+        return stored
+    payload = article.raw_payload if isinstance(article.raw_payload, dict) else {}
+    return _valid_image_url(extract_image_url(payload, article.content_text))
+
+
+def _cluster_image_urls(cluster: Cluster) -> list[str]:
+    ranked_links = sorted(
+        [link for link in cluster.source_links if link.article is not None],
+        key=lambda link: (
+            link.article.published_at,
+            link.similarity_score,
+            link.article.id,
+        ),
+        reverse=True,
+    )
+
+    seen: set[str] = set()
+    urls: list[str] = []
+    for link in ranked_links:
+        candidate = _article_image_url(link.article)
+        if candidate is None:
+            continue
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        urls.append(candidate)
+        if len(urls) >= MAX_CLUSTER_THUMBNAILS:
+            break
+    return urls
 
 
 def article_to_response(article: Article) -> ArticleResponse:
@@ -29,6 +66,7 @@ def article_to_response(article: Article) -> ArticleResponse:
         url=article.url,
         publisher=article.publisher,
         published_at=article.published_at,
+        image_url=_article_image_url(article),
         topic=derive_topic_from_article(article),
     )
 
@@ -41,76 +79,11 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         normalized_title=article.normalized_title,
         publisher=article.publisher,
         published_at=article.published_at,
+        image_url=_article_image_url(article),
         keywords=list(article.keywords),
         entities=list(article.entities),
         topic=derive_topic_from_article(article),
     )
-
-
-def _is_http_url(value: str) -> bool:
-    parsed = urlparse(value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
-
-
-def _url_from_value(value: object) -> str | None:
-    if isinstance(value, str) and _is_http_url(value):
-        return value.strip()
-    if isinstance(value, dict):
-        for field_name in IMAGE_URL_FIELD_NAMES:
-            candidate = value.get(field_name)
-            if isinstance(candidate, str) and _is_http_url(candidate):
-                return candidate.strip()
-    return None
-
-
-def _looks_like_image_enclosure(value: dict) -> bool:
-    for field_name in ("mime_type", "content_type", "type"):
-        mime_type = value.get(field_name)
-        if isinstance(mime_type, str) and mime_type.lower().startswith("image/"):
-            return True
-    url = _url_from_value(value)
-    return bool(url and urlparse(url).path.lower().endswith((".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")))
-
-
-def _append_unique(urls: list[str], candidate: str | None) -> None:
-    if candidate and candidate not in urls:
-        urls.append(candidate)
-
-
-def _extract_image_urls_from_payload(raw_payload: object) -> list[str]:
-    if not isinstance(raw_payload, dict):
-        return []
-
-    urls: list[str] = []
-    for field_name in IMAGE_FIELD_NAMES:
-        value = raw_payload.get(field_name)
-        if isinstance(value, list):
-            for item in value:
-                _append_unique(urls, _url_from_value(item))
-        else:
-            _append_unique(urls, _url_from_value(value))
-
-    for field_name in ("enclosure", "enclosures"):
-        value = raw_payload.get(field_name)
-        enclosure_items = value if isinstance(value, list) else [value]
-        for item in enclosure_items:
-            if isinstance(item, dict) and _looks_like_image_enclosure(item):
-                _append_unique(urls, _url_from_value(item))
-
-    media_thumbnail = raw_payload.get("media_thumbnail")
-    if isinstance(media_thumbnail, list):
-        for item in media_thumbnail:
-            _append_unique(urls, _url_from_value(item))
-
-    return urls
-
-
-def _extract_story_image_urls(articles: list[Article]) -> list[str]:
-    urls: list[str] = []
-    for article in articles:
-        for image_url in _extract_image_urls_from_payload(article.raw_payload):
-            _append_unique(urls, image_url)
-    return urls
 
 
 def _timeline_from_articles(articles: list[Article]) -> list[TimelineEvent]:
@@ -150,6 +123,7 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         key=lambda article: (article.published_at, article.id),
     )
     timeline_rows = list(cluster.timeline_events)
+    thumbnail_urls = _cluster_image_urls(cluster)
 
     timeline = [
         TimelineEvent(
@@ -170,10 +144,10 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
             url=article.url,
             publisher=article.publisher,
             published_at=article.published_at,
+            image_url=_article_image_url(article),
         )
         for article in articles
     ]
-    image_urls = _extract_story_image_urls(articles)
 
     return StoryCluster(
         cluster_id=cluster.id,
@@ -187,8 +161,8 @@ def build_story_cluster(cluster: Cluster) -> StoryCluster:
         timeline_events=timeline,
         sources=sources,
         source_count=len(sources),
-        primary_image_url=image_urls[0] if image_urls else None,
-        thumbnail_urls=image_urls,
+        primary_image_url=thumbnail_urls[0] if thumbnail_urls else None,
+        thumbnail_urls=thumbnail_urls,
         region=None,
         story_type="general",
         first_seen=cluster.first_seen,

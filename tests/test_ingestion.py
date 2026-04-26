@@ -82,3 +82,25 @@ def test_ingestion_marks_blank_url_entry_as_malformed(db_session: Session) -> No
     assert result.ingested == 1
     assert result.malformed == 1
     assert len(result.errors) == 1
+
+
+def test_ingestion_persists_article_image_url_and_survives_malformed_image_metadata(db_session: Session) -> None:
+    entries = [
+        {
+            **_entry(1, "Image story", "https://example.com/image-story", "2026-04-22T11:00:00Z"),
+            "enclosures": [{"url": "https://cdn.example.com/story.jpg", "mime_type": "image/jpeg"}],
+        },
+        {
+            **_entry(2, "No image story", "https://example.com/no-image-story", "2026-04-22T11:05:00Z"),
+            "image": ["not", "a", "url"],
+            "enclosures": {"url": "https://cdn.example.com/file.zip"},
+        },
+    ]
+
+    result = ingest_entries(db_session, entries)
+    db_session.commit()
+
+    assert result.ingested == 2
+    articles = list(db_session.scalars(select(Article).order_by(Article.id.asc())).all())
+    assert articles[0].image_url == "https://cdn.example.com/story.jpg"
+    assert articles[1].image_url is None

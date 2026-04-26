@@ -11,6 +11,7 @@ export interface SourceReference {
   url: string;
   publisher: string;
   published_at: string;
+  image_url?: string | null;
 }
 
 export interface StoryCluster {

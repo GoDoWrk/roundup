@@ -13,6 +13,7 @@ def _article(
     now: datetime,
     publisher: str,
     raw_payload: dict | None = None,
+    image_url: str | None = None,
 ) -> Article:
     return Article(
         external_id=None,
@@ -22,6 +23,7 @@ def _article(
         publisher=publisher,
         published_at=now - timedelta(hours=idx),
         content_text="Body",
+        image_url=image_url,
         raw_payload=raw_payload or {"id": idx},
         normalized_title=f"transit update {idx}",
         keywords=["transit", "update", "city"],
@@ -121,11 +123,14 @@ def _assert_enriched_story_contract(payload: dict, *, image_expected: bool, deve
     assert payload["related_cluster_ids"] == []
 
     if image_expected:
-        assert payload["primary_image_url"] == "https://images.example.com/transit-lead.jpg"
+        assert payload["primary_image_url"] == "https://images.example.com/transit-enclosure.jpg"
         assert payload["thumbnail_urls"] == [
-            "https://images.example.com/transit-lead.jpg",
             "https://images.example.com/transit-enclosure.jpg",
+            "https://images.example.com/transit-lead.jpg",
         ]
+        source_images = {source["image_url"] for source in payload["sources"]}
+        assert "https://images.example.com/transit-enclosure.jpg" in source_images
+        assert "https://images.example.com/transit-lead.jpg" in source_images
     else:
         assert payload["primary_image_url"] is None
         assert payload["thumbnail_urls"] == []

@@ -9,6 +9,7 @@ class ArticleResponse(BaseModel):
     url: str = Field(min_length=1)
     publisher: str = Field(min_length=1)
     published_at: datetime
+    image_url: str | None = None
     topic: str
 
 
@@ -26,6 +27,7 @@ class ArticleDebugItem(BaseModel):
     normalized_title: str
     publisher: str
     published_at: datetime
+    image_url: str | None = None
     keywords: list[str]
     entities: list[str]
     topic: str

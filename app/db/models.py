@@ -24,6 +24,7 @@ class Article(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     content_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     normalized_title: Mapped[str] = mapped_column(Text, nullable=False)

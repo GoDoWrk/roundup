@@ -40,11 +40,12 @@ def _valid_story_cluster() -> dict:
                 "url": "https://example.com/a",
                 "publisher": "Example",
                 "published_at": now,
+                "image_url": "https://cdn.example.com/a.jpg",
             }
         ],
+        "primary_image_url": "https://cdn.example.com/a.jpg",
+        "thumbnail_urls": ["https://cdn.example.com/a.jpg"],
         "source_count": 1,
-        "primary_image_url": None,
-        "thumbnail_urls": [],
         "topic": "Transit",
         "region": None,
         "story_type": "general",
@@ -71,5 +72,6 @@ def test_story_cluster_accepts_valid_payload() -> None:
     model = StoryCluster(**payload)
     assert model.cluster_id == "c1"
     assert model.summary == "Summary"
+    assert model.primary_image_url == "https://cdn.example.com/a.jpg"
     assert model.timeline_events == model.timeline
     assert model.source_count == 1
