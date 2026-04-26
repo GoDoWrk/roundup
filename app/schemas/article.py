@@ -9,6 +9,7 @@ class ArticleResponse(BaseModel):
     url: str = Field(min_length=1)
     publisher: str = Field(min_length=1)
     published_at: datetime
+    topic: str
 
 
 class ArticleListResponse(BaseModel):
@@ -27,6 +28,7 @@ class ArticleDebugItem(BaseModel):
     published_at: datetime
     keywords: list[str]
     entities: list[str]
+    topic: str
 
 
 class ArticleDebugResponse(BaseModel):

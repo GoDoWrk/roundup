@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import Article, Cluster, ClusterArticle, ClusterTimelineEvent
+from app.services.enrichment import build_what_changed
 from app.services.clustering import cluster_new_articles
+from app.services.topics import derive_topic_from_text
 
 
 def _settings(**overrides: object) -> Settings:
@@ -251,3 +253,211 @@ def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session:
     assert cluster is not None
     assert cluster.validation_error is None
     assert len(cluster.source_links) == 3
+
+
+def test_cluster_topics_are_persisted_for_articles_and_clusters(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="topic-1",
+            title="State Agency Announces Water Conservation Plan",
+            normalized_title="state agency announces water conservation plan",
+            keywords=["state", "agency", "water", "conservation", "plan"],
+            entities=["State Agency"],
+            published_at=now - timedelta(hours=3),
+            publisher="Regional Daily",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="topic-2",
+            title="State Agency Expands Water Conservation Plan",
+            normalized_title="state agency expands water conservation plan",
+            keywords=["state", "agency", "water", "conservation", "plan"],
+            entities=["State Agency"],
+            published_at=now - timedelta(hours=1),
+            publisher="Metro Chronicle",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    cluster = db_session.scalars(select(Cluster)).first()
+    assert cluster is not None
+    assert cluster.topic
+    assert result.created_count == 1
+
+    articles = list(db_session.scalars(select(Article).order_by(Article.id.asc())).all())
+    assert all(article.topic for article in articles)
+    assert len({article.topic for article in articles}) == 1
+    assert articles[0].topic == cluster.topic
+
+
+def test_topic_mismatch_forces_new_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+
+    first = _article(
+        dedupe_hash="topic-match-1",
+        title="US soldier charged with using Polymarket to bet on Nicolas Maduro abduction",
+        normalized_title="us soldier charged with using polymarket to bet on nicolas maduro abduction",
+        keywords=["us", "soldier", "polymarket", "maduro", "bet"],
+        entities=["Nicolas Maduro", "Polymarket"],
+        published_at=now - timedelta(hours=2),
+        publisher="Al Jazeera",
+    )
+    first.topic = "Nicolas Maduro"
+    second = _article(
+        dedupe_hash="topic-match-2",
+        title="French police probe suspected weather device tampering after odd Polymarket bet",
+        normalized_title="french police probe suspected weather device tampering after odd polymarket bet",
+        keywords=["french", "police", "weather", "polymarket", "bet"],
+        entities=["French Police", "Polymarket"],
+        published_at=now - timedelta(hours=1),
+        publisher="NPR Topics",
+    )
+    second.topic = "Polymarket"
+
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_war_adjacent_articles_do_not_collapse_into_one_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="wa1",
+            title="Trump may talk of regime infighting, but Iran seems united by strategy born of war",
+            normalized_title="trump may talk of regime infighting but iran seems united by strategy born of war",
+            keywords=["trump", "iran", "war", "strategy", "regime", "infighting"],
+            entities=["Trump", "Iran"],
+            published_at=now - timedelta(hours=3),
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="wa2",
+            title="US soldier involved in Maduro raid charged over alleged bets on capture",
+            normalized_title="us soldier involved in maduro raid charged over alleged bets on capture",
+            keywords=["us", "soldier", "maduro", "raid", "capture", "bets"],
+            entities=["Maduro"],
+            published_at=now - timedelta(hours=1),
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_what_changed_filters_noise_terms() -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="wc1",
+        title="Trump may talk of regime infighting, but Iran seems united by strategy born of war",
+        normalized_title="trump may talk of regime infighting but iran seems united by strategy born of war",
+        keywords=["trump", "iran", "war", "strategy", "regime", "infighting"],
+        entities=["Trump", "Iran"],
+        published_at=now - timedelta(hours=3),
+        publisher="World news | The Guardian",
+    )
+    latest = _article(
+        dedupe_hash="wc2",
+        title="Trump claims US has total control over strait of Hormuz after Iran seizes two container ships",
+        normalized_title="trump claims us has total control over strait of hormuz after iran seizes two container ships",
+        keywords=["trump", "iran", "hormuz", "pentagon", "container", "ships", "but"],
+        entities=["Trump", "Iran", "Pentagon"],
+        published_at=now - timedelta(hours=1),
+        publisher="World news | The Guardian",
+    )
+
+    text = build_what_changed("cluster-1", [first, latest])
+
+    assert "but" not in text.lower()
+    assert "additional confirmed details" not in text.lower()
+
+
+def test_topic_builder_prefers_human_subject_labels() -> None:
+    assert derive_topic_from_text(
+        "How Trump's Iran war is driving military dissent",
+        "How Trump's Iran war is driving military dissent",
+    ) == "Iran War"
+    assert derive_topic_from_text(
+        "US Department of Justice watchdog to probe release of Epstein files",
+        "US Department of Justice watchdog to probe release of Epstein files",
+    ) == "Epstein Files"
+    assert derive_topic_from_text(
+        "Trump administration moves to reclassify cannabis in major shift that could expand research",
+        "Trump administration moves to reclassify cannabis in major shift that could expand research",
+    ) == "Trump Admin"
+    assert derive_topic_from_text(
+        "Didi vs Modi: A Test for the Hindu Right in India's Bengali Heartland",
+        "Didi vs Modi: A Test for the Hindu Right in India's Bengali Heartland",
+    ) == "Didi Modi"
+    assert derive_topic_from_text(
+        "Alibaba's Qwen AI is coming to cars, allowing drivers order food and book hotels by voice",
+        "Alibaba's Qwen AI is coming to cars, allowing drivers order food and book hotels by voice",
+    ) == "Alibaba Qwen"
+    assert derive_topic_from_text(
+        "In Britain, 7 Unelected Lords Are Helping to Block an Assisted Dying Bill",
+        "In Britain, 7 Unelected Lords Are Helping to Block an Assisted Dying Bill",
+    ) == "Assisted Dying"
+    assert derive_topic_from_text(
+        "Europe Mulls What Mutual Defense Looks Like Outside NATO",
+        "Europe Mulls What Mutual Defense Looks Like Outside NATO",
+    ) == "Mutual Defense"
+    assert derive_topic_from_text(
+        "Actor felt mocked by Rebel Wilson's wife in Instagram post referencing Finding Nemo, court hears",
+        "Actor felt mocked by Rebel Wilson's wife in Instagram post referencing Finding Nemo, court hears",
+    ) == "Instagram Post"
+    assert derive_topic_from_text(
+        "Largest-ever ban on toxic chemicals in EU hit by extremely frustrating delays",
+        "Largest-ever ban on toxic chemicals in EU hit by extremely frustrating delays",
+    ) == "Toxic Chemicals"
+    assert derive_topic_from_text(
+        "Anthony Albanese accused of caving to gas companies as Labor set to reject new export tax",
+        "Anthony Albanese accused of caving to gas companies as Labor set to reject new export tax",
+    ) == "Anthony Albanese"
+    assert derive_topic_from_text(
+        "Trump tells BBC that King's visit could absolutely help repair relations with UK",
+        "Trump tells BBC that King's visit could absolutely help repair relations with UK",
+    ) == "King Visit"
+    assert derive_topic_from_text(
+        "US soldier involved in Maduro raid charged over alleged bets on capture",
+        "US soldier involved in Maduro raid charged over alleged bets on capture",
+    ) == "Maduro Raid"
+    assert derive_topic_from_text(
+        "2 young people arrested in alleged plot to attack Houston synagogue",
+        "2 young people arrested in alleged plot to attack Houston synagogue",
+    ) == "Houston Synagogue"
+    assert derive_topic_from_text(
+        "Australia news live: US approves first major Aukus submarine contract; Harvey Norman facing class action for alleged 'misleading' ads",
+        "Australia news live: US approves first major Aukus submarine contract; Harvey Norman facing class action for alleged 'misleading' ads",
+    ) == "Aukus Submarine"
+    assert derive_topic_from_text(
+        "China's DeepSeek releases preview of long-awaited V4 model as AI race intensifies",
+        "China's DeepSeek releases preview of long-awaited V4 model as AI race intensifies",
+    ) == "DeepSeek Model"
+    assert derive_topic_from_text(
+        "China's DeepSeek unveils latest models a year after upending global tech",
+        "China's DeepSeek unveils latest models a year after upending global tech",
+    ) == "DeepSeek Models"
+    assert derive_topic_from_text(
+        "US soldier arrested for $400K winning Polymarket bets on Maduro capture, DOJ says",
+        "US soldier arrested for $400K winning Polymarket bets on Maduro capture, DOJ says",
+    ) == "Maduro Capture"
+    assert derive_topic_from_text(
+        "Soldier Used Classified Information to Bet on Maduro’s Ouster, U.S. Says",
+        "Soldier Used Classified Information to Bet on Maduro’s Ouster, U.S. Says",
+    ) == "Maduro Ouster"

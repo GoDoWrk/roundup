@@ -68,6 +68,10 @@ export function ClusterDetailPage() {
                 <div>{cluster.status}</div>
               </div>
               <div>
+                <strong>topic</strong>
+                <div>{cluster.topic || "(missing)"}</div>
+              </div>
+              <div>
                 <strong>score</strong>
                 <div>{formatScore(cluster.score)}</div>
               </div>
@@ -210,6 +214,9 @@ export function ClusterDetailPage() {
             <strong>debug score:</strong> {formatScore(debugItem.score)}
           </p>
           <p>
+            <strong>debug topic:</strong> {debugItem.topic || "(missing)"}
+          </p>
+          <p>
             <strong>debug source_count:</strong> {debugItem.source_count}
           </p>
           <p>
@@ -232,6 +239,32 @@ export function ClusterDetailPage() {
           </p>
           <p>
             <strong>validation_error:</strong> {debugItem.validation_error || "none"}
+          </p>
+          <p>
+            <strong>promotion blockers:</strong>{" "}
+            {debugItem.promotion_blockers.length > 0 ? debugItem.promotion_blockers.join("; ") : "none"}
+          </p>
+          <p>
+            <strong>score formula:</strong> {debugItem.debug_explanation.score_breakdown.score_formula}
+          </p>
+          <p>
+            <strong>average score:</strong> {formatScore(debugItem.debug_explanation.score_breakdown.average_similarity_score)}
+          </p>
+          <p>
+            <strong>average title similarity:</strong>{" "}
+            {formatScore(debugItem.debug_explanation.score_breakdown.average_title_similarity)}
+          </p>
+          <p>
+            <strong>average entity jaccard:</strong>{" "}
+            {formatScore(debugItem.debug_explanation.score_breakdown.average_entity_jaccard)}
+          </p>
+          <p>
+            <strong>average keyword jaccard:</strong>{" "}
+            {formatScore(debugItem.debug_explanation.score_breakdown.average_keyword_jaccard)}
+          </p>
+          <p>
+            <strong>average time proximity:</strong>{" "}
+            {formatScore(debugItem.debug_explanation.score_breakdown.average_time_proximity)}
           </p>
 
           <h4>Grouping Explanation</h4>

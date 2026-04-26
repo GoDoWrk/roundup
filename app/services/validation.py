@@ -82,7 +82,4 @@ def validate_cluster_record(
     if len(set(non_empty_fields)) < len(non_empty_fields):
         errors.append("detail fields must not repeat the same sentence")
 
-    if source_count < min_sources:
-        errors.append(f"cluster must have at least {min_sources} sources")
-
     return ValidationResult(is_valid=not errors, errors=errors)

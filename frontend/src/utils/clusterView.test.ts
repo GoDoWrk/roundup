@@ -12,6 +12,7 @@ describe("toClusterListRows", () => {
         {
           cluster_id: "cluster-1",
           headline: "Headline",
+          topic: "Transit Plan",
           summary: "Long summary text for preview output in the inspector table.",
           what_changed: "changed",
           why_it_matters: "matters",
@@ -49,6 +50,7 @@ describe("toClusterListRows", () => {
         {
           cluster_id: "cluster-2",
           headline: "Headline",
+          topic: "Transit Plan",
           summary: "x".repeat(300),
           what_changed: "changed",
           why_it_matters: "matters",

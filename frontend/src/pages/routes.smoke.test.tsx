@@ -52,6 +52,7 @@ const debugCluster = {
   status: "active",
   score: 0.72,
   source_count: 3,
+  promotion_blockers: [],
   validation_error: null,
   headline: "Transit Plan Advances",
   summary: "Multiple sources reported new transit budget details.",
@@ -74,7 +75,8 @@ const debugCluster = {
       average_title_similarity: 0.8,
       average_entity_jaccard: 0.6,
       average_keyword_jaccard: 0.5,
-      average_time_proximity: 0.9
+      average_time_proximity: 0.9,
+      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
     },
     decision_counts: {
       attach_existing_cluster: 2,

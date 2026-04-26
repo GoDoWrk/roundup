@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -12,6 +13,7 @@ from app.schemas.common import HealthResponse
 from app.services.miniflux_client import MinifluxClient
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -21,6 +23,7 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
     try:
         db.execute(text("SELECT 1"))
     except Exception:
+        logger.exception("health_db_check_failed")
         db_status = "error"
 
     miniflux_reachable = False

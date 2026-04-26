@@ -25,6 +25,7 @@ ClusterStatus = Literal["emerging", "active", "stale"]
 class StoryCluster(BaseModel):
     cluster_id: str = Field(min_length=1)
     headline: str = Field(min_length=1)
+    topic: str
     summary: str = Field(min_length=1)
     what_changed: str = Field(min_length=1)
     why_it_matters: str = Field(min_length=1)
@@ -57,6 +58,7 @@ class ClusterDebugScoreBreakdown(BaseModel):
     average_entity_jaccard: float
     average_keyword_jaccard: float
     average_time_proximity: float
+    score_formula: str
 
 
 class ClusterDebugExplanation(BaseModel):
@@ -73,6 +75,7 @@ class ClusterDebugItem(BaseModel):
     cluster_id: str
     status: str
     score: float
+    topic: str
     source_count: int
     visibility_threshold: int
     promotion_eligible: bool
@@ -80,6 +83,7 @@ class ClusterDebugItem(BaseModel):
     previous_status: str | None
     promotion_reason: str | None
     promotion_explanation: str | None
+    promotion_blockers: list[str]
     validation_error: str | None
     headline: str
     summary: str

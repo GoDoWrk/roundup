@@ -4,9 +4,41 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+import re
 
 from app.db.models import Article
 from app.services.normalizer import normalize_title
+
+_TERM_BLOCKLIST = {
+    "a",
+    "and",
+    "as",
+    "at",
+    "but",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "new",
+    "news",
+    "of",
+    "on",
+    "or",
+    "over",
+    "report",
+    "reported",
+    "reporting",
+    "the",
+    "to",
+    "update",
+    "updated",
+    "with",
+    "year",
+}
 
 
 @dataclass(frozen=True)
@@ -19,6 +51,17 @@ class TimelineEntry:
 
 def _fallback_text(prefix: str, topic: str) -> str:
     return f"{prefix} around {topic}."
+
+
+def _is_meaningful_term(term: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", term.lower()).strip()
+    if not normalized:
+        return False
+    if normalized in _TERM_BLOCKLIST:
+        return False
+    if len(normalized) <= 2:
+        return False
+    return any(part not in _TERM_BLOCKLIST and len(part) > 2 for part in normalized.split())
 
 
 def _topic_from_articles(articles: list[Article]) -> str:
@@ -35,7 +78,11 @@ def _topic_from_articles(articles: list[Article]) -> str:
 def _top_terms(articles: list[Article], *, attr: str, limit: int, min_count: int) -> list[str]:
     counter: Counter[str] = Counter()
     for article in articles:
-        terms = {str(term).strip() for term in getattr(article, attr, []) if str(term).strip()}
+        terms = {
+            str(term).strip()
+            for term in getattr(article, attr, [])
+            if str(term).strip() and _is_meaningful_term(str(term))
+        }
         counter.update(terms)
 
     ranked = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
@@ -108,8 +155,8 @@ def build_what_changed(cluster_id: str, articles: list[Article]) -> str:
         topic = _topic_from_articles(ordered)
         return f"Initial reporting from {first.publisher} established early coverage focused on {topic}."
 
-    first_terms = set(first.entities + first.keywords)
-    latest_terms = set(latest.entities + latest.keywords)
+    first_terms = {term for term in first.entities + first.keywords if _is_meaningful_term(term)}
+    latest_terms = {term for term in latest.entities + latest.keywords if _is_meaningful_term(term)}
     newly_seen_terms = sorted(latest_terms - first_terms)[:3]
     new_term_text = ", ".join(newly_seen_terms) if newly_seen_terms else "additional confirmed details"
 
@@ -175,7 +222,11 @@ def build_timeline_events(
             deduplicated_count += 1
             continue
 
-        fresh_terms = [term for term in (article.entities + article.keywords) if term and term not in seen_terms]
+        fresh_terms = [
+            term
+            for term in (article.entities + article.keywords)
+            if term and term not in seen_terms and _is_meaningful_term(term)
+        ]
         topic_delta = ", ".join(fresh_terms[:3])
 
         if publisher not in seen_publishers:
@@ -197,7 +248,7 @@ def build_timeline_events(
         )
 
         seen_publishers.add(publisher)
-        seen_terms.update(term for term in article.entities + article.keywords if term)
+        seen_terms.update(term for term in article.entities + article.keywords if term and _is_meaningful_term(term))
 
     timeline = [
         TimelineEntry(

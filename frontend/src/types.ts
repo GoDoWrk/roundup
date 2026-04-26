@@ -16,6 +16,7 @@ export interface SourceReference {
 export interface StoryCluster {
   cluster_id: string;
   headline: string;
+  topic: string;
   summary: string;
   what_changed: string;
   why_it_matters: string;
@@ -48,6 +49,7 @@ export interface ClusterDebugScoreBreakdown {
   average_entity_jaccard: number;
   average_keyword_jaccard: number;
   average_time_proximity: number;
+  score_formula: string;
 }
 
 export interface ClusterDebugExplanation {
@@ -64,6 +66,7 @@ export interface ClusterDebugItem {
   cluster_id: string;
   status: string;
   score: number;
+  topic: string;
   source_count: number;
   visibility_threshold: number;
   promotion_eligible: boolean;
@@ -71,6 +74,7 @@ export interface ClusterDebugItem {
   previous_status: string | null;
   promotion_reason: string | null;
   promotion_explanation: string | null;
+  promotion_blockers: string[];
   validation_error: string | null;
   headline: string;
   summary: string;
