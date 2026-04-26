@@ -121,7 +121,9 @@ describe("route smoke tests", () => {
     });
 
     renderAt("/");
-    expect(await screen.findByText("Live news homepage")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Home$/ })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByText("Top Stories")).toBeInTheDocument();
     expect(await screen.findByText("Transit Plan Advances")).toBeInTheDocument();
   });
 
@@ -185,8 +187,40 @@ describe("route smoke tests", () => {
     renderAt("/");
     fireEvent.click(await screen.findByRole("link", { name: /transit plan advances/i }));
 
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
     expect(await screen.findByText("Live story detail")).toBeInTheDocument();
     expect(await screen.findByText("A major transit plan moved forward after new budget support.")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["/clusters", "Clusters", /^Clusters$/],
+    ["/saved", "Saved", /^Saved$/],
+    ["/search", "Search", /^Search$/],
+    ["/alerts", "Alerts", /^Alerts$/]
+  ])("renders public shell placeholder at %s", async (path, title, linkName) => {
+    renderAt(path);
+
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: linkName })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders settings placeholder and highlights the settings shortcuts", async () => {
+    renderAt("/settings");
+
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /^Settings$/ }).some((link) => link.getAttribute("aria-current") === "page")).toBe(
+      true
+    );
+  });
+
+  it("renders topic placeholder routes and highlights the active topic", async () => {
+    renderAt("/topic/world");
+
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "World" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^World$/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders the inspector cluster list under /inspect", async () => {
@@ -225,6 +259,7 @@ describe("route smoke tests", () => {
     });
 
     renderAt("/inspect");
+    expect(screen.queryByRole("complementary", { name: /roundup navigation/i })).not.toBeInTheDocument();
     expect(await screen.findByText("Roundup Inspector")).toBeInTheDocument();
     expect(await screen.findByText("Cluster List")).toBeInTheDocument();
   });

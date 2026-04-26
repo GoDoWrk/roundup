@@ -1,10 +1,202 @@
-import type { ReactNode } from "react";
-import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useParams
+} from "react-router-dom";
 import { ClusterDetailPage } from "./pages/ClusterDetailPage";
 import { ClusterListPage } from "./pages/ClusterListPage";
 import { HomePage } from "./pages/HomePage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { StoryDetailPage } from "./pages/StoryDetailPage";
+
+const primaryNavItems = [
+  { label: "Home", to: "/", icon: "H", end: true },
+  { label: "Clusters", to: "/clusters", icon: "C" },
+  { label: "Saved", to: "/saved", icon: "S" },
+  { label: "Search", to: "/search", icon: "Q" },
+  { label: "Alerts", to: "/alerts", icon: "A" },
+  { label: "Settings", to: "/settings", icon: "G" }
+];
+
+const topicLinks = [
+  { label: "World", slug: "world" },
+  { label: "U.S.", slug: "us" },
+  { label: "Politics", slug: "politics" },
+  { label: "Business", slug: "business" },
+  { label: "Technology", slug: "technology" },
+  { label: "Science", slug: "science" },
+  { label: "Health", slug: "health" },
+  { label: "More", slug: "more" }
+];
+
+function RoundupMark() {
+  return (
+    <span className="roundup-mark" aria-hidden="true">
+      <span />
+    </span>
+  );
+}
+
+function AppShell() {
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return window.localStorage.getItem("roundup-dark-mode") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("roundup-dark-mode", String(darkMode));
+    } catch {
+      // Local storage can be unavailable in locked-down browsers.
+    }
+  }, [darkMode]);
+
+  return (
+    <div className={`app-shell${darkMode ? " app-shell--dark" : ""}`}>
+      <aside className="app-sidebar" aria-label="Roundup navigation">
+        <Link className="app-brand" to="/">
+          <RoundupMark />
+          <span>roundup</span>
+        </Link>
+
+        <nav className="app-sidebar__section app-sidebar__section--primary" aria-label="Primary navigation">
+          {primaryNavItems.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end} className="app-nav-link">
+              <span className="app-nav-link__icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+          <NavLink to="/inspect" className="app-nav-link app-nav-link--operator">
+            <span className="app-nav-link__icon" aria-hidden="true">
+              I
+            </span>
+            <span>Inspector</span>
+          </NavLink>
+        </nav>
+
+        <nav className="app-sidebar__section app-sidebar__section--topics" aria-label="Topics">
+          <p>Topics</p>
+          {topicLinks.map((topic) => (
+            <NavLink key={topic.slug} to={`/topic/${topic.slug}`} className="app-topic-link">
+              {topic.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="app-sidebar__bottom">
+          <NavLink to="/settings" className="app-nav-link">
+            <span className="app-nav-link__icon" aria-hidden="true">
+              G
+            </span>
+            <span>Settings</span>
+          </NavLink>
+          <label className="theme-switch">
+            <span>Dark mode</span>
+            <input
+              type="checkbox"
+              checked={darkMode}
+              onChange={(event) => setDarkMode(event.target.checked)}
+              aria-label="Dark mode"
+            />
+            <span className="theme-switch__track" aria-hidden="true" />
+          </label>
+        </div>
+      </aside>
+
+      <main className="app-main">
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+function PlaceholderPage({ title, eyebrow, children }: { title: string; eyebrow?: string; children: ReactNode }) {
+  return (
+    <div className="placeholder-page">
+      <section className="placeholder-panel">
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+        <h1>{title}</h1>
+        <div>{children}</div>
+      </section>
+    </div>
+  );
+}
+
+function ClustersPlaceholderPage() {
+  return (
+    <PlaceholderPage title="Clusters" eyebrow="Story clusters">
+      <p>
+        The live home feed already shows the current public clusters. A dedicated cluster browsing view can build on the
+        same API without changing the backend contract.
+      </p>
+      <div className="placeholder-actions">
+        <Link className="primary-button" to="/">
+          View top stories
+        </Link>
+        <Link className="secondary-button" to="/inspect">
+          Open inspector
+        </Link>
+      </div>
+    </PlaceholderPage>
+  );
+}
+
+function SavedPage() {
+  return (
+    <PlaceholderPage title="Saved" eyebrow="Library">
+      <p>Saved stories will appear here once account-backed saving is added.</p>
+    </PlaceholderPage>
+  );
+}
+
+function SearchPage() {
+  return (
+    <PlaceholderPage title="Search" eyebrow="Find stories">
+      <p>Search is ready for a future live query experience. No static story data is shown here.</p>
+    </PlaceholderPage>
+  );
+}
+
+function AlertsPage() {
+  return (
+    <PlaceholderPage title="Alerts" eyebrow="Notifications">
+      <p>Alerts will surface followed topics and story updates when notification settings are available.</p>
+    </PlaceholderPage>
+  );
+}
+
+function SettingsPage() {
+  return (
+    <PlaceholderPage title="Settings" eyebrow="Preferences">
+      <p>Settings for display, topics, sources, and account preferences will live here.</p>
+    </PlaceholderPage>
+  );
+}
+
+function TopicPlaceholderPage() {
+  const { topicSlug = "" } = useParams();
+  const topic = useMemo(
+    () => topicLinks.find((item) => item.slug === topicSlug)?.label ?? topicSlug.replace(/-/g, " "),
+    [topicSlug]
+  );
+
+  return (
+    <PlaceholderPage title={topic || "Topic"} eyebrow="Topic">
+      <p>This topic route is reserved for live topic filtering. It does not hardcode story content.</p>
+    </PlaceholderPage>
+  );
+}
 
 export function AppLayout({ children }: { children?: ReactNode }) {
   return (
@@ -36,8 +228,16 @@ function LegacyClusterRedirect() {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/story/:clusterId" element={<StoryDetailPage />} />
+      <Route element={<AppShell />}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/story/:clusterId" element={<StoryDetailPage />} />
+        <Route path="/clusters" element={<ClustersPlaceholderPage />} />
+        <Route path="/saved" element={<SavedPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/topic/:topicSlug" element={<TopicPlaceholderPage />} />
+      </Route>
       <Route path="/inspect" element={<AppLayout />}>
         <Route index element={<ClusterListPage />} />
         <Route path="clusters/:clusterId" element={<ClusterDetailPage />} />

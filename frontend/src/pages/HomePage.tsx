@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { fetchClusterList } from "../api/client";
 import { FeedControls } from "../components/FeedControls";
 import { ClusterCard } from "../components/ClusterCard";
@@ -141,21 +140,15 @@ export function HomePage() {
     <div className="public-page">
       <header className="public-hero">
         <div className="public-hero__copy">
-          <p className="eyebrow">Live news homepage</p>
-          <h1>Roundup</h1>
-          <p>
-            Real clustered coverage from the backend. Ranked by score and freshness, with no mock stories or debug
-            noise.
-          </p>
+          <p className="eyebrow">Updated live</p>
+          <h1>Top Stories</h1>
+          <p>Current story clusters ranked by importance and freshness.</p>
         </div>
 
         <div className="public-hero__actions">
           <button type="button" className="primary-button" onClick={() => void load(true)} disabled={loading || refreshing}>
             {loading || refreshing ? "Updating..." : "Refresh"}
           </button>
-          <Link className="secondary-button" to="/inspect">
-            Inspect
-          </Link>
         </div>
 
         <div className="public-hero__meta" aria-live="polite">
