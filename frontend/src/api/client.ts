@@ -1,4 +1,4 @@
-import type { ClusterDebugResponse, ClusterListResponse, StoryCluster } from "../types";
+import type { ClusterDebugResponse, ClusterListResponse, SearchResponse, StoryCluster } from "../types";
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
@@ -36,6 +36,13 @@ export async function fetchClusterDetail(clusterId: string): Promise<StoryCluste
   }
 
   return (await response.json()) as StoryCluster;
+}
+
+export async function fetchSearchResults(options: { q: string; limit?: number }): Promise<SearchResponse> {
+  const params = new URLSearchParams();
+  params.set("q", options.q);
+  params.set("limit", String(options.limit ?? 50));
+  return fetchJson<SearchResponse>(`/api/search?${params.toString()}`);
 }
 
 export async function fetchDebugClusters(): Promise<ClusterDebugResponse> {

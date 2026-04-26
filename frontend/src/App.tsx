@@ -15,6 +15,7 @@ import { ClusterListPage } from "./pages/ClusterListPage";
 import { HomePage } from "./pages/HomePage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { SavedStoriesPage } from "./pages/SavedStoriesPage";
+import { SearchPage } from "./pages/SearchPage";
 import { StoryDetailPage } from "./pages/StoryDetailPage";
 
 const primaryNavItems = [
@@ -150,14 +151,6 @@ function ClustersPlaceholderPage() {
           Open inspector
         </Link>
       </div>
-    </PlaceholderPage>
-  );
-}
-
-function SearchPage() {
-  return (
-    <PlaceholderPage title="Search" eyebrow="Find stories">
-      <p>Search is ready for a future live query experience. No static story data is shown here.</p>
     </PlaceholderPage>
   );
 }

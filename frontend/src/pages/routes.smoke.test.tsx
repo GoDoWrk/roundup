@@ -194,7 +194,6 @@ describe("route smoke tests", () => {
 
   it.each([
     ["/clusters", "Clusters", /^Clusters$/],
-    ["/search", "Search", /^Search$/],
     ["/alerts", "Alerts", /^Alerts$/]
   ])("renders public shell placeholder at %s", async (path, title, linkName) => {
     renderAt(path);
@@ -202,6 +201,15 @@ describe("route smoke tests", () => {
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: linkName })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders the public search page at /search", async () => {
+    renderAt("/search");
+
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Find stories, updates, and sources" })).toBeInTheDocument();
+    expect(screen.getByText("Search live Roundup data")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Search$/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders the saved stories page at /saved", async () => {

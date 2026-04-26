@@ -162,7 +162,7 @@ describe("StoryDetailPage", () => {
     expect(container.querySelectorAll(".story-timeline__thumbnail")).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Load older updates" }));
-    expect(screen.getByText("Older budget context surfaced")).toBeInTheDocument();
+    expect(await screen.findByText("Older budget context surfaced")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Key Facts" }));
     expect(screen.getByRole("tab", { name: "Key Facts" })).toHaveAttribute("aria-selected", "true");

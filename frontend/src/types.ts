@@ -47,6 +47,40 @@ export interface ClusterListResponse {
   items: StoryCluster[];
 }
 
+export type SearchResultType = "cluster" | "update" | "source";
+
+export interface SearchCounts {
+  all: number;
+  clusters: number;
+  updates: number;
+  sources: number;
+}
+
+export interface SearchResult {
+  id: string;
+  type: SearchResultType;
+  cluster_id: string;
+  title: string;
+  snippet: string;
+  topic: string;
+  thumbnail_url: string | null;
+  source_name: string | null;
+  source_count: number;
+  update_count: number;
+  last_updated: string;
+  article_url?: string | null;
+  published_at?: string | null;
+  matched_field?: string | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  total: number;
+  limit: number;
+  counts: SearchCounts;
+  items: SearchResult[];
+}
+
 export interface ClusterDebugThresholds {
   score_threshold: number;
   title_signal_threshold: number;

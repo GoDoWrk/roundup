@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Article, Cluster, ClusterArticle
@@ -152,6 +153,7 @@ def test_root_index_lists_debug_endpoints(client) -> None:
     assert payload["docs_url"] == "/docs"
     assert payload["endpoints"]["health"] == "/health"
     assert payload["endpoints"]["clusters"] == "/api/clusters"
+    assert payload["endpoints"]["search"] == "/api/search?q=..."
     assert payload["endpoints"]["debug_clusters"] == "/debug/clusters"
     assert payload["endpoints"]["metrics"] == "/metrics"
 
@@ -215,3 +217,127 @@ def test_api_clusters_detail_keeps_low_score_cluster_public_when_it_is_valid(cli
     detail_response = client.get("/api/clusters/low-score-cluster")
     assert detail_response.status_code == 200
     _assert_enriched_story_contract(detail_response.json(), image_expected=False)
+
+
+def test_api_search_returns_cluster_results_for_known_headline(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    _add_visible_cluster(db_session, "search-transit", now, with_images=True)
+    db_session.commit()
+
+    response = client.get("/api/search?q=transit")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["query"] == "transit"
+    assert payload["total"] >= 1
+    assert payload["counts"]["all"] == payload["total"]
+    assert payload["counts"]["clusters"] >= 1
+
+    cluster_result = next(item for item in payload["items"] if item["cluster_id"] == "search-transit" and item["type"] == "cluster")
+    assert cluster_result["title"] == "City Council Approves Transit Plan"
+    assert cluster_result["thumbnail_url"] == "https://images.example.com/transit-enclosure.jpg"
+    assert cluster_result["matched_field"] in {"headline", "summary", "article_title"}
+    assert cluster_result["source_count"] == 3
+    assert cluster_result["update_count"] == 3
+
+
+def test_api_search_returns_update_results_for_change_and_impact_fields(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _add_visible_cluster(db_session, "search-update", now, with_images=False)
+    cluster.what_changed = "Funding negotiations moved into a final public vote."
+    cluster.why_it_matters = "The decision affects commuters who depend on late-night service."
+    db_session.commit()
+
+    response = client.get("/api/search?q=funding")
+    assert response.status_code == 200
+    payload = response.json()
+
+    update_result = next(item for item in payload["items"] if item["cluster_id"] == "search-update" and item["type"] == "update")
+    assert update_result["matched_field"] == "what_changed"
+    assert "Funding negotiations" in update_result["snippet"]
+    assert payload["counts"]["updates"] >= 1
+
+
+def test_api_search_returns_source_results_for_publisher(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    _add_visible_cluster(db_session, "search-source", now, with_images=False)
+    article = db_session.scalars(select(Article).where(Article.dedupe_hash == "search-source-1")).one()
+    article.publisher = "Reuters"
+    db_session.commit()
+
+    response = client.get("/api/search?q=Reuters")
+    assert response.status_code == 200
+    payload = response.json()
+
+    source_result = next(item for item in payload["items"] if item["type"] == "source")
+    assert source_result["cluster_id"] == "search-source"
+    assert source_result["source_name"] == "Reuters"
+    assert source_result["article_url"] == "https://example.com/search-source/1"
+    assert source_result["published_at"] is not None
+    assert source_result["matched_field"] == "publisher"
+    assert payload["counts"]["sources"] >= 1
+
+
+def test_api_search_handles_empty_query(client) -> None:
+    response = client.get("/api/search?q=%20%20")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload == {
+        "query": "",
+        "total": 0,
+        "limit": 50,
+        "counts": {"all": 0, "clusters": 0, "updates": 0, "sources": 0},
+        "items": [],
+    }
+
+
+def test_api_search_uses_public_cluster_visibility_filters(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    visible = _add_visible_cluster(db_session, "filtered-visible", now, with_images=False)
+    visible.headline = "Filtered Visibility Transit Story"
+
+    hidden = _cluster("filtered-hidden", now)
+    hidden.headline = "Filtered Hidden Transit Story"
+    hidden.status = "hidden"
+    db_session.add(hidden)
+    db_session.flush()
+    for idx, publisher in enumerate(["Hidden One", "Hidden Two", "Hidden Three"], start=1):
+        article = _article(idx, hidden.id, now, publisher)
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(ClusterArticle(cluster_id=hidden.id, article_id=article.id, similarity_score=0.7, heuristic_breakdown={}))
+
+    small = _cluster("filtered-small", now)
+    small.headline = "Filtered Small Transit Story"
+    db_session.add(small)
+    db_session.flush()
+    article = _article(1, small.id, now, "Small One")
+    db_session.add(article)
+    db_session.flush()
+    db_session.add(ClusterArticle(cluster_id=small.id, article_id=article.id, similarity_score=0.7, heuristic_breakdown={}))
+
+    invalid = _cluster("filtered-invalid", now)
+    invalid.headline = "Filtered Invalid Transit Story"
+    invalid.validation_error = "manual block"
+    db_session.add(invalid)
+    db_session.flush()
+    for idx, publisher in enumerate(["Invalid One", "Invalid Two", "Invalid Three"], start=1):
+        article = _article(idx, invalid.id, now, publisher)
+        article.dedupe_hash = f"{invalid.id}-{idx}"
+        article.url = f"https://example.com/{invalid.id}/{idx}"
+        article.canonical_url = article.url
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(ClusterArticle(cluster_id=invalid.id, article_id=article.id, similarity_score=0.7, heuristic_breakdown={}))
+
+    db_session.commit()
+
+    response = client.get("/api/search?q=Filtered")
+    assert response.status_code == 200
+    cluster_ids = {item["cluster_id"] for item in response.json()["items"]}
+
+    assert "filtered-visible" in cluster_ids
+    assert "filtered-hidden" not in cluster_ids
+    assert "filtered-small" not in cluster_ids
+    assert "filtered-invalid" not in cluster_ids
