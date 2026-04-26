@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SavedStoriesProvider } from "../context/SavedStoriesContext";
 import type { StoryCluster } from "../types";
 import { HomePage } from "./HomePage";
 
@@ -12,7 +13,9 @@ type Reply = {
 function renderHome() {
   return render(
     <MemoryRouter>
-      <HomePage />
+      <SavedStoriesProvider>
+        <HomePage />
+      </SavedStoriesProvider>
     </MemoryRouter>
   );
 }
@@ -158,9 +161,29 @@ describe("HomePage", () => {
     expect(cards[0]).toHaveAttribute("data-card-variant", "lead");
     expect(cards[0]).toHaveTextContent("Highest score story");
     expect(cards[0]).toHaveTextContent("3 sources");
-    expect(cards[0]).toHaveAttribute("href", "/story/cluster-2");
+    expect(within(cards[0]).getByRole("link", { name: /highest score story/i })).toHaveAttribute("href", "/story/cluster-2");
     expect(cards[1]).toHaveTextContent("Second supporting story");
     expect(cards[0].querySelector("img")).toHaveAttribute("src", "https://example.com/lead.jpg");
+  });
+
+  it("saves and unsaves a homepage story card with local persistence", async () => {
+    mockFetch({
+      status: 200,
+      body: clusterResponse([buildCluster("cluster-1", "Saveable story", 0.9, "2026-04-23T02:00:00Z")])
+    });
+
+    renderHome();
+    await screen.findByText("Saveable story");
+
+    fireEvent.click(screen.getByRole("button", { name: /save story: saveable story/i }));
+
+    expect(screen.getByRole("button", { name: /remove saved story: saveable story/i })).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem("roundup-saved-stories-v1")).toContain("Saveable story");
+
+    fireEvent.click(screen.getByRole("button", { name: /remove saved story: saveable story/i }));
+
+    expect(screen.getByRole("button", { name: /save story: saveable story/i })).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem("roundup-saved-stories-v1")).toBe("[]");
   });
 
   it("can switch from relevance sorting to latest sorting", async () => {

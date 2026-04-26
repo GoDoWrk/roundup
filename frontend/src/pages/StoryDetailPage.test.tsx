@@ -147,7 +147,7 @@ describe("StoryDetailPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to all clusters" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("button", { name: "Follow story" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save story" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "More story actions" })).toBeInTheDocument();
     expect(screen.getByText("7 updates")).toBeInTheDocument();
     expect(screen.getByText("2 sources")).toBeInTheDocument();
@@ -176,6 +176,25 @@ describe("StoryDetailPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Related" }));
     expect(await screen.findByText("Related Transit Story")).toBeInTheDocument();
     expect(screen.queryByText("missing-related")).not.toBeInTheDocument();
+  });
+
+  it("reflects saved state on story detail and persists save and unsave", async () => {
+    mockFetch({
+      "/api/clusters/cluster-1": { body: storyPayload({ related_cluster_ids: [] }) }
+    });
+
+    renderAt("/story/cluster-1");
+    expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save story" }));
+
+    expect(screen.getByRole("button", { name: "Remove saved story" })).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem("roundup-saved-stories-v1")).toContain("Transit Plan Advances");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove saved story" }));
+
+    expect(screen.getByRole("button", { name: "Save story" })).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem("roundup-saved-stories-v1")).toBe("[]");
   });
 
   it("handles missing optional enrichment fields with graceful tab empty states", async () => {

@@ -1,12 +1,14 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { SavedStoriesProvider } from "../context/SavedStoriesContext";
 import { ClusterCard } from "./ClusterCard";
 
 describe("ClusterCard", () => {
   it("omits weak optional fields", () => {
     const { container, getByText } = render(
-      <ClusterCard
-        cluster={{
+      <SavedStoriesProvider>
+        <ClusterCard
+          cluster={{
           cluster_id: "cluster-1",
           headline: "Transit Plan Advances",
           topic: "Transit Plan",
@@ -30,8 +32,9 @@ describe("ClusterCard", () => {
           related_cluster_ids: [],
           score: Number.NaN,
           status: "active"
-        }}
-      />
+          }}
+        />
+      </SavedStoriesProvider>
     );
 
     getByText("Transit Plan Advances");
@@ -42,8 +45,9 @@ describe("ClusterCard", () => {
 
   it("renders and hides a cluster image when the image fails", () => {
     const { container } = render(
-      <ClusterCard
-        cluster={{
+      <SavedStoriesProvider>
+        <ClusterCard
+          cluster={{
           cluster_id: "cluster-1",
           headline: "Transit Plan Advances",
           topic: "Transit Plan",
@@ -67,8 +71,9 @@ describe("ClusterCard", () => {
           related_cluster_ids: [],
           score: 0.8,
           status: "active"
-        }}
-      />
+          }}
+        />
+      </SavedStoriesProvider>
     );
 
     const image = container.querySelector(".story-card__image");

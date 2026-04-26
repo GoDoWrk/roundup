@@ -9,10 +9,12 @@ import {
   Routes,
   useParams
 } from "react-router-dom";
+import { SavedStoriesProvider } from "./context/SavedStoriesContext";
 import { ClusterDetailPage } from "./pages/ClusterDetailPage";
 import { ClusterListPage } from "./pages/ClusterListPage";
 import { HomePage } from "./pages/HomePage";
 import { MetricsPage } from "./pages/MetricsPage";
+import { SavedStoriesPage } from "./pages/SavedStoriesPage";
 import { StoryDetailPage } from "./pages/StoryDetailPage";
 
 const primaryNavItems = [
@@ -152,14 +154,6 @@ function ClustersPlaceholderPage() {
   );
 }
 
-function SavedPage() {
-  return (
-    <PlaceholderPage title="Saved" eyebrow="Library">
-      <p>Saved stories will appear here once account-backed saving is added.</p>
-    </PlaceholderPage>
-  );
-}
-
 function SearchPage() {
   return (
     <PlaceholderPage title="Search" eyebrow="Find stories">
@@ -228,11 +222,17 @@ function LegacyClusterRedirect() {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route element={<AppShell />}>
+      <Route
+        element={
+          <SavedStoriesProvider>
+            <AppShell />
+          </SavedStoriesProvider>
+        }
+      >
         <Route path="/" element={<HomePage />} />
         <Route path="/story/:clusterId" element={<StoryDetailPage />} />
         <Route path="/clusters" element={<ClustersPlaceholderPage />} />
-        <Route path="/saved" element={<SavedPage />} />
+        <Route path="/saved" element={<SavedStoriesPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

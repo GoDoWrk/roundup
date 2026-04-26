@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
+import { useSavedStories } from "../context/SavedStoriesContext";
 import type { SourceReference, StoryCluster, TimelineEvent } from "../types";
 import { formatReadableTimestamp, formatRelativeTime, formatTimestamp } from "../utils/format";
 import { isRecentlyUpdated } from "../utils/homepage";
@@ -235,6 +236,7 @@ function RelatedTab({ loading, clusters }: { loading: boolean; clusters: StoryCl
 
 export function StoryDetailPage() {
   const { clusterId = "" } = useParams();
+  const { isSaved, toggleSaved } = useSavedStories();
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -322,6 +324,7 @@ export function StoryDetailPage() {
   const lastUpdatedReadable = cluster ? formatReadableTimestamp(cluster.last_updated) : null;
   const lastUpdatedFallback = cluster ? formatTimestamp(cluster.last_updated) : "";
   const relativeUpdated = cluster ? formatRelativeTime(cluster.last_updated) : "";
+  const saved = cluster ? isSaved(cluster.cluster_id) : false;
 
   return (
     <div className="public-page story-detail story-detail--tabbed">
@@ -331,8 +334,19 @@ export function StoryDetailPage() {
             Back to all clusters
           </Link>
           <div className="story-detail__header-actions">
-            <button type="button" className="story-detail__follow-button" aria-label="Follow story">
-              Follow
+            <button
+              type="button"
+              className={`story-detail__follow-button${saved ? " story-detail__follow-button--saved" : ""}`}
+              aria-label={saved ? "Remove saved story" : "Save story"}
+              aria-pressed={saved}
+              disabled={!cluster}
+              onClick={() => {
+                if (cluster) {
+                  toggleSaved(cluster);
+                }
+              }}
+            >
+              {saved ? "Saved" : "Save"}
             </button>
             <button type="button" className="story-detail__overflow-button" aria-label="More story actions">
               ...

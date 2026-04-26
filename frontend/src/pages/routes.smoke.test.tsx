@@ -194,7 +194,6 @@ describe("route smoke tests", () => {
 
   it.each([
     ["/clusters", "Clusters", /^Clusters$/],
-    ["/saved", "Saved", /^Saved$/],
     ["/search", "Search", /^Search$/],
     ["/alerts", "Alerts", /^Alerts$/]
   ])("renders public shell placeholder at %s", async (path, title, linkName) => {
@@ -203,6 +202,15 @@ describe("route smoke tests", () => {
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: linkName })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders the saved stories page at /saved", async () => {
+    renderAt("/saved");
+
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Saved Stories" })).toBeInTheDocument();
+    expect(screen.getByText("Your saved list is empty")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Saved$/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders settings placeholder and highlights the settings shortcuts", async () => {

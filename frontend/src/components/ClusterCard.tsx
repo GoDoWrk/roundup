@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useSavedStories } from "../context/SavedStoriesContext";
 import type { StoryCluster } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
 import {
@@ -19,6 +20,7 @@ interface ClusterCardProps {
 
 export function ClusterCard({ cluster, to, highlighted = false, variant = "standard" }: ClusterCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
+  const { isSaved, toggleSaved } = useSavedStories();
   const now = Date.now();
   const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
   const updateCount = getUpdateCount(cluster);
@@ -33,6 +35,8 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   const imageUrl = getClusterImageUrl(cluster) ?? "";
   const showImage = imageUrl.length > 0 && !imageFailed;
   const topic = cluster.topic?.trim();
+  const saved = isSaved(cluster.cluster_id);
+  const saveLabel = saved ? `Remove saved story: ${cluster.headline}` : `Save story: ${cluster.headline}`;
 
   useEffect(() => {
     setImageFailed(false);
@@ -74,17 +78,24 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
     </>
   );
 
-  if (to) {
-    return (
-      <Link to={to} className={className} data-testid="story-card" data-card-variant={variant}>
-        {content}
-      </Link>
-    );
-  }
-
   return (
     <article className={className} data-testid="story-card" data-card-variant={variant}>
-      {content}
+      {to ? (
+        <Link to={to} className="story-card__link">
+          {content}
+        </Link>
+      ) : (
+        content
+      )}
+      <button
+        type="button"
+        className={`story-card__save-button${saved ? " story-card__save-button--saved" : ""}`}
+        aria-label={saveLabel}
+        aria-pressed={saved}
+        onClick={() => toggleSaved(cluster)}
+      >
+        {saved ? "Saved" : "Save"}
+      </button>
     </article>
   );
 }
