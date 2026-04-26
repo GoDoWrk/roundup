@@ -653,6 +653,163 @@ button {
   min-height: 260px;
 }
 
+.settings-sources {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-sources__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-sources__refresh {
+  flex: none;
+}
+
+.settings-sources__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-strong);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.settings-sources__summary span:not(.source-status) {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.52rem;
+  border-radius: 8px;
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border);
+}
+
+.settings-sources__message {
+  max-width: 78ch;
+}
+
+.settings-source-state {
+  display: grid;
+  gap: 8px;
+  min-height: 160px;
+  align-content: center;
+  padding: 22px;
+  border-radius: 8px;
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border);
+}
+
+.settings-source-state h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  letter-spacing: 0;
+}
+
+.settings-source-state p {
+  margin: 0;
+}
+
+.settings-source-state--error {
+  border-color: rgba(185, 28, 28, 0.22);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.settings-source-table {
+  display: grid;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.settings-source-table__row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1.3fr) minmax(110px, 0.7fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-source-table__row:first-child {
+  border-top: 0;
+}
+
+.settings-source-table__row--head {
+  min-height: 42px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: var(--bg-surface-subtle);
+  color: var(--muted-strong);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.settings-source-table__source,
+.settings-source-table__row span[role="cell"] {
+  min-width: 0;
+}
+
+.settings-source-table__source {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-source-table__source strong {
+  overflow-wrap: anywhere;
+}
+
+.settings-source-table__source small,
+.settings-source-table__error {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.settings-source-table__url {
+  overflow: hidden;
+  color: var(--muted-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-status {
+  width: fit-content;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.52rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface-subtle);
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.source-status--enabled {
+  color: var(--fresh);
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.22);
+}
+
+.source-status--disabled,
+.source-status--unknown {
+  color: var(--muted-strong);
+  background: rgba(100, 116, 139, 0.08);
+}
+
+.source-status--error {
+  color: var(--accent-strong);
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(185, 28, 28, 0.22);
+}
+
 button:disabled {
   cursor: progress;
   opacity: 0.65;
@@ -2616,6 +2773,15 @@ ol {
     align-items: start;
   }
 
+  .settings-source-table__row {
+    grid-template-columns: minmax(180px, 1.25fr) minmax(160px, 1fr) minmax(110px, 0.7fr);
+  }
+
+  .settings-source-table__row span:nth-child(4),
+  .settings-source-table__row span:nth-child(5) {
+    grid-column: span 1;
+  }
+
   .developing-story-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2785,6 +2951,32 @@ ol {
 
   .settings-switch__track {
     justify-self: start;
+  }
+
+  .settings-sources__header {
+    display: grid;
+  }
+
+  .settings-sources__refresh {
+    width: fit-content;
+  }
+
+  .settings-source-table {
+    gap: 0;
+  }
+
+  .settings-source-table__row,
+  .settings-source-table__row--head {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-source-table__row--head {
+    display: none;
+  }
+
+  .settings-source-table__url {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .public-hero__meta {

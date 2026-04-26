@@ -81,6 +81,28 @@ export interface SearchResponse {
   items: SearchResult[];
 }
 
+export interface SourceHealthItem {
+  id: string;
+  name: string;
+  provider_label: string;
+  feed_url: string | null;
+  group: string | null;
+  enabled: boolean | null;
+  last_fetched_at: string | null;
+  recent_article_count: number;
+  error_status: string | null;
+  error_message: string | null;
+}
+
+export interface SourceListResponse {
+  provider: string;
+  metadata_available: boolean;
+  status: string;
+  message: string;
+  total: number;
+  items: SourceHealthItem[];
+}
+
 export interface ClusterDebugThresholds {
   score_threshold: number;
   title_signal_threshold: number;

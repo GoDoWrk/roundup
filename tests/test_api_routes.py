@@ -154,6 +154,7 @@ def test_root_index_lists_debug_endpoints(client) -> None:
     assert payload["endpoints"]["health"] == "/health"
     assert payload["endpoints"]["clusters"] == "/api/clusters"
     assert payload["endpoints"]["search"] == "/api/search?q=..."
+    assert payload["endpoints"]["sources"] == "/api/sources"
     assert payload["endpoints"]["debug_clusters"] == "/debug/clusters"
     assert payload["endpoints"]["metrics"] == "/metrics"
 

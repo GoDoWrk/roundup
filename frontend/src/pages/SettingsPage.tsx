@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { fetchSources } from "../api/client";
 import { useUserPreferences } from "../context/UserPreferencesContext";
+import type { SourceHealthItem, SourceListResponse } from "../types";
+import { formatReadableTimestamp } from "../utils/format";
 import {
   TOPIC_PREFERENCES,
   type DefaultViewPreference,
@@ -64,10 +67,147 @@ function PlaceholderTab({ title, children }: { title: string; children: string }
   );
 }
 
+function sourceStatus(source: SourceHealthItem): { label: string; modifier: string } {
+  if (source.error_status === "error") {
+    return { label: "Error", modifier: "error" };
+  }
+  if (source.enabled === true) {
+    return { label: "Enabled", modifier: "enabled" };
+  }
+  if (source.enabled === false) {
+    return { label: "Disabled", modifier: "disabled" };
+  }
+  return { label: "Unknown", modifier: "unknown" };
+}
+
+function articleCountLabel(count: number): string {
+  return `${count} recent ${count === 1 ? "article" : "articles"}`;
+}
+
+function SourcesTab({
+  data,
+  error,
+  loading,
+  onRefresh
+}: {
+  data: SourceListResponse | null;
+  error: string | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="settings-card settings-sources" aria-labelledby="settings-sources-heading">
+      <div className="settings-sources__header">
+        <div>
+          <h2 id="settings-sources-heading">Sources</h2>
+          <p>Read-only ingestion source status from the live Roundup backend.</p>
+        </div>
+        <button type="button" className="secondary-button settings-sources__refresh" onClick={onRefresh} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="settings-source-state settings-source-state--error" role="alert">
+          <h3>Source health is unavailable</h3>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!error && loading && (
+        <div className="settings-source-state" aria-live="polite">
+          <h3>Loading sources</h3>
+          <p>Checking configured ingestion sources and recent article activity.</p>
+        </div>
+      )}
+
+      {!error && !loading && data && (
+        <>
+          <div className="settings-sources__summary">
+            <span className={`source-status source-status--${data.metadata_available ? "enabled" : "unknown"}`}>
+              {data.metadata_available ? "Metadata available" : "Metadata unavailable"}
+            </span>
+            <span>{data.total} {data.metadata_available ? "configured" : "observed"} {data.total === 1 ? "source" : "sources"}</span>
+            <span>{data.provider}</span>
+          </div>
+
+          {!data.metadata_available && data.items.length > 0 && <p className="settings-sources__message">{data.message}</p>}
+
+          {data.items.length === 0 ? (
+            <div className="settings-source-state">
+              <h3>No source metadata yet</h3>
+              <p>{data.message || "Run ingestion once to populate recent source activity."}</p>
+            </div>
+          ) : (
+            <div className="settings-source-table" role="table" aria-label="Configured ingestion sources">
+              <div className="settings-source-table__row settings-source-table__row--head" role="row">
+                <span role="columnheader">Source</span>
+                <span role="columnheader">Location</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Last fetched</span>
+                <span role="columnheader">Recent articles</span>
+              </div>
+
+              {data.items.map((source) => {
+                const status = sourceStatus(source);
+                const lastFetched = formatReadableTimestamp(source.last_fetched_at) ?? "Not available";
+                const location = source.feed_url || source.provider_label;
+
+                return (
+                  <div key={source.id} className="settings-source-table__row" role="row">
+                    <span role="cell" className="settings-source-table__source">
+                      <strong>{source.name}</strong>
+                      {source.group && <small>{source.group}</small>}
+                    </span>
+                    <span role="cell" className="settings-source-table__url" title={location}>
+                      {location}
+                    </span>
+                    <span role="cell">
+                      <span className={`source-status source-status--${status.modifier}`}>{status.label}</span>
+                      {source.error_message && <small className="settings-source-table__error">{source.error_message}</small>}
+                    </span>
+                    <span role="cell">{lastFetched}</span>
+                    <span role="cell">{articleCountLabel(source.recent_article_count)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("preferences");
+  const [sources, setSources] = useState<SourceListResponse | null>(null);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const { preferences, updatePreferences } = useUserPreferences();
   const selectedTopics = new Set(preferences.topics);
+
+  const loadSources = useCallback(async () => {
+    setSourcesLoading(true);
+    setSourcesError(null);
+
+    try {
+      const response = await fetchSources();
+      setSources(response);
+      setSourcesLoaded(true);
+    } catch (err) {
+      setSourcesError((err as Error).message);
+    } finally {
+      setSourcesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "sources" && !sourcesLoaded && !sourcesLoading) {
+      void loadSources();
+    }
+  }, [activeTab, loadSources, sourcesLoaded, sourcesLoading]);
 
   function toggleTopic(topicId: string, checked: boolean) {
     updatePreferences((current) => {
@@ -214,9 +354,7 @@ export function SettingsPage() {
           </PlaceholderTab>
         )}
         {activeTab === "sources" && (
-          <PlaceholderTab title="Sources">
-            Source controls will be added after source preference behavior is backed by a clear public product contract.
-          </PlaceholderTab>
+          <SourcesTab data={sources} error={sourcesError} loading={sourcesLoading} onRefresh={() => void loadSources()} />
         )}
         {activeTab === "account" && (
           <PlaceholderTab title="Account">
