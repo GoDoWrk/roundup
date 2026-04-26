@@ -194,7 +194,7 @@ describe("route smoke tests", () => {
 
   it.each([
     ["/clusters", "Clusters", /^Clusters$/],
-    ["/alerts", "Alerts", /^Alerts$/]
+    ["/alerts", "Followed Stories", /^Alerts$/]
   ])("renders public shell placeholder at %s", async (path, title, linkName) => {
     renderAt(path);
 

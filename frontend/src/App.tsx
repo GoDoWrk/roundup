@@ -9,16 +9,19 @@ import {
   Routes,
   useParams
 } from "react-router-dom";
+import { FollowedStoriesProvider, useFollowedStories } from "./context/FollowedStoriesContext";
 import { SavedStoriesProvider } from "./context/SavedStoriesContext";
 import { UserPreferencesProvider, useUserPreferences } from "./context/UserPreferencesContext";
 import { ClusterDetailPage } from "./pages/ClusterDetailPage";
 import { ClusterListPage } from "./pages/ClusterListPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { HomePage } from "./pages/HomePage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { SavedStoriesPage } from "./pages/SavedStoriesPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StoryDetailPage } from "./pages/StoryDetailPage";
+import { formatUnreadCount } from "./utils/followedStories";
 
 const primaryNavItems = [
   { label: "Home", to: "/", icon: "H", end: true },
@@ -50,6 +53,7 @@ function RoundupMark() {
 
 function AppShell() {
   const { preferences, resolvedTheme, updatePreferences } = useUserPreferences();
+  const { unreadCount } = useFollowedStories();
   const darkMode = resolvedTheme === "dark";
   const shellClassName = [
     "app-shell",
@@ -68,14 +72,23 @@ function AppShell() {
         </Link>
 
         <nav className="app-sidebar__section app-sidebar__section--primary" aria-label="Primary navigation">
-          {primaryNavItems.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className="app-nav-link">
-              <span className="app-nav-link__icon" aria-hidden="true">
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+          {primaryNavItems.map((item) => {
+            const showAlertsBadge = item.to === "/alerts" && unreadCount > 0;
+
+            return (
+              <NavLink key={item.to} to={item.to} end={item.end} className="app-nav-link">
+                <span className="app-nav-link__icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+                {showAlertsBadge && (
+                  <span className="app-nav-link__badge" aria-hidden="true">
+                    {formatUnreadCount(unreadCount)}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
           <NavLink to="/inspect" className="app-nav-link app-nav-link--operator">
             <span className="app-nav-link__icon" aria-hidden="true">
               I
@@ -151,14 +164,6 @@ function ClustersPlaceholderPage() {
   );
 }
 
-function AlertsPage() {
-  return (
-    <PlaceholderPage title="Alerts" eyebrow="Notifications">
-      <p>Alerts will surface followed topics and story updates when notification settings are available.</p>
-    </PlaceholderPage>
-  );
-}
-
 function TopicPlaceholderPage() {
   const { topicSlug = "" } = useParams();
   const topic = useMemo(
@@ -207,7 +212,9 @@ export function AppRoutes() {
         element={
           <UserPreferencesProvider>
             <SavedStoriesProvider>
-              <AppShell />
+              <FollowedStoriesProvider>
+                <AppShell />
+              </FollowedStoriesProvider>
             </SavedStoriesProvider>
           </UserPreferencesProvider>
         }

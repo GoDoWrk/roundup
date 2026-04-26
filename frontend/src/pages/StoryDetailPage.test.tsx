@@ -1,7 +1,9 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
+import type { StoryCluster } from "../types";
+import { FOLLOWED_STORIES_STORAGE_KEY, type FollowedStoryRecord } from "../utils/followedStories";
 
 type MockReply = {
   status?: number;
@@ -35,7 +37,7 @@ function mockFetch(replies: Record<string, MockReply>) {
   );
 }
 
-function storyPayload(overrides: Record<string, unknown> = {}) {
+function storyPayload(overrides: Partial<StoryCluster> = {}): StoryCluster {
   return {
     cluster_id: "cluster-1",
     headline: "Transit Plan Advances",
@@ -124,6 +126,10 @@ function storyPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function saveFollowedRecords(records: FollowedStoryRecord[]) {
+  window.localStorage.setItem(FOLLOWED_STORIES_STORAGE_KEY, JSON.stringify(records));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -147,7 +153,7 @@ describe("StoryDetailPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to all clusters" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("button", { name: "Save story" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Follow story" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "More story actions" })).toBeInTheDocument();
     expect(screen.getByText("7 updates")).toBeInTheDocument();
     expect(screen.getByText("2 sources")).toBeInTheDocument();
@@ -178,23 +184,58 @@ describe("StoryDetailPage", () => {
     expect(screen.queryByText("missing-related")).not.toBeInTheDocument();
   });
 
-  it("reflects saved state on story detail and persists save and unsave", async () => {
+  it("reflects followed state on story detail and persists follow and unfollow after reload", async () => {
     mockFetch({
       "/api/clusters/cluster-1": { body: storyPayload({ related_cluster_ids: [] }) }
+    });
+
+    const firstRender = renderAt("/story/cluster-1");
+    expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Follow story" }));
+
+    expect(screen.getByRole("button", { name: "Unfollow story" })).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY)).toContain("Transit Plan Advances");
+
+    firstRender.unmount();
+    renderAt("/story/cluster-1");
+    expect(await screen.findByRole("button", { name: "Unfollow story" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unfollow story" }));
+
+    expect(screen.getByRole("button", { name: "Follow story" })).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY)).toBe("[]");
+  });
+
+  it("marks a followed story viewed when the detail page opens", async () => {
+    const previousStory = storyPayload({
+      related_cluster_ids: [],
+      last_updated: "2026-04-22T01:00:00Z"
+    });
+    const updatedStory = storyPayload({
+      related_cluster_ids: [],
+      last_updated: "2026-04-22T04:00:00Z"
+    });
+    saveFollowedRecords([
+      {
+        cluster_id: "cluster-1",
+        followed_at: "2026-04-22T00:30:00Z",
+        last_viewed_at: "2026-04-22T01:00:00Z",
+        story: previousStory
+      }
+    ]);
+    mockFetch({
+      "/api/clusters/cluster-1": { body: updatedStory }
     });
 
     renderAt("/story/cluster-1");
     expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save story" }));
-
-    expect(screen.getByRole("button", { name: "Remove saved story" })).toHaveAttribute("aria-pressed", "true");
-    expect(window.localStorage.getItem("roundup-saved-stories-v1")).toContain("Transit Plan Advances");
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove saved story" }));
-
-    expect(screen.getByRole("button", { name: "Save story" })).toHaveAttribute("aria-pressed", "false");
-    expect(window.localStorage.getItem("roundup-saved-stories-v1")).toBe("[]");
+    await waitFor(() => {
+      const records = JSON.parse(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY) ?? "[]") as FollowedStoryRecord[];
+      expect(records[0].last_viewed_at).toBe("2026-04-22T04:00:00Z");
+      expect(records[0].story.last_updated).toBe("2026-04-22T04:00:00Z");
+    });
   });
 
   it("handles missing optional enrichment fields with graceful tab empty states", async () => {

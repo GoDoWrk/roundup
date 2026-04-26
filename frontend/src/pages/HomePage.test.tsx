@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FollowedStoriesProvider } from "../context/FollowedStoriesContext";
 import { SavedStoriesProvider } from "../context/SavedStoriesContext";
 import type { StoryCluster } from "../types";
 import { HomePage } from "./HomePage";
@@ -14,7 +15,9 @@ function renderHome() {
   return render(
     <MemoryRouter>
       <SavedStoriesProvider>
-        <HomePage />
+        <FollowedStoriesProvider>
+          <HomePage />
+        </FollowedStoriesProvider>
       </SavedStoriesProvider>
     </MemoryRouter>
   );

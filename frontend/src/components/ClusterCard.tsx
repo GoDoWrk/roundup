@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useFollowedStories } from "../context/FollowedStoriesContext";
 import { useSavedStories } from "../context/SavedStoriesContext";
 import { useUserPreferences } from "../context/UserPreferencesContext";
 import type { StoryCluster } from "../types";
@@ -22,6 +23,7 @@ interface ClusterCardProps {
 export function ClusterCard({ cluster, to, highlighted = false, variant = "standard" }: ClusterCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const { isSaved, toggleSaved } = useSavedStories();
+  const { isFollowed, updateFollowedStory } = useFollowedStories();
   const { preferences } = useUserPreferences();
   const now = Date.now();
   const sourceCount = cluster.source_count ?? cluster.sources?.length ?? 0;
@@ -44,6 +46,12 @@ export function ClusterCard({ cluster, to, highlighted = false, variant = "stand
   useEffect(() => {
     setImageFailed(false);
   }, [imageUrl]);
+
+  useEffect(() => {
+    if (isFollowed(cluster.cluster_id)) {
+      updateFollowedStory(cluster);
+    }
+  }, [cluster, isFollowed, updateFollowedStory]);
 
   const content = (
     <>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchClusterDetail } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
-import { useSavedStories } from "../context/SavedStoriesContext";
+import { useFollowedStories } from "../context/FollowedStoriesContext";
 import type { SourceReference, StoryCluster, TimelineEvent } from "../types";
 import { formatReadableTimestamp, formatRelativeTime, formatTimestamp } from "../utils/format";
 import { isRecentlyUpdated } from "../utils/homepage";
@@ -236,7 +236,7 @@ function RelatedTab({ loading, clusters }: { loading: boolean; clusters: StoryCl
 
 export function StoryDetailPage() {
   const { clusterId = "" } = useParams();
-  const { isSaved, toggleSaved } = useSavedStories();
+  const { isFollowed, toggleFollowed, markStoryViewed } = useFollowedStories();
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -269,6 +269,12 @@ export function StoryDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (cluster && isFollowed(cluster.cluster_id)) {
+      markStoryViewed(cluster);
+    }
+  }, [cluster, isFollowed, markStoryViewed]);
 
   useEffect(() => {
     setActiveTab("timeline");
@@ -324,7 +330,7 @@ export function StoryDetailPage() {
   const lastUpdatedReadable = cluster ? formatReadableTimestamp(cluster.last_updated) : null;
   const lastUpdatedFallback = cluster ? formatTimestamp(cluster.last_updated) : "";
   const relativeUpdated = cluster ? formatRelativeTime(cluster.last_updated) : "";
-  const saved = cluster ? isSaved(cluster.cluster_id) : false;
+  const followed = cluster ? isFollowed(cluster.cluster_id) : false;
 
   return (
     <div className="public-page story-detail story-detail--tabbed">
@@ -336,17 +342,17 @@ export function StoryDetailPage() {
           <div className="story-detail__header-actions">
             <button
               type="button"
-              className={`story-detail__follow-button${saved ? " story-detail__follow-button--saved" : ""}`}
-              aria-label={saved ? "Remove saved story" : "Save story"}
-              aria-pressed={saved}
+              className={`story-detail__follow-button${followed ? " story-detail__follow-button--saved" : ""}`}
+              aria-label={followed ? "Unfollow story" : "Follow story"}
+              aria-pressed={followed}
               disabled={!cluster}
               onClick={() => {
                 if (cluster) {
-                  toggleSaved(cluster);
+                  toggleFollowed(cluster);
                 }
               }}
             >
-              {saved ? "Saved" : "Save"}
+              {followed ? "Following" : "Follow"}
             </button>
             <button type="button" className="story-detail__overflow-button" aria-label="More story actions">
               ...

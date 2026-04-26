@@ -275,6 +275,22 @@ button {
   font-weight: 800;
 }
 
+.app-nav-link__badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .app-nav-link.active,
 .app-topic-link.active {
   color: var(--accent-strong);
@@ -1426,6 +1442,12 @@ button:disabled {
   border-color: rgba(180, 83, 9, 0.22);
   font-size: 0.75rem;
   font-weight: 800;
+}
+
+.alert-story-row__status--unread {
+  color: var(--accent-strong);
+  background: rgba(239, 29, 38, 0.08);
+  border-color: rgba(239, 29, 38, 0.18);
 }
 
 .saved-story-row__remove {
