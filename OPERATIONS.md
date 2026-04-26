@@ -27,8 +27,26 @@ curl http://localhost:8000/debug/clusters
 
 Expected:
 - `GET /health` returns `status=ok` or `status=degraded`
+- `GET /health` includes `runtime.api_workers`, `runtime.inspector_worker_processes`, `runtime.scheduler_enabled`, concurrency limits, and `runtime.ingestion_active`
 - `GET /api/clusters` shows only validated public clusters
 - `GET /debug/clusters` includes rejected or hidden clusters with reasons
+
+## Runtime sizing
+Safe default profile:
+- `API_WORKERS=1`
+- `INSPECTOR_WORKER_PROCESSES=1`
+- `SCHEDULER_ENABLED=true`
+- `INGESTION_CONCURRENCY=1`
+- `SUMMARIZATION_CONCURRENCY=1`
+- `CLUSTERING_BATCH_SIZE=100`
+- `CLUSTERING_CONCURRENCY=1`
+
+Recommended low-power profile for Raspberry Pi or small NAS:
+- keep `API_WORKERS=1`
+- keep `INSPECTOR_WORKER_PROCESSES=1`
+- set `CLUSTERING_BATCH_SIZE=50` if cycles are CPU-heavy
+
+Only the dedicated `worker` service runs scheduled ingestion and clustering. API worker count does not create extra schedulers. If multiple worker containers are accidentally started, the scheduler uses a Postgres advisory lock so only one cycle runs at a time.
 
 ## Ingestion mode
 Default mode should use live Miniflux:

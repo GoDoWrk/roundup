@@ -188,6 +188,27 @@ describe("homepage utilities", () => {
           cluster_id: "b",
           headline: "B",
           primary_image_url: null,
+          sources: [
+            {
+              article_id: 1,
+              title: "B source",
+              url: "https://example.com/b",
+              publisher: "Example",
+              published_at: "2026-04-23T00:00:00Z",
+              image_url: " https://example.com/source.jpg "
+            }
+          ],
+          thumbnail_urls: ["", "https://example.com/thumb.jpg"]
+        })
+      )
+    ).toBe("https://example.com/source.jpg");
+
+    expect(
+      getClusterImageUrl(
+        cluster({
+          cluster_id: "c",
+          headline: "C",
+          primary_image_url: null,
           thumbnail_urls: ["", "https://example.com/thumb.jpg"]
         })
       )

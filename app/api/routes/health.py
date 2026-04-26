@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db_session
-from app.schemas.common import HealthResponse
+from app.schemas.common import HealthResponse, RuntimeSettingsResponse
 from app.services.miniflux_client import MinifluxClient
 
 router = APIRouter()
@@ -43,6 +43,10 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
     elif not settings.demo_mode and not miniflux_usable:
         status = "degraded"
 
+    ingestion_active = settings.scheduler_enabled and (
+        settings.demo_mode and settings.sample_data_path is not None or settings.has_miniflux_credentials
+    )
+
     return HealthResponse(
         status=status,
         app=settings.app_name,
@@ -50,5 +54,16 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
         miniflux_configured=settings.has_miniflux_credentials,
         miniflux_reachable=miniflux_reachable,
         miniflux_usable=miniflux_usable,
+        runtime=RuntimeSettingsResponse(
+            api_workers=settings.api_workers,
+            inspector_worker_processes=settings.inspector_worker_processes,
+            scheduler_enabled=settings.scheduler_enabled,
+            scheduler_interval_seconds=settings.scheduler_interval_seconds,
+            ingestion_concurrency=settings.ingestion_concurrency,
+            summarization_concurrency=settings.summarization_concurrency,
+            clustering_batch_size=settings.clustering_batch_size,
+            clustering_concurrency=settings.clustering_concurrency,
+            ingestion_active=ingestion_active,
+        ),
         timestamp=datetime.now(timezone.utc),
     )

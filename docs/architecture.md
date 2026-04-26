@@ -33,3 +33,5 @@ Roundup v1 is intentionally backend-first and deterministic. The objective is a 
 - Clear migration path via Alembic.
 - Minimal dependencies and typed Python code.
 - First run provisions Miniflux automatically with curated starter feeds to reduce manual setup.
+- Conservative runtime defaults: one API process, one scheduler, one inspector nginx worker, bounded clustering batches, and explicit env vars for tuning.
+- Scheduler authority is isolated to the `worker` service. API workers never run scheduled jobs, and scheduler cycles use a Postgres advisory lock to avoid duplicate work if more than one worker container is started.

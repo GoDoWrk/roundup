@@ -56,6 +56,26 @@ Important ingestion settings:
 - `MINIFLUX_TIMEOUT_SECONDS`
 - `DEMO_MODE`
 
+## Runtime sizing
+Defaults are conservative for small self-hosted machines. Docker Compose starts one API process, one scheduler process, and one nginx inspector worker unless you opt into more.
+
+Runtime knobs:
+- `API_WORKERS`: uvicorn worker processes for the API. Default `1`.
+- `INSPECTOR_WORKER_PROCESSES`: nginx worker processes for the UI container. Default `1`; this prevents nginx `worker_processes auto` from spawning one worker per host CPU.
+- `SCHEDULER_ENABLED`: enables the dedicated worker scheduler. Default `true`.
+- `SCHEDULER_INTERVAL_SECONDS`: delay between ingestion/clustering cycles. Default `600`.
+- `INGESTION_CONCURRENCY`: reserved ingestion concurrency limit. Default `1`.
+- `SUMMARIZATION_CONCURRENCY`: reserved summarization/enrichment concurrency limit. Default `1`.
+- `CLUSTERING_BATCH_SIZE`: max unclustered articles processed per scheduler cycle. Default `100`.
+- `CLUSTERING_CONCURRENCY`: reserved clustering concurrency limit. Default `1`.
+
+Recommended profiles:
+- Raspberry Pi / low power: `API_WORKERS=1`, `INSPECTOR_WORKER_PROCESSES=1`, `INGESTION_CONCURRENCY=1`, `SUMMARIZATION_CONCURRENCY=1`, `CLUSTERING_BATCH_SIZE=50`, `CLUSTERING_CONCURRENCY=1`.
+- Desktop / NAS: `API_WORKERS=1`, `INSPECTOR_WORKER_PROCESSES=1`, `INGESTION_CONCURRENCY=1`, `SUMMARIZATION_CONCURRENCY=1`, `CLUSTERING_BATCH_SIZE=100`, `CLUSTERING_CONCURRENCY=1`.
+- Larger server: `API_WORKERS=2`, `INSPECTOR_WORKER_PROCESSES=2`, `INGESTION_CONCURRENCY=2`, `SUMMARIZATION_CONCURRENCY=2`, `CLUSTERING_BATCH_SIZE=250`, `CLUSTERING_CONCURRENCY=2`.
+
+Only the `worker` service runs scheduled ingestion. API workers do not run scheduled jobs. The scheduler also uses a Postgres advisory lock, so accidental duplicate worker replicas skip cycles while another scheduler owns the lock.
+
 ## Startup flow
 `docker-compose.yml` uses a dedicated migration/bootstrap sequence:
 1. `db` becomes healthy.
@@ -75,6 +95,8 @@ This keeps schema changes and Miniflux setup from racing the app startup.
 - `GET /api/clusters/{cluster_id}`
 - `GET /debug/articles`
 - `GET /debug/clusters`
+
+`GET /health` also reports runtime sizing and ingestion status in `runtime`, including API workers, inspector workers, scheduler state, concurrency settings, clustering batch size, and whether ingestion is active.
 
 ## Public routes
 - `/` public homepage with live story cards from `/api/clusters`.

@@ -94,8 +94,16 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
+      API_WORKERS: ${API_WORKERS:-1}
+      INGESTION_CONCURRENCY: ${INGESTION_CONCURRENCY:-1}
+      SUMMARIZATION_CONCURRENCY: ${SUMMARIZATION_CONCURRENCY:-1}
+      CLUSTERING_BATCH_SIZE: ${CLUSTERING_BATCH_SIZE:-100}
+      CLUSTERING_CONCURRENCY: ${CLUSTERING_CONCURRENCY:-1}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-600}
+      INSPECTOR_WORKER_PROCESSES: ${INSPECTOR_WORKER_PROCESSES:-1}
       MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1}
     ports:
       - "8000:8000"
     healthcheck:
@@ -127,6 +135,12 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
+      INGESTION_CONCURRENCY: ${INGESTION_CONCURRENCY:-1}
+      SUMMARIZATION_CONCURRENCY: ${SUMMARIZATION_CONCURRENCY:-1}
+      CLUSTERING_BATCH_SIZE: ${CLUSTERING_BATCH_SIZE:-100}
+      CLUSTERING_CONCURRENCY: ${CLUSTERING_CONCURRENCY:-1}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-600}
       MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
     command: python -m app.scheduler
     depends_on:
@@ -144,6 +158,14 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      INSPECTOR_WORKER_PROCESSES: ${INSPECTOR_WORKER_PROCESSES:-1}
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "envsubst < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'",
+      ]
     ports:
       - "8080:80"
     healthcheck:

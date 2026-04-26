@@ -239,7 +239,7 @@ function RelatedTab({ loading, clusters }: { loading: boolean; clusters: StoryCl
   return (
     <div className="story-related-grid">
       {clusters.map((related) => (
-        <ClusterCard key={related.cluster_id} cluster={related} to={`/story/${related.cluster_id}`} variant="thumbnail" />
+        <ClusterCard key={related.cluster_id} cluster={related} to={`/story/${related.cluster_id}`} variant="compact" />
       ))}
     </div>
   );
@@ -394,7 +394,19 @@ export function StoryDetailPage() {
           <section className="state-panel" aria-busy="true">
             <p className="eyebrow">Loading</p>
             <h2>Fetching full story</h2>
-            <p>Loading the structured cluster from /api/clusters/{clusterId}.</p>
+            <p>Loading the full story timeline, sources, and context.</p>
+            <article className="story-card story-card--standard story-card--skeleton story-detail__loading-card" aria-hidden="true">
+              <div className="story-card__image-frame" />
+              <div className="story-card__content">
+                <div className="story-card__eyebrow">
+                  <span className="story-skeleton story-skeleton--pill" />
+                  <span className="story-skeleton story-skeleton--line story-skeleton--tiny" />
+                </div>
+                <div className="story-skeleton story-skeleton--headline" />
+                <div className="story-skeleton story-skeleton--line" />
+                <div className="story-skeleton story-skeleton--line story-skeleton--short" />
+              </div>
+            </article>
           </section>
         )}
 
@@ -403,6 +415,9 @@ export function StoryDetailPage() {
             <p className="eyebrow">Error</p>
             <h2>Could not load the story</h2>
             <p>{error}</p>
+            <button type="button" className="secondary-action" onClick={() => void load()}>
+              Retry loading story
+            </button>
           </section>
         )}
 
@@ -453,10 +468,11 @@ export function StoryDetailPage() {
               {activeTab === "related" && <RelatedTab loading={relatedLoading} clusters={relatedClusters} />}
             </div>
 
-            <footer className="story-detail__api-note">
-              API: <code>GET /api/clusters/{cluster.cluster_id}</code>
-              {lastUpdatedReadable && <span>Updated {lastUpdatedReadable || lastUpdatedFallback}</span>}
-            </footer>
+            {(lastUpdatedReadable || lastUpdatedFallback) && (
+              <footer className="story-detail__api-note">
+                <span>Updated {lastUpdatedReadable || lastUpdatedFallback}</span>
+              </footer>
+            )}
           </section>
         )}
       </main>

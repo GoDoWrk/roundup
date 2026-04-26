@@ -90,6 +90,11 @@ export function getClusterImageUrl(cluster: StoryCluster): string | null {
     return primary;
   }
 
+  const sourceImage = cluster.sources?.find((source) => source.image_url?.trim())?.image_url?.trim();
+  if (sourceImage) {
+    return sourceImage;
+  }
+
   const fallback = cluster.thumbnail_urls?.find((url) => url.trim().length > 0);
   return fallback?.trim() || null;
 }

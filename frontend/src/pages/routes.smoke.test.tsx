@@ -63,6 +63,9 @@ const debugCluster = {
       title_signal_threshold: 0.72,
       entity_overlap_threshold: 1,
       keyword_overlap_threshold: 2,
+      topic_semantic_score_threshold: 0.38,
+      attach_override_title_similarity_threshold: 0.3,
+      attach_override_time_proximity_threshold: 0.8,
       min_sources_for_api: 3
     },
     threshold_results: {
@@ -75,13 +78,17 @@ const debugCluster = {
       average_title_similarity: 0.8,
       average_entity_jaccard: 0.6,
       average_keyword_jaccard: 0.5,
+      average_semantic_score: 0.66,
       average_time_proximity: 0.9,
-      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
+      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity",
+      semantic_formula: "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
     },
     decision_counts: {
       attach_existing_cluster: 2,
       create_new_cluster: 1
-    }
+    },
+    recent_join_decisions: [],
+    warnings: []
   }
 };
 
@@ -275,12 +282,36 @@ describe("route smoke tests", () => {
           ]
         }
       },
-      "/debug/clusters": { body: { total: 1, items: [debugCluster] } }
+      "/debug/clusters": { body: { total: 1, items: [debugCluster] } },
+      "/health": {
+        body: {
+          status: "ok",
+          app: "roundup",
+          db: "ok",
+          miniflux_configured: true,
+          miniflux_reachable: true,
+          miniflux_usable: true,
+          runtime: {
+            api_workers: 1,
+            inspector_worker_processes: 1,
+            scheduler_enabled: true,
+            scheduler_interval_seconds: 600,
+            ingestion_concurrency: 1,
+            summarization_concurrency: 1,
+            clustering_batch_size: 100,
+            clustering_concurrency: 1,
+            ingestion_active: true
+          },
+          timestamp: "2026-04-26T00:00:00Z"
+        }
+      }
     });
 
     renderAt("/inspect");
     expect(screen.queryByRole("complementary", { name: /roundup navigation/i })).not.toBeInTheDocument();
     expect(await screen.findByText("Roundup Inspector")).toBeInTheDocument();
+    expect(await screen.findByText("System Health")).toBeInTheDocument();
+    expect(await screen.findByText("Miniflux")).toBeInTheDocument();
     expect(await screen.findByText("Cluster List")).toBeInTheDocument();
   });
 

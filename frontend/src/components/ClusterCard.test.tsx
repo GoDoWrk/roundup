@@ -49,7 +49,7 @@ describe("ClusterCard", () => {
   });
 
   it("renders and hides a cluster image when the image fails", () => {
-    const { container } = render(
+    const { container, getByText } = render(
       <SavedStoriesProvider>
         <FollowedStoriesProvider>
           <ClusterCard
@@ -85,6 +85,8 @@ describe("ClusterCard", () => {
 
     const image = container.querySelector(".story-card__image");
     expect(image).toHaveAttribute("src", "https://cdn.example.com/story.jpg");
+    getByText("Relevance 0.80");
+    getByText("Confidence 0.80");
     fireEvent.error(image as Element);
     expect(container.querySelector(".story-card__image")).toBeNull();
   });

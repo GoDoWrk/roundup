@@ -13,6 +13,14 @@ def test_health_endpoint(client) -> None:
     assert payload["db"] == "ok"
     assert "miniflux_reachable" in payload
     assert "miniflux_usable" in payload
+    assert payload["runtime"]["api_workers"] == 1
+    assert payload["runtime"]["inspector_worker_processes"] == 1
+    assert payload["runtime"]["scheduler_enabled"] is True
+    assert payload["runtime"]["ingestion_concurrency"] == 1
+    assert payload["runtime"]["summarization_concurrency"] == 1
+    assert payload["runtime"]["clustering_batch_size"] == 100
+    assert payload["runtime"]["clustering_concurrency"] == 1
+    assert "ingestion_active" in payload["runtime"]
     assert "timestamp" in payload
 
 
@@ -24,3 +32,4 @@ def test_health_route_reports_db_failure_when_probe_raises() -> None:
 
     assert response.db == "error"
     assert response.status == "degraded"
+    assert response.runtime.api_workers == 1

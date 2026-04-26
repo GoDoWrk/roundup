@@ -24,12 +24,12 @@ import { StoryDetailPage } from "./pages/StoryDetailPage";
 import { formatUnreadCount } from "./utils/followedStories";
 
 const primaryNavItems = [
-  { label: "Home", to: "/", icon: "H", end: true },
-  { label: "Clusters", to: "/clusters", icon: "C" },
-  { label: "Saved", to: "/saved", icon: "S" },
-  { label: "Search", to: "/search", icon: "Q" },
-  { label: "Alerts", to: "/alerts", icon: "A" },
-  { label: "Settings", to: "/settings", icon: "G" }
+  { label: "Home", to: "/", icon: "home", end: true },
+  { label: "Clusters", to: "/clusters", icon: "clusters" },
+  { label: "Saved", to: "/saved", icon: "saved" },
+  { label: "Search", to: "/search", icon: "search" },
+  { label: "Alerts", to: "/alerts", icon: "alerts" },
+  { label: "Settings", to: "/settings", icon: "settings" }
 ];
 
 const topicLinks = [
@@ -48,6 +48,20 @@ function RoundupMark() {
     <span className="roundup-mark" aria-hidden="true">
       <span />
     </span>
+  );
+}
+
+function NavIcon({ name }: { name: string }) {
+  return (
+    <svg className="app-nav-link__icon-svg" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      {name === "home" && <path d="M4 11.5 12 5l8 6.5V20h-5v-5.5H9V20H4z" />}
+      {name === "clusters" && <path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z" />}
+      {name === "saved" && <path d="M6 4h12v17l-6-3.5L6 21z" />}
+      {name === "search" && <path d="M10.5 5a5.5 5.5 0 0 1 4.35 8.86l4.15 4.15-1.41 1.41-4.15-4.15A5.5 5.5 0 1 1 10.5 5zm0 2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" />}
+      {name === "alerts" && <path d="M12 4a5 5 0 0 0-5 5v3.4L5 16v1h14v-1l-2-3.6V9a5 5 0 0 0-5-5zm-2 15a2 2 0 0 0 4 0z" />}
+      {name === "settings" && <path d="M10.8 3h2.4l.5 2.4 2.1.9 2-1.3 1.7 1.7-1.3 2 .9 2.1 2.4.5v2.4l-2.4.5-.9 2.1 1.3 2-1.7 1.7-2-1.3-2.1.9-.5 2.4h-2.4l-.5-2.4-2.1-.9-2 1.3-1.7-1.7 1.3-2-.9-2.1-2.4-.5v-2.4l2.4-.5.9-2.1-1.3-2L6.2 5l2 1.3 2.1-.9zm1.2 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" />}
+      {name === "inspector" && <path d="M5 4h14v4H5zM5 10h14v10H5zm3 3v2h8v-2zm0 4h5v-2H8z" />}
+    </svg>
   );
 }
 
@@ -78,9 +92,9 @@ function AppShell() {
             return (
               <NavLink key={item.to} to={item.to} end={item.end} className="app-nav-link">
                 <span className="app-nav-link__icon" aria-hidden="true">
-                  {item.icon}
+                  <NavIcon name={item.icon} />
                 </span>
-                <span>{item.label}</span>
+                <span className="app-nav-link__label">{item.label}</span>
                 {showAlertsBadge && (
                   <span className="app-nav-link__badge" aria-hidden="true">
                     {formatUnreadCount(unreadCount)}
@@ -91,17 +105,24 @@ function AppShell() {
           })}
           <NavLink to="/inspect" className="app-nav-link app-nav-link--operator">
             <span className="app-nav-link__icon" aria-hidden="true">
-              I
+              <NavIcon name="inspector" />
             </span>
-            <span>Inspector</span>
+            <span className="app-nav-link__label">Inspector</span>
           </NavLink>
         </nav>
 
         <nav className="app-sidebar__section app-sidebar__section--topics" aria-label="Topics">
           <p>Topics</p>
           {topicLinks.map((topic) => (
-            <NavLink key={topic.slug} to={`/topic/${topic.slug}`} className="app-topic-link">
+            <NavLink
+              key={topic.slug}
+              to={`/topic/${topic.slug}`}
+              className="app-topic-link"
+              aria-label={topic.label}
+              title="Topic pages are reserved for live filtering and are not available yet."
+            >
               {topic.label}
+              <span className="app-topic-link__status">Soon</span>
             </NavLink>
           ))}
         </nav>
@@ -109,9 +130,9 @@ function AppShell() {
         <div className="app-sidebar__bottom">
           <NavLink to="/settings" className="app-nav-link">
             <span className="app-nav-link__icon" aria-hidden="true">
-              G
+              <NavIcon name="settings" />
             </span>
-            <span>Settings</span>
+            <span className="app-nav-link__label">Settings</span>
           </NavLink>
           <label className="theme-switch">
             <span>Dark mode</span>
@@ -173,7 +194,15 @@ function TopicPlaceholderPage() {
 
   return (
     <PlaceholderPage title={topic || "Topic"} eyebrow="Topic">
-      <p>This topic route is reserved for live topic filtering. It does not hardcode story content.</p>
+      <p>
+        Topic pages are not available yet. Use the Topic control on Top Stories to filter the live feed without
+        hardcoded story content.
+      </p>
+      <div className="placeholder-actions">
+        <Link className="primary-button" to="/">
+          Open top stories
+        </Link>
+      </div>
     </PlaceholderPage>
   );
 }
