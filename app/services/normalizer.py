@@ -43,6 +43,28 @@ STOPWORDS = {
     "would",
 }
 
+ENTITY_STOPWORDS = {
+    "America",
+    "April",
+    "Best",
+    "Continue",
+    "Deadline",
+    "Future",
+    "Latest",
+    "News",
+    "Update",
+}
+
+KNOWN_ENTITY_NAMES = {
+    "Ben Sasse",
+    "Donald Trump",
+    "White House",
+    "Nicolas Maduro",
+    "City Council",
+    "Phoenix",
+    "Arizona",
+}
+
 IMAGE_EXTENSIONS = {".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 
 
@@ -95,7 +117,12 @@ def extract_keywords(text: str, max_keywords: int = 12) -> list[str]:
 
 def extract_entities(text: str, max_entities: int = 12) -> list[str]:
     matches = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b", text)
-    compact = [normalize_whitespace(m) for m in matches]
+    known_matches = [entity for entity in KNOWN_ENTITY_NAMES if re.search(rf"\b{re.escape(entity)}\b", text, re.IGNORECASE)]
+    compact = [
+        normalize_whitespace(m)
+        for m in known_matches + matches
+        if normalize_whitespace(m) and normalize_whitespace(m) not in ENTITY_STOPWORDS
+    ]
     unique_sorted = sorted(set(compact))
     return unique_sorted[:max_entities]
 

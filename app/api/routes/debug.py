@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -20,6 +20,7 @@ from app.schemas.cluster import (
 )
 from app.services.serialization import article_to_debug
 from app.services.clustering import _promotion_blockers
+from app.services.content_quality import classify_article_content, evaluate_article_quality
 from app.services.topics import derive_topic_from_articles
 
 router = APIRouter(prefix="/debug", tags=["debug"])
@@ -80,6 +81,8 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     }
     recent_join_decisions: list[ClusterDebugJoinDecision] = []
     warning_counts: Counter[str] = Counter()
+    source_quality_counts: Counter[str] = Counter()
+    content_class_counts: Counter[str] = Counter()
 
     threshold_results = {
         "score_threshold_met": cluster.score >= settings.cluster_score_threshold,
@@ -120,6 +123,28 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
         warnings = [str(item) for item in breakdown.get("warnings") or [] if str(item)]
         warning_counts.update(warnings)
         article = link.article
+        if article is not None:
+            quality = evaluate_article_quality(article)
+            raw_payload = article.raw_payload if isinstance(article.raw_payload, dict) else {}
+            classification = classify_article_content(
+                title=article.title,
+                url=article.url,
+                publisher=article.publisher,
+                content_text=article.content_text,
+                raw_payload=raw_payload,
+                source_trust=quality.source_trust,
+            )
+            source_quality_counts.update(quality.reasons or ("accepted",))
+            content_class_counts.update([classification.content_class])
+            source_trust = quality.source_trust
+            source_quality_reasons = list(quality.reasons)
+            article_content_class = classification.content_class
+        else:
+            source_trust = str(breakdown.get("source_trust") or "normal")
+            source_quality_reasons = [str(item) for item in breakdown.get("source_quality_reasons") or [] if str(item)]
+            source_quality_counts.update(source_quality_reasons or ("accepted",))
+            article_content_class = str(breakdown.get("article_content_class") or "unknown")
+            content_class_counts.update([article_content_class])
         recent_join_decisions.append(
             ClusterDebugJoinDecision(
                 article_id=article.id if article is not None else link.article_id,
@@ -136,11 +161,22 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
                 entity_overlap=int((breakdown.get("overlap_counts") or {}).get("entity_overlap") or 0),
                 keyword_overlap=int((breakdown.get("overlap_counts") or {}).get("keyword_overlap") or 0),
                 location_overlap=int((breakdown.get("overlap_counts") or {}).get("location_overlap") or 0),
+                title_token_overlap=int((breakdown.get("overlap_counts") or {}).get("title_token_overlap") or 0),
                 source_match=bool(breakdown.get("selected_source_match")),
                 topic_match=bool(breakdown.get("selected_topic_match")),
+                primary_entity_overlap=bool(met.get("primary_entity_overlap_met")),
+                title_primary_entity_overlap=bool(met.get("title_primary_entity_overlap_met")),
+                near_duplicate_title=bool(met.get("near_duplicate_title_met")),
+                same_source_update_chain=bool(met.get("same_source_update_chain_met")),
                 time_proximity=round(float(component_values.get("time_proximity") or 0.0), 4),
                 signal_gate_passed=bool(met.get("signal_gate_passed")),
                 signal_reasons=[str(item) for item in breakdown.get("signal_reasons") or [] if str(item)],
+                source_quality_reasons=source_quality_reasons,
+                source_trust=source_trust,
+                article_content_class=article_content_class,
+                cluster_content_class=str(breakdown.get("cluster_content_class") or "unknown"),
+                candidate_rejection_reason=breakdown.get("candidate_rejection_reason"),
+                membership_rejection_status=breakdown.get("membership_rejection_status"),
                 warnings=warnings,
             )
         )
@@ -179,11 +215,13 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             score_threshold=settings.cluster_score_threshold,
             title_signal_threshold=settings.cluster_min_title_signal,
             entity_overlap_threshold=settings.cluster_min_entity_overlap,
+            primary_entity_overlap_required=True,
             keyword_overlap_threshold=settings.cluster_min_keyword_overlap,
             topic_semantic_score_threshold=settings.cluster_min_topic_semantic_score,
             attach_override_title_similarity_threshold=settings.cluster_attach_override_min_title_similarity,
             attach_override_time_proximity_threshold=settings.cluster_attach_override_min_time_proximity,
             min_sources_for_api=settings.cluster_min_sources_for_api,
+            min_distinct_sources_for_api=settings.cluster_min_distinct_sources_for_api,
             min_sources_for_top_stories=settings.cluster_min_sources_for_top_stories,
             min_sources_for_developing_stories=settings.cluster_min_sources_for_developing_stories,
         ),
@@ -206,21 +244,34 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             key=lambda item: item.article_id,
             reverse=True,
         )[:8],
+        source_quality_summary={key: int(value) for key, value in sorted(source_quality_counts.items())},
+        content_class_summary={key: int(value) for key, value in sorted(content_class_counts.items())},
         warnings=[key for key, _ in warning_counts.most_common()],
     )
 
 
 @router.get("/articles", response_model=ArticleDebugResponse)
-def debug_articles(db: Session = Depends(get_db_session)) -> ArticleDebugResponse:
+def debug_articles(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db_session),
+) -> ArticleDebugResponse:
     total = int(db.scalar(select(func.count()).select_from(Article)) or 0)
-    stmt: Select[tuple[Article]] = select(Article).order_by(Article.published_at.desc(), Article.id.desc())
+    stmt: Select[tuple[Article]] = (
+        select(Article).order_by(Article.published_at.desc(), Article.id.desc()).limit(limit).offset(offset)
+    )
     rows = list(db.scalars(stmt).all())
     return ArticleDebugResponse(total=total, items=[article_to_debug(article) for article in rows])
 
 
 @router.get("/clusters", response_model=ClusterDebugResponse)
-def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugResponse:
+def debug_clusters(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db_session),
+) -> ClusterDebugResponse:
     settings = get_settings()
+    total = int(db.scalar(select(func.count()).select_from(Cluster)) or 0)
     stmt: Select[tuple[Cluster]] = (
         select(Cluster)
         .options(
@@ -228,6 +279,8 @@ def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugRespons
             selectinload(Cluster.timeline_events),
         )
         .order_by(Cluster.last_updated.desc(), Cluster.id.asc())
+        .limit(limit)
+        .offset(offset)
     )
     rows = list(db.scalars(stmt).unique().all())
 
@@ -240,6 +293,7 @@ def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugRespons
             source_count=source_count,
             validation_error=cluster.validation_error,
             settings=settings,
+            articles=[link.article for link in cluster.source_links if link.article is not None],
         )
         promotion_eligible = not promotion_blockers
         items.append(
@@ -263,4 +317,4 @@ def debug_clusters(db: Session = Depends(get_db_session)) -> ClusterDebugRespons
             )
         )
 
-    return ClusterDebugResponse(total=len(items), items=items)
+    return ClusterDebugResponse(total=total, items=items)

@@ -165,14 +165,26 @@ describe("HomePage", () => {
     renderHome();
     expect(await screen.findByText("Checking Roundup for current stories")).toBeInTheDocument();
     resolveFetch(jsonResponse(clusterResponse([])));
-    await waitFor(() => expect(screen.getByText("No image-ready stories available")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("No stories available yet")).toBeInTheDocument());
   });
 
   it("renders an empty state when the API returns no clusters", async () => {
     mockFetch({ status: 200, body: clusterResponse([]) });
 
     renderHome();
-    expect(await screen.findByText("No image-ready stories available")).toBeInTheDocument();
+    expect(await screen.findByText("No stories available yet")).toBeInTheDocument();
+    expect(screen.getByText("The API is reachable, but no public or candidate clusters are available from the latest response.")).toBeInTheDocument();
+  });
+
+  it("distinguishes backend unavailable from an empty response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    }));
+
+    renderHome();
+    expect(await screen.findByText("Backend unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Could not reach Roundup")).toBeInTheDocument();
+    expect(screen.getByText(/Roundup API is unavailable/i)).toBeInTheDocument();
   });
 
   it("renders an error state when the API request fails", async () => {
@@ -330,7 +342,7 @@ describe("HomePage", () => {
     });
 
     renderHome();
-    expect(await screen.findByText("No image-ready stories available")).toBeInTheDocument();
+    expect(await screen.findByText("Clusters loaded, but none have usable images")).toBeInTheDocument();
     expect(screen.queryByText("Image missing story")).not.toBeInTheDocument();
   });
 

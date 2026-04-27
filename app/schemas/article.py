@@ -31,6 +31,16 @@ class ArticleDebugItem(BaseModel):
     keywords: list[str]
     entities: list[str]
     topic: str
+    quality_action: str
+    quality_reasons: list[str]
+    source_trust: str
+    source_priority: str
+    allow_service_content: bool
+    promote_to_home: bool
+    source_category: str
+    content_class: str
+    primary_entities: list[str] = Field(default_factory=list)
+    secondary_entities: list[str] = Field(default_factory=list)
 
 
 class ArticleDebugResponse(BaseModel):

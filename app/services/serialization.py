@@ -6,6 +6,7 @@ from urllib.parse import urlparse, urlunparse
 from app.db.models import Article, Cluster
 from app.schemas.article import ArticleDebugItem, ArticleResponse
 from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.services.content_quality import classify_article_content, evaluate_article_quality
 from app.services.enrichment import build_key_facts
 from app.services.normalizer import extract_image_url
 from app.services.topics import derive_topic_from_article, derive_topic_from_articles
@@ -73,6 +74,16 @@ def article_to_response(article: Article) -> ArticleResponse:
 
 
 def article_to_debug(article: Article) -> ArticleDebugItem:
+    quality = evaluate_article_quality(article)
+    raw_payload = article.raw_payload if isinstance(article.raw_payload, dict) else {}
+    classification = classify_article_content(
+        title=article.title,
+        url=article.url,
+        publisher=article.publisher,
+        content_text=article.content_text,
+        raw_payload=raw_payload,
+        source_trust=quality.source_trust,
+    )
     return ArticleDebugItem(
         article_id=article.id,
         dedupe_hash=article.dedupe_hash,
@@ -84,6 +95,16 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         keywords=list(article.keywords),
         entities=list(article.entities),
         topic=derive_topic_from_article(article),
+        quality_action=quality.action,
+        quality_reasons=list(quality.reasons),
+        source_trust=quality.source_trust,
+        source_priority=quality.source_controls.priority,
+        allow_service_content=quality.source_controls.allow_service_content,
+        promote_to_home=quality.source_controls.promote_to_home,
+        source_category=quality.source_controls.category,
+        content_class=classification.content_class,
+        primary_entities=list(classification.primary_entities),
+        secondary_entities=list(classification.secondary_entities),
     )
 
 

@@ -62,7 +62,11 @@ const debugCluster = {
       score_threshold: 0.55,
       title_signal_threshold: 0.72,
       entity_overlap_threshold: 1,
+      primary_entity_overlap_required: true,
       keyword_overlap_threshold: 2,
+      topic_semantic_score_threshold: 0.38,
+      attach_override_title_similarity_threshold: 0.3,
+      attach_override_time_proximity_threshold: 0.8,
       min_sources_for_api: 3,
       min_sources_for_top_stories: 2,
       min_sources_for_developing_stories: 2
@@ -77,13 +81,18 @@ const debugCluster = {
       average_title_similarity: 0.8,
       average_entity_jaccard: 0.6,
       average_keyword_jaccard: 0.5,
+      average_semantic_score: 0.7,
       average_time_proximity: 0.9,
-      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
+      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity",
+      semantic_formula: "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
     },
     decision_counts: {
       attach_existing_cluster: 2,
       create_new_cluster: 1
-    }
+    },
+    recent_join_decisions: [],
+    source_quality_summary: {},
+    warnings: []
   }
 };
 

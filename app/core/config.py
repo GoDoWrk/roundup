@@ -32,8 +32,36 @@ class Settings(BaseSettings):
             "miniflux_api_token_file",
         ),
     )
-    miniflux_fetch_limit: int = 100
+    ingest_max_total_articles: int = Field(
+        default=1000,
+        validation_alias=AliasChoices(
+            "ROUNDUP_INGEST_MAX_TOTAL_ARTICLES",
+            "MINIFLUX_FETCH_LIMIT",
+            "miniflux_fetch_limit",
+            "ingest_max_total_articles",
+        ),
+    )
+    ingest_max_articles_per_feed: int = Field(
+        default=10,
+        validation_alias=AliasChoices("ROUNDUP_INGEST_MAX_ARTICLES_PER_FEED", "ingest_max_articles_per_feed"),
+    )
+    ingest_lookback_hours: int = Field(
+        default=24,
+        validation_alias=AliasChoices("ROUNDUP_INGEST_LOOKBACK_HOURS", "ingest_lookback_hours"),
+    )
+    ingest_max_pages: int = Field(
+        default=10,
+        validation_alias=AliasChoices("ROUNDUP_INGEST_MAX_PAGES", "ingest_max_pages"),
+    )
+    ingest_category_quotas_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ROUNDUP_INGEST_CATEGORY_QUOTAS_ENABLED", "ingest_category_quotas_enabled"),
+    )
     miniflux_timeout_seconds: int = 20
+    allow_private_feed_urls: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ROUNDUP_ALLOW_PRIVATE_FEED_URLS", "allow_private_feed_urls"),
+    )
     demo_mode: bool = False
     sample_miniflux_data_path: str | None = None
 
@@ -59,6 +87,7 @@ class Settings(BaseSettings):
     cluster_emerging_hours: int = 24
     cluster_emerging_source_count: int = 3
     cluster_min_sources_for_api: int = 3
+    cluster_min_distinct_sources_for_api: int = 2
     cluster_min_sources_for_top_stories: int = 2
     cluster_min_sources_for_developing_stories: int = 2
     cluster_show_just_in_single_source: bool = True
@@ -117,14 +146,24 @@ class Settings(BaseSettings):
             return None
         return Path(self.sample_miniflux_data_path)
 
+    @property
+    def miniflux_fetch_limit(self) -> int:
+        return self.ingest_max_total_articles
+
     def validate_startup(self, mode: Literal["api", "worker"]) -> list[str]:
         errors: list[str] = []
 
         if not self.database_url.strip():
             errors.append("DATABASE_URL must be set.")
 
-        if self.miniflux_fetch_limit <= 0:
-            errors.append("MINIFLUX_FETCH_LIMIT must be greater than 0.")
+        if self.ingest_max_total_articles <= 0:
+            errors.append("ROUNDUP_INGEST_MAX_TOTAL_ARTICLES must be greater than 0.")
+        if self.ingest_max_articles_per_feed <= 0:
+            errors.append("ROUNDUP_INGEST_MAX_ARTICLES_PER_FEED must be greater than 0.")
+        if self.ingest_lookback_hours <= 0:
+            errors.append("ROUNDUP_INGEST_LOOKBACK_HOURS must be greater than 0.")
+        if self.ingest_max_pages <= 0:
+            errors.append("ROUNDUP_INGEST_MAX_PAGES must be greater than 0.")
         if self.miniflux_timeout_seconds <= 0:
             errors.append("MINIFLUX_TIMEOUT_SECONDS must be greater than 0.")
         if self.api_workers <= 0:
@@ -137,6 +176,8 @@ class Settings(BaseSettings):
             errors.append("CLUSTERING_BATCH_SIZE must be greater than 0.")
         if self.clustering_concurrency <= 0:
             errors.append("CLUSTERING_CONCURRENCY must be greater than 0.")
+        if self.cluster_min_distinct_sources_for_api <= 0:
+            errors.append("CLUSTER_MIN_DISTINCT_SOURCES_FOR_API must be greater than 0.")
         if self.inspector_worker_processes <= 0:
             errors.append("INSPECTOR_WORKER_PROCESSES must be greater than 0.")
         if self.scheduler_interval_seconds <= 0:

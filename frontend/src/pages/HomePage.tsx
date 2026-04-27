@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchHomepageClusters } from "../api/client";
+import { apiErrorKind, describeApiError, fetchHomepageClusters } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
 import { FeedControls } from "../components/FeedControls";
 import type { HomepageClustersResponse, StoryCluster } from "../types";
@@ -52,6 +52,7 @@ export function HomePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("top");
   const [topicFilter, setTopicFilter] = useState("all");
@@ -94,8 +95,10 @@ export function HomePage() {
       setHighlightedClusterIds(changedIds);
       setUpdatedSinceLastRefresh(changedIds.size);
       setError(null);
+      setErrorKind(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(describeApiError(err));
+      setErrorKind(apiErrorKind(err));
       if (!background) {
         setClusters([]);
         setHomepageData(null);
@@ -149,10 +152,21 @@ export function HomePage() {
   }, [homepageData, sortMode, topicFilter]);
 
   const visibleCount = sections.allClusters.length;
+  const rawSectionCount = homepageData
+    ? homepageData.sections.top_stories.length +
+      homepageData.sections.developing_stories.length +
+      homepageData.sections.just_in.length
+    : 0;
   const leadStory = sections.topStories[0] ?? null;
   const supportingStories = sections.topStories.slice(1, 4);
   const hasStories = visibleCount > 0;
   const hasLoadedData = clusters.length > 0 || homepageData !== null || lastLoadedAt !== null;
+  const hasNoApiClusters =
+    homepageData !== null &&
+    rawSectionCount === 0 &&
+    homepageData.status.visible_clusters === 0 &&
+    homepageData.status.candidate_clusters === 0;
+  const hasOnlyNonImageReadyClusters = homepageData !== null && rawSectionCount > 0 && visibleCount === 0;
   const topicFilterLabel = topicFilter === "all" ? "All topics" : topicFilter;
   const lastCheckedReadable = lastLoadedAt ? formatReadableTimestamp(lastLoadedAt) : null;
   const lastIngestionLabel = homepageData?.status.last_ingestion
@@ -243,18 +257,29 @@ export function HomePage() {
           </section>
         )}
 
-        {!loading && !error && !hasStories && hasLoadedData && topicFilter === "all" && (
+        {!loading && !error && !hasStories && hasLoadedData && topicFilter === "all" && hasNoApiClusters && (
           <section className="state-panel">
             <p className="eyebrow">Nothing to show yet</p>
-            <h2>No image-ready stories available</h2>
-            <p>The feed only shows stories with thumbnails. Inspector can still show clusters that are missing images.</p>
+            <h2>No stories available yet</h2>
+            <p>The API is reachable, but no public or candidate clusters are available from the latest response.</p>
+          </section>
+        )}
+
+        {!loading && !error && !hasStories && hasLoadedData && topicFilter === "all" && hasOnlyNonImageReadyClusters && (
+          <section className="state-panel">
+            <p className="eyebrow">No image-ready stories</p>
+            <h2>Clusters loaded, but none have usable images</h2>
+            <p>
+              The API returned {rawSectionCount} {rawSectionCount === 1 ? "cluster" : "clusters"}. The public feed hides
+              image-less stories; Inspector can still show them.
+            </p>
           </section>
         )}
 
         {!loading && !hasStories && error && (
           <section className="state-panel state-panel--error" role="alert">
-            <p className="eyebrow">Feed error</p>
-            <h2>Could not load live stories</h2>
+            <p className="eyebrow">{errorKind === "network" ? "Backend unavailable" : "API error"}</p>
+            <h2>{errorKind === "network" ? "Could not reach Roundup" : "Could not load live stories"}</h2>
             <p>{error}</p>
           </section>
         )}

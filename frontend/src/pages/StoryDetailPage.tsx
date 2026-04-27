@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchClusterDetail } from "../api/client";
+import { apiErrorKind, describeApiError, fetchClusterDetail } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import { useSavedStories } from "../context/SavedStoriesContext";
@@ -251,6 +251,7 @@ export function StoryDetailPage() {
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("timeline");
   const [visibleTimelineCount, setVisibleTimelineCount] = useState(INITIAL_TIMELINE_COUNT);
   const [relatedClusters, setRelatedClusters] = useState<StoryCluster[]>([]);
@@ -269,9 +270,11 @@ export function StoryDetailPage() {
     try {
       const result = await fetchClusterDetail(clusterId);
       setCluster(result);
+      setErrorKind(null);
     } catch (err) {
       setCluster(null);
-      setError((err as Error).message);
+      setError(describeApiError(err));
+      setErrorKind(apiErrorKind(err));
     } finally {
       setLoading(false);
     }
@@ -391,8 +394,8 @@ export function StoryDetailPage() {
 
         {!loading && error && (
           <section className="state-panel state-panel--error" role="alert">
-            <p className="eyebrow">Error</p>
-            <h2>Could not load the story</h2>
+            <p className="eyebrow">{errorKind === "network" ? "Backend unavailable" : "API error"}</p>
+            <h2>{errorKind === "network" ? "Could not reach Roundup" : "Could not load the story"}</h2>
             <p>{error}</p>
           </section>
         )}

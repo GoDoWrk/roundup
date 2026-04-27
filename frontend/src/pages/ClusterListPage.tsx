@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchClusterList, fetchDebugClusters, fetchHealth } from "../api/client";
+import { describeApiError, fetchClusterList, fetchDebugClusters, fetchHealth } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
 import type { ClusterDebugItem, ClusterListResponse, HealthResponse } from "../types";
 import { toClusterListRows } from "../utils/clusterView";
@@ -81,22 +81,39 @@ export function ClusterListPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [debugError, setDebugError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setApiError(null);
+    setDebugError(null);
 
     try {
-      const [clusterList, debug, healthStatus] = await Promise.all([
+      const [clusterList, debug, healthStatus] = await Promise.allSettled([
         fetchClusterList({ limit: 100, offset: 0 }),
         fetchDebugClusters(),
-        fetchHealth().catch(() => null)
+        fetchHealth()
       ]);
-      setClusters(clusterList);
-      setDebugClusters(debug.items);
-      setHealth(healthStatus);
+
+      if (clusterList.status === "fulfilled") {
+        setClusters(clusterList.value);
+      } else {
+        setClusters(null);
+        setApiError(describeApiError(clusterList.reason));
+      }
+
+      if (debug.status === "fulfilled") {
+        setDebugClusters(debug.value.items);
+      } else {
+        setDebugClusters([]);
+        setDebugError(describeApiError(debug.reason));
+      }
+
+      setHealth(healthStatus.status === "fulfilled" ? healthStatus.value : null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(describeApiError(err));
     } finally {
       setLoading(false);
     }
@@ -139,10 +156,12 @@ export function ClusterListPage() {
         <p className="muted">Shows clusters currently eligible from the main API.</p>
 
         {error && <p className="error">{error}</p>}
+        {apiError && <p className="error">Main cluster API unavailable: {apiError}</p>}
+        {debugError && <p className="error">Debug cluster API unavailable: {debugError}</p>}
         {!error && loading && <p>Loading clusters...</p>}
-        {!error && !loading && apiRows.length === 0 && <p>No API-eligible clusters found.</p>}
+        {!error && !apiError && !loading && apiRows.length === 0 && <p>No API-eligible clusters found.</p>}
 
-        {!error && !loading && apiRows.length > 0 && (
+        {!error && !apiError && !loading && apiRows.length > 0 && (
           <table className="table">
             <thead>
               <tr>
@@ -213,9 +232,9 @@ export function ClusterListPage() {
         <h3>Invalid/Debug Clusters</h3>
         <p className="muted">Clusters from `/debug/clusters` that are rejected or not present in `/api/clusters`.</p>
 
-        {!error && !loading && invalidRows.length === 0 && <p>No invalid/debug-only clusters currently visible.</p>}
+        {!error && !debugError && !loading && invalidRows.length === 0 && <p>No invalid/debug-only clusters currently visible.</p>}
 
-        {!error && !loading && invalidRows.length > 0 && (
+        {!error && !debugError && !loading && invalidRows.length > 0 && (
           <table className="table">
             <thead>
               <tr>

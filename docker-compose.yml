@@ -3,15 +3,15 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: roundup
-      POSTGRES_PASSWORD: roundup
-      POSTGRES_DB: roundup
+      POSTGRES_USER: ${ROUNDUP_DB_USER:-roundup}
+      POSTGRES_PASSWORD: ${ROUNDUP_DB_PASSWORD:-roundup}
+      POSTGRES_DB: ${ROUNDUP_DB_NAME:-roundup}
     ports:
-      - "5432:5432"
+      - "${ROUNDUP_DB_BIND_HOST:-127.0.0.1}:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U roundup -d roundup"]
+      test: ["CMD-SHELL", "pg_isready -U ${ROUNDUP_DB_USER:-roundup} -d ${ROUNDUP_DB_NAME:-roundup}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -105,7 +105,7 @@ services:
       MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1}
     ports:
-      - "8000:8000"
+      - "${ROUNDUP_BIND_HOST:-127.0.0.1}:8000:8000"
     healthcheck:
       test:
         [
@@ -167,7 +167,7 @@ services:
         "envsubst < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'",
       ]
     ports:
-      - "8080:80"
+      - "${ROUNDUP_BIND_HOST:-127.0.0.1}:8080:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1"]
       interval: 15s

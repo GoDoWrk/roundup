@@ -98,6 +98,7 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     assert "promotion_blockers" in item
     assert explanation["grouping_reason"]
     assert "thresholds" in explanation
+    assert explanation["thresholds"]["primary_entity_overlap_required"] is True
     assert "threshold_results" in explanation
     assert "score_breakdown" in explanation
     assert explanation["score_breakdown"]["score_formula"]
@@ -106,12 +107,57 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     assert explanation["top_shared_entities"]
     assert explanation["decision_counts"]
     assert explanation["recent_join_decisions"]
+    assert "source_quality_summary" in explanation
+    assert "content_class_summary" in explanation
     assert "warnings" in explanation
     join = explanation["recent_join_decisions"][0]
     assert "semantic_score" in join
     assert "signal_reasons" in join
     assert "location_overlap" in join
     assert "source_match" in join
+    assert "source_quality_reasons" in join
+    assert "source_trust" in join
+    assert "article_content_class" in join
+    assert "cluster_content_class" in join
+    assert "membership_rejection_status" in join
+
+
+def test_debug_clusters_exposes_low_trust_aggregator_promotion_blocker(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _cluster("google-only-cluster", now)
+    cluster.status = "hidden"
+    db_session.add(cluster)
+    db_session.flush()
+
+    for idx in range(3):
+        article = _article(idx + 1, cluster.id, now, "Google News")
+        article.raw_payload = {
+            "feed": {
+                "title": "Google News Business",
+                "feed_url": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
+                "priority": "low",
+                "promote_to_home": False,
+            }
+        }
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(
+                cluster_id=cluster.id,
+                article_id=article.id,
+                similarity_score=0.7,
+                heuristic_breakdown={"decision": "attach_existing_cluster", "selected_score": 0.7},
+            )
+        )
+
+    db_session.commit()
+
+    response = client.get("/debug/clusters")
+    assert response.status_code == 200
+    item = next(entry for entry in response.json()["items"] if entry["cluster_id"] == "google-only-cluster")
+    assert item["promotion_eligible"] is False
+    assert any("insufficient_high_quality_sources" in blocker for blocker in item["promotion_blockers"])
+    assert item["debug_explanation"]["source_quality_summary"]["low_trust_aggregator"] == 3
 
 
 def test_api_clusters_filters_out_clusters_below_min_source_count(client, db_session: Session) -> None:

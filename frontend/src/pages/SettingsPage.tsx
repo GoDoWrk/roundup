@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchSources } from "../api/client";
+import { describeApiError, fetchSources } from "../api/client";
 import { useSavedStories } from "../context/SavedStoriesContext";
 import { useUserPreferences } from "../context/UserPreferencesContext";
 import type { SourceHealthItem, SourceListResponse } from "../types";
@@ -178,7 +178,7 @@ export function SettingsPage() {
       setSources(response);
       setSourcesLoaded(true);
     } catch (err) {
-      setSourcesError((err as Error).message);
+      setSourcesError(describeApiError(err));
     } finally {
       setSourcesLoading(false);
     }

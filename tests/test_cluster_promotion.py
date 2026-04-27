@@ -48,6 +48,31 @@ def _article(
     )
 
 
+def _google_news_article(idx: int, published_at: datetime) -> Article:
+    article = _article(
+        dedupe_hash=f"google-context-{idx}",
+        title=f"Arizona water managers approve Colorado River drought plan update {idx}",
+        normalized_title=f"arizona water managers approve colorado river drought plan update {idx}",
+        keywords=["arizona", "water", "colorado", "river", "drought", "plan", "update"],
+        entities=["Arizona Water Department", "Colorado River"],
+        published_at=published_at,
+        publisher="Google News",
+    )
+    article.topic = "Colorado River"
+    article.raw_payload = {
+        "title": article.title,
+        "feed": {
+            "title": "Google News Business",
+            "feed_url": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
+            "priority": "low",
+            "allow_service_content": False,
+            "promote_to_home": False,
+            "category": "Google News",
+        },
+    }
+    return article
+
+
 def _transit_article(idx: int, published_at: datetime, publisher: str) -> Article:
     return _article(
         dedupe_hash=f"promo-transit-{idx}",
@@ -98,6 +123,25 @@ def test_two_source_cluster_stays_hidden_when_threshold_is_three(db_session: Ses
     assert cluster is not None
     assert _source_count(db_session, cluster.id) == 2
     assert cluster.status == "hidden"
+    assert cluster.promoted_at is None
+
+
+def test_same_source_updates_do_not_promote_without_source_diversity(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    for idx in range(1, 4):
+        db_session.add(_transit_article(idx, now - timedelta(hours=4 - idx), "Metro Daily"))
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    cluster = db_session.scalars(select(Cluster)).first()
+    assert cluster is not None
+    assert result.created_count == 1
+    assert result.attach_decisions == 2
+    assert _source_count(db_session, cluster.id) == 3
+    assert cluster.status == "hidden"
+    assert cluster.promotion_reason == "source_diversity_below_threshold"
     assert cluster.promoted_at is None
 
 
@@ -244,6 +288,27 @@ def test_hidden_cluster_with_enough_sources_can_be_promoted_without_new_articles
     assert promoted.promoted_at is not None
     assert promoted.validation_error is None
     assert result.promoted_count == 1
+
+
+def test_low_trust_aggregator_sources_alone_do_not_promote_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(_google_news_article(1, now - timedelta(hours=3)))
+    db_session.add(_google_news_article(2, now - timedelta(hours=2)))
+    db_session.add(_google_news_article(3, now - timedelta(hours=1)))
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    cluster = db_session.scalars(select(Cluster)).first()
+    assert cluster is not None
+    assert result.created_count == 1
+    assert result.attach_decisions == 2
+    assert _source_count(db_session, cluster.id) == 3
+    assert cluster.status == "hidden"
+    assert cluster.promotion_reason is not None
+    assert "insufficient_high_quality_sources" in cluster.promotion_reason
+    assert cluster.promoted_at is None
 
 
 def test_promotion_metrics_counters_update(db_session: Session) -> None:

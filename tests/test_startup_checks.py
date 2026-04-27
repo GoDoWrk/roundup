@@ -79,12 +79,15 @@ def test_settings_accept_new_miniflux_env_aliases() -> None:
         database_url="sqlite+pysqlite:///:memory:",
         MINIFLUX_URL="http://miniflux.local",
         MINIFLUX_API_KEY="secret",
+        MINIFLUX_FETCH_LIMIT=123,
         sample_miniflux_data_path=None,
     )
 
     assert settings.miniflux_base_url == "http://miniflux.local"
     assert settings.miniflux_api_token == "secret"
     assert settings.has_miniflux_credentials is True
+    assert settings.ingest_max_total_articles == 123
+    assert settings.miniflux_fetch_limit == 123
 
 
 def test_startup_check_rejects_invalid_runtime_limits() -> None:

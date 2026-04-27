@@ -37,6 +37,8 @@ class Article(Base):
 
     __table_args__ = (
         Index("ix_articles_published_at", "published_at"),
+        Index("ix_articles_published_id", "published_at", "id"),
+        Index("ix_articles_fetched_id", "fetched_at", "id"),
         Index("ix_articles_canonical_url", "canonical_url"),
         Index("ix_articles_publisher", "publisher"),
         Index("ix_articles_topic", "topic"),
@@ -78,7 +80,9 @@ class Cluster(Base):
 
     __table_args__ = (
         Index("ix_clusters_last_updated", "last_updated"),
+        Index("ix_clusters_last_updated_id", "last_updated", "id"),
         Index("ix_clusters_status", "status"),
+        Index("ix_clusters_status_last_updated", "status", "last_updated", "id"),
         Index("ix_clusters_topic", "topic"),
     )
 
@@ -127,6 +131,15 @@ class PipelineStats(Base):
     latest_duplicate_articles_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     latest_articles_malformed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     latest_failed_source_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    configured_feed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_feed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    feeds_checked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    feeds_with_new_articles: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    miniflux_entries_seen: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    articles_fetched_raw: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    articles_rejected_quality: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    articles_rejected_stale: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    articles_rejected_service_finance: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     clusters_created_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     clusters_updated_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cluster_candidates_evaluated_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
