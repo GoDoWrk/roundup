@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import PipelineStats
+from app.db.models import Article, Cluster, ClusterArticle, PipelineStats
 
 
 def utcnow() -> datetime:
@@ -25,6 +26,7 @@ def update_ingest_metrics(
     ingested: int,
     deduplicated: int,
     *,
+    fetched: int = 0,
     malformed: int = 0,
     source_failures: int = 0,
 ) -> None:
@@ -33,6 +35,11 @@ def update_ingest_metrics(
     stats.articles_deduplicated_total += deduplicated
     stats.articles_malformed_total += malformed
     stats.ingest_source_failures_total += source_failures
+    stats.latest_articles_fetched = fetched
+    stats.latest_articles_stored = ingested
+    stats.latest_duplicate_articles_skipped = deduplicated
+    stats.latest_articles_malformed = malformed
+    stats.latest_failed_source_count = source_failures
     stats.last_ingest_time = utcnow()
 
 
@@ -69,7 +76,42 @@ def update_cluster_metrics(
     stats.clusters_active_total = active_total
     stats.cluster_promotion_attempts_total += promotion_attempts
     stats.cluster_promotion_failures_total += promotion_failures
+    stats.latest_candidate_clusters_created = created
+    stats.latest_clusters_updated = updated
+    stats.latest_clusters_hidden = hidden_total
+    stats.latest_clusters_promoted = promoted
+    stats.latest_visible_clusters = active_total
     stats.last_cluster_time = utcnow()
+
+
+def count_articles_pending_clustering(session: Session) -> int:
+    stmt: Select[tuple[int]] = (
+        select(func.count())
+        .select_from(Article)
+        .outerjoin(ClusterArticle, ClusterArticle.article_id == Article.id)
+        .where(ClusterArticle.id.is_(None))
+    )
+    return int(session.scalar(stmt) or 0)
+
+
+def count_summaries_pending(session: Session) -> int:
+    placeholder = "%pending%"
+    stmt = (
+        select(func.count())
+        .select_from(Cluster)
+        .where(
+            (Cluster.headline.ilike(placeholder))
+            | (Cluster.summary.ilike(placeholder))
+            | (Cluster.what_changed.ilike(placeholder))
+            | (Cluster.why_it_matters.ilike(placeholder))
+        )
+    )
+    return int(session.scalar(stmt) or 0)
+
+
+def count_active_sources(session: Session) -> int:
+    stmt = select(func.count(func.distinct(Article.publisher))).where(Article.publisher != "unknown")
+    return int(session.scalar(stmt) or 0)
 
 
 def metrics_as_prometheus_text(session: Session) -> str:
@@ -90,6 +132,21 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP ingest_source_failures_total Total number of ingestion source fetch failures",
         "# TYPE ingest_source_failures_total counter",
         f"ingest_source_failures_total {stats.ingest_source_failures_total}",
+        "# HELP latest_articles_fetched Articles fetched in the latest pipeline run",
+        "# TYPE latest_articles_fetched gauge",
+        f"latest_articles_fetched {stats.latest_articles_fetched}",
+        "# HELP latest_articles_stored Articles stored in the latest pipeline run",
+        "# TYPE latest_articles_stored gauge",
+        f"latest_articles_stored {stats.latest_articles_stored}",
+        "# HELP latest_duplicate_articles_skipped Duplicate articles skipped in the latest pipeline run",
+        "# TYPE latest_duplicate_articles_skipped gauge",
+        f"latest_duplicate_articles_skipped {stats.latest_duplicate_articles_skipped}",
+        "# HELP latest_articles_malformed Malformed articles skipped in the latest pipeline run",
+        "# TYPE latest_articles_malformed gauge",
+        f"latest_articles_malformed {stats.latest_articles_malformed}",
+        "# HELP latest_failed_source_count Source failures in the latest pipeline run",
+        "# TYPE latest_failed_source_count gauge",
+        f"latest_failed_source_count {stats.latest_failed_source_count}",
         "# HELP clusters_created_total Total number of created clusters",
         "# TYPE clusters_created_total counter",
         f"clusters_created_total {stats.clusters_created_total}",
@@ -132,6 +189,30 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP cluster_promotion_failures_total Total hidden-cluster promotion attempts that remained hidden",
         "# TYPE cluster_promotion_failures_total counter",
         f"cluster_promotion_failures_total {stats.cluster_promotion_failures_total}",
+        "# HELP latest_candidate_clusters_created Candidate clusters created in the latest pipeline run",
+        "# TYPE latest_candidate_clusters_created gauge",
+        f"latest_candidate_clusters_created {stats.latest_candidate_clusters_created}",
+        "# HELP latest_clusters_updated Clusters updated in the latest pipeline run",
+        "# TYPE latest_clusters_updated gauge",
+        f"latest_clusters_updated {stats.latest_clusters_updated}",
+        "# HELP latest_clusters_hidden Current hidden cluster count captured by the latest clustering run",
+        "# TYPE latest_clusters_hidden gauge",
+        f"latest_clusters_hidden {stats.latest_clusters_hidden}",
+        "# HELP latest_clusters_promoted Clusters promoted in the latest pipeline run",
+        "# TYPE latest_clusters_promoted gauge",
+        f"latest_clusters_promoted {stats.latest_clusters_promoted}",
+        "# HELP latest_visible_clusters Current visible cluster count captured by the latest clustering run",
+        "# TYPE latest_visible_clusters gauge",
+        f"latest_visible_clusters {stats.latest_visible_clusters}",
+        "# HELP articles_pending_clustering Current articles not attached to any cluster",
+        "# TYPE articles_pending_clustering gauge",
+        f"articles_pending_clustering {count_articles_pending_clustering(session)}",
+        "# HELP summaries_pending Current clusters with placeholder summary fields",
+        "# TYPE summaries_pending gauge",
+        f"summaries_pending {count_summaries_pending(session)}",
+        "# HELP active_sources Current distinct publishers stored by Roundup",
+        "# TYPE active_sources gauge",
+        f"active_sources {count_active_sources(session)}",
         "# HELP last_ingest_time Unix timestamp for the last ingest run",
         "# TYPE last_ingest_time gauge",
         f"last_ingest_time {ingest_ts}",

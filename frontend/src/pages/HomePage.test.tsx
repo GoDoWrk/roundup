@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FollowedStoriesProvider } from "../context/FollowedStoriesContext";
 import { SavedStoriesProvider } from "../context/SavedStoriesContext";
 import type { StoryCluster } from "../types";
 import { HomePage } from "./HomePage";
@@ -9,16 +8,13 @@ import { HomePage } from "./HomePage";
 type Reply = {
   status?: number;
   body: unknown;
-  metricsBody?: string;
 };
 
 function renderHome() {
   return render(
     <MemoryRouter>
       <SavedStoriesProvider>
-        <FollowedStoriesProvider>
-          <HomePage />
-        </FollowedStoriesProvider>
+        <HomePage />
       </SavedStoriesProvider>
     </MemoryRouter>
   );
@@ -31,13 +27,6 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function textResponse(body: string, status = 200) {
-  return new Response(body, {
-    status,
-    headers: { "Content-Type": "text/plain" }
-  });
-}
-
 function mockFetch(reply: Reply | (() => Promise<Response>)) {
   if (typeof reply === "function") {
     vi.stubGlobal("fetch", vi.fn(reply));
@@ -46,14 +35,7 @@ function mockFetch(reply: Reply | (() => Promise<Response>)) {
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.startsWith("/metrics")) {
-        return textResponse(reply.metricsBody ?? "");
-      }
-
-      return jsonResponse(reply.body, reply.status ?? 200);
-    })
+    vi.fn(async () => jsonResponse(reply.body, reply.status ?? 200))
   );
 }
 
@@ -91,8 +73,8 @@ function buildCluster(
       }
     ],
     source_count: 1,
-    primary_image_url: null,
-    thumbnail_urls: [],
+    primary_image_url: `https://images.example.com/${clusterId}.jpg`,
+    thumbnail_urls: [`https://images.example.com/${clusterId}.jpg`],
     region: null,
     story_type: "general",
     first_seen: "2026-04-23T00:00:00Z",
@@ -109,15 +91,61 @@ function buildCluster(
 
 function clusterResponse(items: StoryCluster[]) {
   return {
-    total: items.length,
-    limit: 20,
-    offset: 0,
-    items
+    sections: {
+      top_stories: items,
+      developing_stories: [],
+      just_in: []
+    },
+    status: {
+      visible_clusters: items.length,
+      candidate_clusters: 0,
+      articles_fetched_latest_run: items.length,
+      articles_stored_latest_run: items.length,
+      duplicate_articles_skipped_latest_run: 0,
+      failed_source_count: 0,
+      active_sources: 1,
+      last_ingestion: "2026-04-23T00:00:00Z",
+      articles_pending: 0,
+      summaries_pending: 0
+    },
+    thresholds: {
+      min_sources_for_top_stories: 2,
+      min_sources_for_developing_stories: 2,
+      show_just_in_single_source: true,
+      max_top_stories: 6,
+      max_developing_stories: 8,
+      max_just_in: 10
+    }
+  };
+}
+
+function homepageResponse(sections: {
+  top_stories?: StoryCluster[];
+  developing_stories?: StoryCluster[];
+  just_in?: StoryCluster[];
+}) {
+  const items = [
+    ...(sections.top_stories ?? []),
+    ...(sections.developing_stories ?? []),
+    ...(sections.just_in ?? [])
+  ];
+  return {
+    ...clusterResponse(items),
+    sections: {
+      top_stories: sections.top_stories ?? [],
+      developing_stories: sections.developing_stories ?? [],
+      just_in: sections.just_in ?? []
+    },
+    status: {
+      ...clusterResponse(items).status,
+      visible_clusters: (sections.top_stories ?? []).length + (sections.developing_stories ?? []).length,
+      candidate_clusters: (sections.just_in ?? []).length
+    }
   };
 }
 
 function leadCard() {
-  return screen.getAllByTestId("story-card").find((card) => card.getAttribute("data-card-variant") === "featured");
+  return screen.getAllByTestId("story-card").find((card) => card.getAttribute("data-card-variant") === "lead");
 }
 
 afterEach(() => {
@@ -132,28 +160,19 @@ describe("HomePage", () => {
     const pending = new Promise<Response>((resolve) => {
       resolveFetch = resolve;
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        if (String(input).startsWith("/metrics")) {
-          return Promise.resolve(textResponse(""));
-        }
-
-        return pending;
-      })
-    );
+    vi.stubGlobal("fetch", vi.fn(() => pending));
 
     renderHome();
     expect(await screen.findByText("Checking Roundup for current stories")).toBeInTheDocument();
     resolveFetch(jsonResponse(clusterResponse([])));
-    await waitFor(() => expect(screen.getByText("No live stories available")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("No image-ready stories available")).toBeInTheDocument());
   });
 
   it("renders an empty state when the API returns no clusters", async () => {
     mockFetch({ status: 200, body: clusterResponse([]) });
 
     renderHome();
-    expect(await screen.findByText("No live stories available")).toBeInTheDocument();
+    expect(await screen.findByText("No image-ready stories available")).toBeInTheDocument();
   });
 
   it("renders an error state when the API request fails", async () => {
@@ -167,7 +186,7 @@ describe("HomePage", () => {
     expect(screen.getByText(/returned 500/i)).toBeInTheDocument();
   });
 
-  it("uses the highest relevance cluster as the default lead story and renders supporting stories", async () => {
+  it("uses the highest ranked cluster as the default lead story and renders supporting stories", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -185,9 +204,10 @@ describe("HomePage", () => {
 
     const topStories = await screen.findByRole("region", { name: "Top Stories" });
     const cards = within(topStories).getAllByTestId("story-card");
-    expect(cards[0]).toHaveAttribute("data-card-variant", "featured");
+    expect(cards[0]).toHaveAttribute("data-card-variant", "lead");
     expect(cards[0]).toHaveTextContent("Highest score story");
     expect(cards[0]).toHaveTextContent("3 sources");
+    expect(cards[0]).not.toHaveTextContent("0.95");
     expect(within(cards[0]).getByRole("link", { name: /highest score story/i })).toHaveAttribute("href", "/story/cluster-2");
     expect(cards[1]).toHaveTextContent("Second supporting story");
     expect(cards[0].querySelector("img")).toHaveAttribute("src", "https://example.com/lead.jpg");
@@ -213,7 +233,7 @@ describe("HomePage", () => {
     expect(window.localStorage.getItem("roundup-saved-stories-v1")).toBe("[]");
   });
 
-  it("can switch from relevance sorting to latest sorting", async () => {
+  it("can switch from top story sorting to latest update sorting", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -225,12 +245,12 @@ describe("HomePage", () => {
     renderHome();
     await waitFor(() => expect(leadCard()).toHaveTextContent("Older but higher score"));
 
-    fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "latest" } });
+    fireEvent.click(screen.getByRole("button", { name: /sort: latest updates/i }));
 
     await waitFor(() => expect(leadCard()).toHaveTextContent("Newer but lower score"));
   });
 
-  it("filters the homepage by real cluster topic values", async () => {
+  it("hides topic filtering until cluster taxonomy is reliable", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -241,25 +261,25 @@ describe("HomePage", () => {
 
     renderHome();
     expect(await screen.findByText("World story")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "Technology" } });
-
-    expect(await screen.findByText("Technology story")).toBeInTheDocument();
-    expect(screen.queryByText("World story")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Topic")).not.toBeInTheDocument();
   });
 
   it("prioritizes developing stories by is_developing and latest update after top stories", async () => {
     mockFetch({
       status: 200,
-      body: clusterResponse([
-        buildCluster("cluster-1", "Lead", 0.99, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-2", "Support one", 0.9, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-3", "Support two", 0.89, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-4", "Support three", 0.88, "2026-04-23T00:00:00Z"),
-        buildCluster("cluster-5", "Developing older", 0.5, "2026-04-23T01:00:00Z", { is_developing: true }),
-        buildCluster("cluster-6", "Developing newer", 0.4, "2026-04-23T03:00:00Z", { is_developing: true }),
-        buildCluster("cluster-7", "Recent active", 0.7, "2026-04-23T04:00:00Z")
-      ])
+      body: homepageResponse({
+        top_stories: [
+          buildCluster("cluster-1", "Lead", 0.99, "2026-04-23T00:00:00Z"),
+          buildCluster("cluster-2", "Support one", 0.9, "2026-04-23T00:00:00Z"),
+          buildCluster("cluster-3", "Support two", 0.89, "2026-04-23T00:00:00Z"),
+          buildCluster("cluster-4", "Support three", 0.88, "2026-04-23T00:00:00Z")
+        ],
+        developing_stories: [
+          buildCluster("cluster-5", "Developing older", 0.5, "2026-04-23T01:00:00Z", { is_developing: true }),
+          buildCluster("cluster-6", "Developing newer", 0.4, "2026-04-23T03:00:00Z", { is_developing: true }),
+          buildCluster("cluster-7", "Recent active", 0.7, "2026-04-23T04:00:00Z")
+        ]
+      })
     });
 
     renderHome();
@@ -271,19 +291,47 @@ describe("HomePage", () => {
     expect(cards[2]).toHaveTextContent("Recent active");
   });
 
-  it("renders a placeholder visual when no image is available", async () => {
+  it("renders just in candidate stories with a public detail link", async () => {
     mockFetch({
       status: 200,
-      body: clusterResponse([buildCluster("cluster-1", "Image missing story", 0.9, "2026-04-23T02:00:00Z")])
+      body: homepageResponse({
+        just_in: [
+          buildCluster("candidate-1", "Single source item", 1, "2026-04-23T04:00:00Z", {
+            status: "hidden",
+            visibility: "candidate",
+            visibility_label: "Single source",
+            is_single_source: true
+          })
+        ]
+      })
     });
 
     renderHome();
-    await screen.findByText("Image missing story");
 
-    const lead = leadCard();
-    expect(lead).toBeTruthy();
-    expect((lead as HTMLElement).querySelector("img")).toBeNull();
-    expect(within(lead as HTMLElement).getByText("W")).toBeInTheDocument();
+    const justIn = await screen.findByRole("region", { name: "Just In" });
+    const card = within(justIn).getByTestId("story-card");
+    expect(card).toHaveTextContent("Single source item");
+    expect(card).toHaveTextContent("Single source");
+    expect(within(card).getByRole("link", { name: /single source item/i })).toHaveAttribute(
+      "href",
+      "/story/candidate-1"
+    );
+  });
+
+  it("does not render clusters without thumbnails on the homepage", async () => {
+    mockFetch({
+      status: 200,
+      body: clusterResponse([
+        buildCluster("cluster-1", "Image missing story", 0.9, "2026-04-23T02:00:00Z", {
+          primary_image_url: null,
+          thumbnail_urls: []
+        })
+      ])
+    });
+
+    renderHome();
+    expect(await screen.findByText("No image-ready stories available")).toBeInTheDocument();
+    expect(screen.queryByText("Image missing story")).not.toBeInTheDocument();
   });
 
   it("expands all fetched clusters from the View all clusters action", async () => {
@@ -310,14 +358,11 @@ describe("HomePage", () => {
       clusterResponse([buildCluster("cluster-1", "Transit Plan Revised", 0.78, "2026-04-23T01:30:00Z")])
     ];
 
-    const intervalHandlers: Array<{ delay?: number; run: () => void }> = [];
-    vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler, delay?: number) => {
-      intervalHandlers.push({
-        delay,
-        run: () => {
-          if (typeof handler === "function") {
-            handler();
-          }
+    const intervalHandlers: Array<() => void> = [];
+    vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler) => {
+      intervalHandlers.push(() => {
+        if (typeof handler === "function") {
+          handler();
         }
       });
 
@@ -327,11 +372,7 @@ describe("HomePage", () => {
     let callCount = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input).startsWith("/metrics")) {
-          return textResponse("");
-        }
-
+      vi.fn(async () => {
         const payload = responses[Math.min(callCount, responses.length - 1)];
         callCount += 1;
         return jsonResponse(payload);
@@ -341,31 +382,14 @@ describe("HomePage", () => {
     renderHome();
     await waitFor(() => expect(screen.getByText("Transit Plan Advances")).toBeInTheDocument());
     expect(callCount).toBe(1);
+    expect(window.setInterval).toHaveBeenCalledWith(expect.any(Function), 300000);
 
     await act(async () => {
-      intervalHandlers.find((handler) => handler.delay === 30000)?.run();
+      intervalHandlers[0]?.();
     });
 
     await waitFor(() => expect(screen.getByText("Transit Plan Revised")).toBeInTheDocument());
-    expect(screen.getByText("Updated since last refresh")).toBeInTheDocument();
+    expect(screen.getByText("1 updated since last refresh")).toBeInTheDocument();
     expect(callCount).toBe(2);
-  });
-
-  it("labels homepage status chips with separate refresh and pipeline timestamps", async () => {
-    mockFetch({
-      status: 200,
-      body: clusterResponse([buildCluster("cluster-1", "Status story", 0.9, "2026-04-23T02:00:00Z")]),
-      metricsBody: "last_ingest_time 1777152000\nlast_cluster_time 1777152060\n"
-    });
-
-    renderHome();
-    await screen.findByText("Status story");
-
-    expect(screen.getByText("Live feed")).toBeInTheDocument();
-    expect(screen.getByText("Page refreshed")).toBeInTheDocument();
-    expect(screen.getByText("Last ingestion")).toBeInTheDocument();
-    expect(screen.getByText("Last cluster update")).toBeInTheDocument();
-    expect(screen.getByText("Next auto-refresh")).toBeInTheDocument();
-    expect(screen.getAllByText("Top / Most Important").length).toBeGreaterThan(0);
   });
 });

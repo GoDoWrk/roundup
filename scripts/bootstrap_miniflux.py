@@ -232,13 +232,34 @@ class MinifluxBootstrap:
                 logger.info("miniflux_feed_seed_skipped reason=already_exists url=%s", feed.url)
                 continue
 
-            category_id = self._ensure_category(token, feed.category, existing_categories)
+            try:
+                category_id = self._ensure_category(token, feed.category, existing_categories)
+            except httpx.RequestError as exc:
+                failed += 1
+                logger.warning(
+                    "miniflux_feed_seed_failed reason=request_error phase=ensure_category url=%s category=%s error=%s",
+                    feed.url,
+                    feed.category,
+                    exc,
+                )
+                continue
+
             endpoint = f"{self.base_url}/v1/feeds"
-            response = self.client.post(
-                endpoint,
-                headers={"X-Auth-Token": token},
-                json={"feed_url": feed.url, "category_id": category_id},
-            )
+            try:
+                response = self.client.post(
+                    endpoint,
+                    headers={"X-Auth-Token": token},
+                    json={"feed_url": feed.url, "category_id": category_id},
+                )
+            except httpx.RequestError as exc:
+                failed += 1
+                logger.warning(
+                    "miniflux_feed_seed_failed reason=request_error phase=create_feed url=%s category=%s error=%s",
+                    feed.url,
+                    feed.category,
+                    exc,
+                )
+                continue
 
             if response.status_code in {200, 201}:
                 imported += 1

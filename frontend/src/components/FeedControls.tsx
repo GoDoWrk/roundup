@@ -6,6 +6,7 @@ interface FeedControlsProps {
   topicFilter: string;
   onSortModeChange: (mode: SortMode) => void;
   onTopicFilterChange: (topic: string) => void;
+  showTopicFilter?: boolean;
 }
 
 export function FeedControls({
@@ -13,37 +14,45 @@ export function FeedControls({
   topics,
   topicFilter,
   onSortModeChange,
-  onTopicFilterChange
+  onTopicFilterChange,
+  showTopicFilter = false
 }: FeedControlsProps) {
   return (
     <section className="feed-controls" aria-label="Feed controls">
-      <label className="feed-controls__field">
-        <span>Topic</span>
-        <select
-          value={topicFilter}
-          aria-label="Topic"
-          onChange={(event) => onTopicFilterChange(event.target.value)}
-        >
-          <option value="all">All topics</option>
-          {topics.map((topic) => (
-            <option key={topic} value={topic}>
-              {topic}
-            </option>
-          ))}
-        </select>
-      </label>
+      {showTopicFilter && (
+        <label className="feed-controls__filter">
+          <span>Topic</span>
+          <select value={topicFilter} onChange={(event) => onTopicFilterChange(event.target.value)}>
+            <option value="all">All topics</option>
+            {topics.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
-      <label className="feed-controls__field">
-        <span>Sort</span>
-        <select
-          value={sortMode}
-          aria-label="Sort"
-          onChange={(event) => onSortModeChange(event.target.value as SortMode)}
+      <div className="feed-controls__group" role="toolbar" aria-label="Sort stories">
+        <button
+          type="button"
+          className={sortMode === "top" ? "feed-controls__button feed-controls__button--active" : "feed-controls__button"}
+          aria-pressed={sortMode === "top"}
+          onClick={() => onSortModeChange("top")}
         >
-          <option value="top">Top / Most Important</option>
-          <option value="latest">Latest Updates</option>
-        </select>
-      </label>
+          Sort: Top Stories
+        </button>
+        <button
+          type="button"
+          className={
+            sortMode === "latest" ? "feed-controls__button feed-controls__button--active" : "feed-controls__button"
+          }
+          aria-pressed={sortMode === "latest"}
+          onClick={() => onSortModeChange("latest")}
+        >
+          Sort: Latest Updates
+        </button>
+      </div>
     </section>
   );
 }

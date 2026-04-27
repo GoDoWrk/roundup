@@ -1,6 +1,7 @@
 import type {
   ClusterDebugResponse,
   ClusterListResponse,
+  HomepageClustersResponse,
   HealthResponse,
   SearchResponse,
   SourceListResponse,
@@ -26,6 +27,10 @@ export async function fetchClusterList(options: { limit?: number; offset?: numbe
   const limit = options.limit ?? 100;
   const offset = options.offset ?? 0;
   return fetchJson<ClusterListResponse>(`/api/clusters?limit=${limit}&offset=${offset}`);
+}
+
+export async function fetchHomepageClusters(): Promise<HomepageClustersResponse> {
+  return fetchJson<HomepageClustersResponse>("/api/clusters/homepage");
 }
 
 export async function fetchClusterDetail(clusterId: string): Promise<StoryCluster | null> {

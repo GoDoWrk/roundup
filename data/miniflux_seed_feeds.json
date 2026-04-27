@@ -1,34 +1,506 @@
 [
   {
-    "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
-    "category": "World News"
-  },
-  {
-    "url": "https://feeds.npr.org/1001/rss.xml",
-    "category": "World News"
-  },
-  {
-    "url": "https://www.aljazeera.com/xml/rss/all.xml",
-    "category": "World News"
-  },
-  {
-    "url": "https://www.theguardian.com/world/rss",
-    "category": "World News"
-  },
-  {
-    "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-    "category": "World News"
+    "url": "https://feeds.apnews.com/apnews/topnews",
+    "category": "Top News"
   },
   {
     "url": "https://feeds.apnews.com/apnews/worldnews",
     "category": "World News"
   },
   {
+    "url": "https://feeds.apnews.com/apnews/usnews",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://feeds.apnews.com/apnews/politics",
+    "category": "Politics"
+  },
+  {
+    "url": "https://feeds.apnews.com/apnews/business",
+    "category": "Business"
+  },
+  {
+    "url": "https://feeds.apnews.com/apnews/science",
+    "category": "Science"
+  },
+  {
+    "url": "https://feeds.apnews.com/apnews/technology",
+    "category": "Technology"
+  },
+  {
+    "url": "https://feeds.apnews.com/apnews/health",
+    "category": "Health"
+  },
+  {
+    "url": "https://www.reutersagency.com/feed/?best-topics=top-news&post_type=best",
+    "category": "Top News"
+  },
+  {
     "url": "https://www.reutersagency.com/feed/?best-topics=world&post_type=best",
     "category": "World News"
   },
   {
+    "url": "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
+    "category": "Politics"
+  },
+  {
+    "url": "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best",
+    "category": "Business"
+  },
+  {
+    "url": "https://www.reutersagency.com/feed/?best-topics=tech&post_type=best",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.reutersagency.com/feed/?best-topics=health&post_type=best",
+    "category": "Health"
+  },
+  {
+    "url": "https://www.reutersagency.com/feed/?best-topics=environment&post_type=best",
+    "category": "Climate & Environment"
+  },
+  {
+    "url": "https://feeds.bbci.co.uk/news/rss.xml",
+    "category": "Top News"
+  },
+  {
+    "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "category": "Business"
+  },
+  {
+    "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    "category": "Technology"
+  },
+  {
+    "url": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.aljazeera.com/xml/rss/all.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://www.aljazeera.com/xml/rss/middleeast.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://feeds.npr.org/1001/rss.xml",
+    "category": "Top News"
+  },
+  {
+    "url": "https://feeds.npr.org/1003/rss.xml",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://feeds.npr.org/1004/rss.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://feeds.npr.org/1014/rss.xml",
+    "category": "Politics"
+  },
+  {
+    "url": "https://feeds.npr.org/1006/rss.xml",
+    "category": "Business"
+  },
+  {
+    "url": "https://feeds.npr.org/1007/rss.xml",
+    "category": "Science"
+  },
+  {
+    "url": "https://feeds.npr.org/1019/rss.xml",
+    "category": "Health"
+  },
+  {
+    "url": "https://feeds.npr.org/1017/rss.xml",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/headlines",
+    "category": "Top News"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/politics",
+    "category": "Politics"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/world",
+    "category": "World News"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/economy",
+    "category": "Business"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/science",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/health",
+    "category": "Health"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+    "category": "Top News"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/US.xml",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
+    "category": "Politics"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    "category": "Business"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+    "category": "Technology"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
+    "category": "Science"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Climate.xml",
+    "category": "Climate & Environment"
+  },
+  {
+    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
+    "category": "Health"
+  },
+  {
+    "url": "https://www.theguardian.com/us-news/rss",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://www.theguardian.com/world/rss",
+    "category": "World News"
+  },
+  {
+    "url": "https://www.theguardian.com/us-news/us-politics/rss",
+    "category": "Politics"
+  },
+  {
+    "url": "https://www.theguardian.com/business/rss",
+    "category": "Business"
+  },
+  {
+    "url": "https://www.theguardian.com/technology/rss",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.theguardian.com/environment/rss",
+    "category": "Climate & Environment"
+  },
+  {
+    "url": "https://www.theguardian.com/science/rss",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.theatlantic.com/feed/all/",
+    "category": "Analysis"
+  },
+  {
+    "url": "https://www.newyorker.com/feed/news",
+    "category": "Analysis"
+  },
+  {
+    "url": "https://www.cbsnews.com/latest/rss/main",
+    "category": "Top News"
+  },
+  {
+    "url": "https://www.cbsnews.com/latest/rss/us",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://www.cbsnews.com/latest/rss/world",
+    "category": "World News"
+  },
+  {
+    "url": "https://www.cbsnews.com/latest/rss/politics",
+    "category": "Politics"
+  },
+  {
+    "url": "https://www.nbcnews.com/id/3032091/device/rss/rss.xml",
+    "category": "Top News"
+  },
+  {
+    "url": "https://www.nbcnews.com/id/3032525/device/rss/rss.xml",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://www.nbcnews.com/id/3032506/device/rss/rss.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://www.nbcnews.com/id/3032553/device/rss/rss.xml",
+    "category": "Politics"
+  },
+  {
+    "url": "https://abcnews.go.com/abcnews/topstories",
+    "category": "Top News"
+  },
+  {
+    "url": "https://abcnews.go.com/abcnews/usheadlines",
+    "category": "U.S. News"
+  },
+  {
+    "url": "https://abcnews.go.com/abcnews/internationalheadlines",
+    "category": "World News"
+  },
+  {
+    "url": "https://abcnews.go.com/abcnews/politicsheadlines",
+    "category": "Politics"
+  },
+  {
+    "url": "http://rss.cnn.com/rss/cnn_topstories.rss",
+    "category": "Top News"
+  },
+  {
+    "url": "http://rss.cnn.com/rss/cnn_us.rss",
+    "category": "U.S. News"
+  },
+  {
+    "url": "http://rss.cnn.com/rss/cnn_world.rss",
+    "category": "World News"
+  },
+  {
+    "url": "http://rss.cnn.com/rss/money_latest.rss",
+    "category": "Business"
+  },
+  {
     "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "category": "Business"
+  },
+  {
+    "url": "https://www.cnbc.com/id/10001147/device/rss/rss.html",
+    "category": "Business"
+  },
+  {
+    "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+    "category": "Technology"
+  },
+  {
+    "url": "https://feeds.marketwatch.com/marketwatch/topstories/",
+    "category": "Business"
+  },
+  {
+    "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "category": "Business"
+  },
+  {
+    "url": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+    "category": "Business"
+  },
+  {
+    "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+    "category": "World News"
+  },
+  {
+    "url": "https://feeds.a.dj.com/rss/RSSWSJD.xml",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.ft.com/rss/home/us",
+    "category": "Business"
+  },
+  {
+    "url": "https://www.theverge.com/rss/index.xml",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.wired.com/feed/rss",
+    "category": "Technology"
+  },
+  {
+    "url": "https://feeds.arstechnica.com/arstechnica/index",
+    "category": "Technology"
+  },
+  {
+    "url": "https://techcrunch.com/feed/",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.technologyreview.com/feed/",
+    "category": "Technology"
+  },
+  {
+    "url": "https://www.cybersecuritydive.com/feeds/news/",
+    "category": "Cybersecurity"
+  },
+  {
+    "url": "https://krebsonsecurity.com/feed/",
+    "category": "Cybersecurity"
+  },
+  {
+    "url": "https://www.bleepingcomputer.com/feed/",
+    "category": "Cybersecurity"
+  },
+  {
+    "url": "https://www.cisa.gov/news.xml",
+    "category": "Cybersecurity"
+  },
+  {
+    "url": "https://www.schneier.com/feed/atom/",
+    "category": "Cybersecurity"
+  },
+  {
+    "url": "https://www.science.org/rss/news_current.xml",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.nature.com/nature.rss",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.scientificamerican.com/feed/",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+    "category": "Science"
+  },
+  {
+    "url": "https://www.noaa.gov/rss.xml",
+    "category": "Climate & Environment"
+  },
+  {
+    "url": "https://www.nih.gov/news-events/news-releases/feed.xml",
+    "category": "Health"
+  },
+  {
+    "url": "https://www.cdc.gov/media/rss.htm",
+    "category": "Health"
+  },
+  {
+    "url": "https://www.who.int/feeds/entity/csr/don/en/rss.xml",
+    "category": "Health"
+  },
+  {
+    "url": "https://www.statnews.com/feed/",
+    "category": "Health"
+  },
+  {
+    "url": "https://insideclimatenews.org/feed/",
+    "category": "Climate & Environment"
+  },
+  {
+    "url": "https://grist.org/feed/",
+    "category": "Climate & Environment"
+  },
+  {
+    "url": "https://usa.streetsblog.org/feed",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.planetizen.com/frontpage/feed",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://nextcity.org/feeds/daily",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.smartcitiesdive.com/feeds/news/",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.transportation.gov/rss.xml",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.transit.dot.gov/rss.xml",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.fhwa.dot.gov/pressroom/rss.cfm",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.nhtsa.gov/rss.xml",
+    "category": "Transportation & Cities"
+  },
+  {
+    "url": "https://www.azcentral.com/news/rss/",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://www.azfamily.com/search/?f=rss&t=article&c=news&l=50&s=start_time&sd=desc",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://www.abc15.com/news.rss",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://www.fox10phoenix.com/rss/category/news",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://kjzz.org/rss.xml",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://www.phoenix.gov/newsroom/rss",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://www.azgovernor.gov/rss.xml",
+    "category": "Arizona & Phoenix"
+  },
+  {
+    "url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/headlines/section/topic/HEALTH?hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/search?q=when:1d%20Phoenix%20Arizona&hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/search?q=when:1d%20Arizona%20politics&hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
+  },
+  {
+    "url": "https://news.google.com/rss/search?q=when:1d%20transportation%20infrastructure%20United%20States&hl=en-US&gl=US&ceid=US:en",
+    "category": "Google News"
   }
 ]

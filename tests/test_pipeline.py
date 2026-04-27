@@ -170,6 +170,11 @@ def test_pipeline_skips_malformed_entry_and_ingests_rest(
     stats = db_session.get(PipelineStats, 1)
     assert stats is not None
     assert stats.articles_malformed_total >= 1
+    assert stats.latest_articles_fetched == 2
+    assert stats.latest_articles_stored == 1
+    assert stats.latest_duplicate_articles_skipped == 0
+    assert stats.latest_articles_malformed == 1
+    assert stats.latest_failed_source_count == 0
 
 
 def test_pipeline_survives_miniflux_failure_without_sample(

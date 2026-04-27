@@ -77,6 +77,7 @@ def run_pipeline(session: Session, settings: Settings, *, run_id: str = "manual"
         session,
         ingest_result.ingested,
         ingest_result.deduplicated,
+        fetched=fetched,
         malformed=ingest_result.malformed,
         source_failures=1 if source_failure else 0,
     )

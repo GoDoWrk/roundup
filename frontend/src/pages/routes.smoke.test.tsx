@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
@@ -63,10 +63,9 @@ const debugCluster = {
       title_signal_threshold: 0.72,
       entity_overlap_threshold: 1,
       keyword_overlap_threshold: 2,
-      topic_semantic_score_threshold: 0.38,
-      attach_override_title_similarity_threshold: 0.3,
-      attach_override_time_proximity_threshold: 0.8,
-      min_sources_for_api: 3
+      min_sources_for_api: 3,
+      min_sources_for_top_stories: 2,
+      min_sources_for_developing_stories: 2
     },
     threshold_results: {
       score_threshold_met: true
@@ -78,51 +77,80 @@ const debugCluster = {
       average_title_similarity: 0.8,
       average_entity_jaccard: 0.6,
       average_keyword_jaccard: 0.5,
-      average_semantic_score: 0.66,
       average_time_proximity: 0.9,
-      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity",
-      semantic_formula: "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
+      score_formula: "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
     },
     decision_counts: {
       attach_existing_cluster: 2,
       create_new_cluster: 1
-    },
-    recent_join_decisions: [],
-    warnings: []
+    }
   }
 };
 
 describe("route smoke tests", () => {
   it("renders the public homepage at /", async () => {
     mockFetch({
-      "/api/clusters": {
+      "/api/clusters/homepage": {
         body: {
-          total: 1,
-          limit: 20,
-          offset: 0,
-          items: [
-            {
-              cluster_id: "cluster-1",
-              headline: "Transit Plan Advances",
-              summary: "Multiple sources reported new transit budget details.",
-              what_changed: "More detail was added.",
-              why_it_matters: "Impacts transport access.",
-              timeline: [],
-              sources: [
-                {
-                  article_id: 1,
-                  title: "A",
-                  url: "https://example.com/a",
-                  publisher: "Example",
-                  published_at: "2026-04-22T00:00:00Z"
-                }
-              ],
-              first_seen: "2026-04-22T00:00:00Z",
-              last_updated: "2026-04-22T01:00:00Z",
-              score: 0.72,
-              status: "active"
-            }
-          ]
+          sections: {
+            top_stories: [
+              {
+                cluster_id: "cluster-1",
+                headline: "Transit Plan Advances",
+                summary: "Multiple sources reported new transit budget details.",
+                what_changed: "More detail was added.",
+                why_it_matters: "Impacts transport access.",
+                key_facts: [],
+                timeline: [],
+                timeline_events: [],
+                sources: [
+                  {
+                    article_id: 1,
+                    title: "A",
+                    url: "https://example.com/a",
+                    publisher: "Example",
+                    published_at: "2026-04-22T00:00:00Z"
+                  }
+                ],
+                source_count: 1,
+                primary_image_url: "https://images.example.com/transit.jpg",
+                thumbnail_urls: ["https://images.example.com/transit.jpg"],
+                topic: "Transit",
+                region: null,
+                story_type: "general",
+                first_seen: "2026-04-22T00:00:00Z",
+                last_updated: "2026-04-22T01:00:00Z",
+                is_developing: true,
+                is_breaking: false,
+                confidence_score: 0.72,
+                related_cluster_ids: [],
+                score: 0.72,
+                status: "active"
+              }
+            ],
+            developing_stories: [],
+            just_in: []
+          },
+          status: {
+            visible_clusters: 1,
+            candidate_clusters: 0,
+            articles_fetched_latest_run: 1,
+            articles_stored_latest_run: 1,
+            duplicate_articles_skipped_latest_run: 0,
+            failed_source_count: 0,
+            active_sources: 1,
+            last_ingestion: "2026-04-22T01:00:00Z",
+            articles_pending: 0,
+            summaries_pending: 0
+          },
+          thresholds: {
+            min_sources_for_top_stories: 2,
+            min_sources_for_developing_stories: 2,
+            show_just_in_single_source: true,
+            max_top_stories: 6,
+            max_developing_stories: 8,
+            max_just_in: 10
+          }
         }
       }
     });
@@ -136,19 +164,19 @@ describe("route smoke tests", () => {
 
   it("clicks through from a homepage card into the public story page", async () => {
     mockFetch({
-      "/api/clusters?limit=20&offset=0": {
+      "/api/clusters/homepage": {
         body: {
-          total: 1,
-          limit: 20,
-          offset: 0,
-          items: [
+          sections: {
+            top_stories: [
             {
               cluster_id: "cluster-1",
               headline: "Transit Plan Advances",
               summary: "Multiple sources reported new transit budget details.",
               what_changed: "More detail was added.",
               why_it_matters: "Impacts transport access.",
+              key_facts: [],
               timeline: [],
+              timeline_events: [],
               sources: [
                 {
                   article_id: 1,
@@ -158,12 +186,45 @@ describe("route smoke tests", () => {
                   published_at: "2026-04-22T00:00:00Z"
                 }
               ],
+              source_count: 1,
+              primary_image_url: "https://images.example.com/transit.jpg",
+              thumbnail_urls: ["https://images.example.com/transit.jpg"],
+              topic: "Transit",
+              region: null,
+              story_type: "general",
               first_seen: "2026-04-22T00:00:00Z",
               last_updated: "2026-04-22T01:00:00Z",
+              is_developing: true,
+              is_breaking: false,
+              confidence_score: 0.72,
+              related_cluster_ids: [],
               score: 0.72,
               status: "active"
             }
-          ]
+            ],
+            developing_stories: [],
+            just_in: []
+          },
+          status: {
+            visible_clusters: 1,
+            candidate_clusters: 0,
+            articles_fetched_latest_run: 1,
+            articles_stored_latest_run: 1,
+            duplicate_articles_skipped_latest_run: 0,
+            failed_source_count: 0,
+            active_sources: 1,
+            last_ingestion: "2026-04-22T01:00:00Z",
+            articles_pending: 0,
+            summaries_pending: 0
+          },
+          thresholds: {
+            min_sources_for_top_stories: 2,
+            min_sources_for_developing_stories: 2,
+            show_just_in_single_source: true,
+            max_top_stories: 6,
+            max_developing_stories: 8,
+            max_just_in: 10
+          }
         }
       },
       "/api/clusters/cluster-1": {
@@ -199,15 +260,21 @@ describe("route smoke tests", () => {
     expect(await screen.findByText("A major transit plan moved forward after new budget support.")).toBeInTheDocument();
   });
 
-  it.each([
-    ["/clusters", "Clusters", /^Clusters$/],
-    ["/alerts", "Followed Stories", /^Alerts$/]
-  ])("renders public shell placeholder at %s", async (path, title, linkName) => {
-    renderAt(path);
+  it("redirects the hidden clusters route to the homepage", async () => {
+    renderAt("/clusters");
 
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: linkName })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByRole("heading", { name: "Top Stories" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Home$/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: /^Clusters$/ })).not.toBeInTheDocument();
+  });
+
+  it("redirects the hidden alerts route to saved stories", async () => {
+    renderAt("/alerts");
+
+    expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Saved Stories" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Saved$/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders the public search page at /search", async () => {
@@ -216,7 +283,7 @@ describe("route smoke tests", () => {
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Find stories, updates, and sources" })).toBeInTheDocument();
     expect(screen.getByText("Search live Roundup data")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^Search$/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: /^Search$/ })).not.toBeInTheDocument();
   });
 
   it("renders the saved stories page at /saved", async () => {
@@ -234,20 +301,35 @@ describe("route smoke tests", () => {
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Sources" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Alerts" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Display" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Topics" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /^Settings$/ }).some((link) => link.getAttribute("aria-current") === "page")).toBe(
       true
     );
   });
 
-  it("renders topic placeholder routes and highlights the active topic", async () => {
+  it("keeps primary navigation limited to current product surfaces", async () => {
+    renderAt("/settings");
+
+    const primaryNav = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(within(primaryNav).getByRole("link", { name: /^Home$/ })).toBeInTheDocument();
+    expect(within(primaryNav).getByRole("link", { name: /^Saved$/ })).toBeInTheDocument();
+    expect(within(primaryNav).getByRole("link", { name: /^Inspector$/ })).toBeInTheDocument();
+    expect(within(primaryNav).getByRole("link", { name: /^Settings$/ })).toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: /^Search$/ })).not.toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: /^Alerts$/ })).not.toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: /^Clusters$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Topics" })).not.toBeInTheDocument();
+  });
+
+  it("redirects hidden topic routes to the homepage", async () => {
     renderAt("/topic/world");
 
     expect(screen.getByRole("complementary", { name: /roundup navigation/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "World" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^World$/ })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByRole("heading", { name: "Top Stories" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Home$/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: /^World$/ })).not.toBeInTheDocument();
   });
 
   it("renders the inspector cluster list under /inspect", async () => {
@@ -282,36 +364,12 @@ describe("route smoke tests", () => {
           ]
         }
       },
-      "/debug/clusters": { body: { total: 1, items: [debugCluster] } },
-      "/health": {
-        body: {
-          status: "ok",
-          app: "roundup",
-          db: "ok",
-          miniflux_configured: true,
-          miniflux_reachable: true,
-          miniflux_usable: true,
-          runtime: {
-            api_workers: 1,
-            inspector_worker_processes: 1,
-            scheduler_enabled: true,
-            scheduler_interval_seconds: 600,
-            ingestion_concurrency: 1,
-            summarization_concurrency: 1,
-            clustering_batch_size: 100,
-            clustering_concurrency: 1,
-            ingestion_active: true
-          },
-          timestamp: "2026-04-26T00:00:00Z"
-        }
-      }
+      "/debug/clusters": { body: { total: 1, items: [debugCluster] } }
     });
 
     renderAt("/inspect");
     expect(screen.queryByRole("complementary", { name: /roundup navigation/i })).not.toBeInTheDocument();
     expect(await screen.findByText("Roundup Inspector")).toBeInTheDocument();
-    expect(await screen.findByText("System Health")).toBeInTheDocument();
-    expect(await screen.findByText("Miniflux")).toBeInTheDocument();
     expect(await screen.findByText("Cluster List")).toBeInTheDocument();
   });
 

@@ -1,6 +1,5 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FollowedStoriesProvider } from "../context/FollowedStoriesContext";
 import { SavedStoriesProvider } from "../context/SavedStoriesContext";
 import { UserPreferencesProvider } from "../context/UserPreferencesContext";
 import { ClusterCard } from "./ClusterCard";
@@ -10,8 +9,7 @@ describe("ClusterCard", () => {
   it("omits weak optional fields", () => {
     const { container, getByText } = render(
       <SavedStoriesProvider>
-        <FollowedStoriesProvider>
-          <ClusterCard
+        <ClusterCard
             cluster={{
           cluster_id: "cluster-1",
           headline: "Transit Plan Advances",
@@ -38,21 +36,99 @@ describe("ClusterCard", () => {
           status: "active"
             }}
           />
-        </FollowedStoriesProvider>
       </SavedStoriesProvider>
     );
 
     getByText("Transit Plan Advances");
     expect(container.querySelector(".story-card__summary")).toBeNull();
     expect(container.querySelector(".story-card__score")).toBeNull();
-    expect(getByText(/0 sources/i)).toBeInTheDocument();
+    expect(getByText(/sources pending/i)).toBeInTheDocument();
+  });
+
+  it("keeps raw scores out of consumer cards and uses reader-facing status labels", () => {
+    const { container, getByText, queryByText } = render(
+      <SavedStoriesProvider>
+        <ClusterCard
+          cluster={{
+            cluster_id: "cluster-1",
+            headline: "Transit Plan Advances",
+            topic: "Transit Plan",
+            summary: "Transit summary",
+            what_changed: "",
+            why_it_matters: "",
+            key_facts: [],
+            timeline: [],
+            timeline_events: [],
+            sources: [],
+            source_count: 1,
+            primary_image_url: null,
+            thumbnail_urls: [],
+            region: null,
+            story_type: "general",
+            first_seen: "2026-04-23T00:00:00Z",
+            last_updated: "2026-04-23T00:00:00Z",
+            is_developing: false,
+            is_breaking: false,
+            is_single_source: true,
+            confidence_score: 0.51,
+            related_cluster_ids: [],
+            score: 0.51,
+            status: "hidden",
+            visibility: "candidate",
+            visibility_label: "Confidence 0.51"
+          }}
+        />
+      </SavedStoriesProvider>
+    );
+
+    expect(container.querySelector(".story-card__score")).toBeNull();
+    expect(queryByText("0.51")).not.toBeInTheDocument();
+    expect(queryByText(/confidence/i)).not.toBeInTheDocument();
+    expect(queryByText(/relevance/i)).not.toBeInTheDocument();
+    expect(getByText("Single source")).toBeInTheDocument();
+  });
+
+  it("hides generated placeholder summaries from consumer cards", () => {
+    const { container, queryByText } = render(
+      <SavedStoriesProvider>
+        <ClusterCard
+          cluster={{
+            cluster_id: "cluster-1",
+            headline: "Transit Plan Advances",
+            topic: "Transit Plan",
+            summary: "pending summary",
+            what_changed: "",
+            why_it_matters: "",
+            key_facts: [],
+            timeline: [],
+            timeline_events: [],
+            sources: [],
+            source_count: 2,
+            primary_image_url: null,
+            thumbnail_urls: [],
+            region: null,
+            story_type: "general",
+            first_seen: "2026-04-23T00:00:00Z",
+            last_updated: "2026-04-23T00:00:00Z",
+            is_developing: false,
+            is_breaking: false,
+            confidence_score: 0.8,
+            related_cluster_ids: [],
+            score: 0.8,
+            status: "active"
+          }}
+        />
+      </SavedStoriesProvider>
+    );
+
+    expect(container.querySelector(".story-card__summary")).toBeNull();
+    expect(queryByText(/pending summary/i)).not.toBeInTheDocument();
   });
 
   it("renders and hides a cluster image when the image fails", () => {
-    const { container, getByText } = render(
+    const { container } = render(
       <SavedStoriesProvider>
-        <FollowedStoriesProvider>
-          <ClusterCard
+        <ClusterCard
             cluster={{
           cluster_id: "cluster-1",
           headline: "Transit Plan Advances",
@@ -79,14 +155,11 @@ describe("ClusterCard", () => {
           status: "active"
             }}
           />
-        </FollowedStoriesProvider>
       </SavedStoriesProvider>
     );
 
     const image = container.querySelector(".story-card__image");
     expect(image).toHaveAttribute("src", "https://cdn.example.com/story.jpg");
-    getByText("Relevance 0.80");
-    getByText("Confidence 0.80");
     fireEvent.error(image as Element);
     expect(container.querySelector(".story-card__image")).toBeNull();
   });
@@ -108,8 +181,7 @@ describe("ClusterCard", () => {
     const { container } = render(
       <UserPreferencesProvider>
         <SavedStoriesProvider>
-          <FollowedStoriesProvider>
-            <ClusterCard
+          <ClusterCard
               cluster={{
                 cluster_id: "cluster-1",
                 headline: "Transit Plan Advances",
@@ -136,44 +208,10 @@ describe("ClusterCard", () => {
                 status: "active"
               }}
             />
-          </FollowedStoriesProvider>
         </SavedStoriesProvider>
       </UserPreferencesProvider>
     );
 
     expect(container.querySelector(".story-card__summary")).toBeNull();
-  });
-
-  it("renders safe fallbacks for missing optional runtime fields", () => {
-    const { getByLabelText, getByText } = render(
-      <SavedStoriesProvider>
-        <FollowedStoriesProvider>
-          <ClusterCard
-            cluster={
-              {
-                cluster_id: "cluster-missing",
-                headline: "   ",
-                topic: null,
-                summary: null,
-                sources: null,
-                source_count: null,
-                primary_image_url: null,
-                thumbnail_urls: null,
-                timeline: null,
-                timeline_events: null,
-                last_updated: null,
-                confidence_score: null,
-                score: null
-              } as never
-            }
-          />
-        </FollowedStoriesProvider>
-      </SavedStoriesProvider>
-    );
-
-    getByText("Untitled story");
-    getByText(/0 sources/i);
-    getByText(/0 updates/i);
-    getByLabelText("Save story: Untitled story");
   });
 });

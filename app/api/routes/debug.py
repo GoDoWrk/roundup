@@ -184,6 +184,8 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
             attach_override_title_similarity_threshold=settings.cluster_attach_override_min_title_similarity,
             attach_override_time_proximity_threshold=settings.cluster_attach_override_min_time_proximity,
             min_sources_for_api=settings.cluster_min_sources_for_api,
+            min_sources_for_top_stories=settings.cluster_min_sources_for_top_stories,
+            min_sources_for_developing_stories=settings.cluster_min_sources_for_developing_stories,
         ),
         threshold_results=threshold_results,
         top_shared_entities=shared_entities,

@@ -37,6 +37,7 @@ def api_index() -> ApiIndexResponse:
         endpoints={
             "health": "/health",
             "clusters": "/api/clusters",
+            "homepage_clusters": "/api/clusters/homepage",
             "search": "/api/search?q=...",
             "sources": "/api/sources",
             "debug_clusters": "/debug/clusters",

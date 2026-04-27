@@ -37,7 +37,10 @@ export interface StoryCluster {
   confidence_score: number;
   related_cluster_ids: string[];
   score: number;
-  status: "emerging" | "active" | "stale";
+  status: "emerging" | "active" | "stale" | "hidden";
+  visibility?: "top_story" | "developing" | "candidate" | "public";
+  visibility_label?: string;
+  is_single_source?: boolean;
 }
 
 export interface ClusterListResponse {
@@ -45,6 +48,40 @@ export interface ClusterListResponse {
   limit: number;
   offset: number;
   items: StoryCluster[];
+}
+
+export interface HomepageClusterThresholds {
+  min_sources_for_top_stories: number;
+  min_sources_for_developing_stories: number;
+  show_just_in_single_source: boolean;
+  max_top_stories: number;
+  max_developing_stories: number;
+  max_just_in: number;
+}
+
+export interface HomepagePipelineStatus {
+  visible_clusters: number;
+  candidate_clusters: number;
+  articles_fetched_latest_run: number;
+  articles_stored_latest_run: number;
+  duplicate_articles_skipped_latest_run: number;
+  failed_source_count: number;
+  active_sources: number;
+  last_ingestion: string | null;
+  articles_pending: number;
+  summaries_pending: number;
+}
+
+export interface HomepageClusterSections {
+  top_stories: StoryCluster[];
+  developing_stories: StoryCluster[];
+  just_in: StoryCluster[];
+}
+
+export interface HomepageClustersResponse {
+  sections: HomepageClusterSections;
+  status: HomepagePipelineStatus;
+  thresholds: HomepageClusterThresholds;
 }
 
 export type SearchResultType = "cluster" | "update" | "source";
@@ -135,6 +172,8 @@ export interface ClusterDebugThresholds {
   attach_override_title_similarity_threshold: number;
   attach_override_time_proximity_threshold: number;
   min_sources_for_api: number;
+  min_sources_for_top_stories: number;
+  min_sources_for_developing_stories: number;
 }
 
 export interface ClusterDebugScoreBreakdown {
@@ -210,13 +249,34 @@ export interface ClusterDebugResponse {
 export interface ParsedMetrics {
   articles_ingested_total: number | null;
   articles_deduplicated_total: number | null;
+  articles_malformed_total: number | null;
+  ingest_source_failures_total: number | null;
+  latest_articles_fetched: number | null;
+  latest_articles_stored: number | null;
+  latest_duplicate_articles_skipped: number | null;
+  latest_articles_malformed: number | null;
+  latest_failed_source_count: number | null;
   clusters_created_total: number | null;
   clusters_updated_total: number | null;
+  cluster_candidates_evaluated_total: number | null;
+  cluster_signal_rejected_total: number | null;
+  cluster_attach_decisions_total: number | null;
+  cluster_new_decisions_total: number | null;
+  cluster_low_confidence_new_total: number | null;
+  cluster_validation_rejected_total: number | null;
   clusters_promoted_total: number | null;
   clusters_hidden_total: number | null;
   clusters_active_total: number | null;
   cluster_promotion_attempts_total: number | null;
   cluster_promotion_failures_total: number | null;
+  latest_candidate_clusters_created: number | null;
+  latest_clusters_updated: number | null;
+  latest_clusters_hidden: number | null;
+  latest_clusters_promoted: number | null;
+  latest_visible_clusters: number | null;
+  articles_pending_clustering: number | null;
+  summaries_pending: number | null;
+  active_sources: number | null;
   last_ingest_time: number | null;
   last_cluster_time: number | null;
 }

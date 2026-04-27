@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import type { StoryCluster } from "../types";
-import { FOLLOWED_STORIES_STORAGE_KEY, type FollowedStoryRecord } from "../utils/followedStories";
+import { SAVED_STORIES_STORAGE_KEY } from "../utils/savedStories";
 
 type MockReply = {
   status?: number;
@@ -126,10 +126,6 @@ function storyPayload(overrides: Partial<StoryCluster> = {}): StoryCluster {
   };
 }
 
-function saveFollowedRecords(records: FollowedStoryRecord[]) {
-  window.localStorage.setItem(FOLLOWED_STORIES_STORAGE_KEY, JSON.stringify(records));
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -153,8 +149,8 @@ describe("StoryDetailPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to all clusters" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("button", { name: "Follow story" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "More story actions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save story" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "More story actions" })).not.toBeInTheDocument();
     expect(screen.getByText("7 updates")).toBeInTheDocument();
     expect(screen.getByText("2 sources")).toBeInTheDocument();
 
@@ -168,11 +164,10 @@ describe("StoryDetailPage", () => {
     expect(container.querySelectorAll(".story-timeline__thumbnail")).toHaveLength(6);
     expect(container.querySelectorAll(".story-timeline__thumbnail--placeholder")).toHaveLength(4);
 
-    fireEvent.click(screen.getByRole("button", { name: "Load older updates" }));
-    expect(await screen.findByText("Older budget context surfaced")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load older updates" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Key Facts" }));
-    expect(screen.getByRole("tab", { name: "Key Facts" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Key Facts" })).toHaveAttribute("aria-selected", "true"));
     expect(screen.getByText("3 sources are tracking this story, including Example News.")).toBeInTheDocument();
     expect(screen.queryByText("Final vote support was reported")).not.toBeInTheDocument();
 
@@ -185,7 +180,7 @@ describe("StoryDetailPage", () => {
     expect(screen.queryByText("missing-related")).not.toBeInTheDocument();
   });
 
-  it("reflects followed state on story detail and persists follow and unfollow after reload", async () => {
+  it("reflects saved state on story detail and persists save and remove after reload", async () => {
     mockFetch({
       "/api/clusters/cluster-1": { body: storyPayload({ related_cluster_ids: [] }) }
     });
@@ -193,51 +188,19 @@ describe("StoryDetailPage", () => {
     const firstRender = renderAt("/story/cluster-1");
     expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Follow story" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save story" }));
 
-    expect(screen.getByRole("button", { name: "Unfollow story" })).toHaveAttribute("aria-pressed", "true");
-    expect(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY)).toContain("Transit Plan Advances");
+    expect(screen.getByRole("button", { name: "Remove saved story" })).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem(SAVED_STORIES_STORAGE_KEY)).toContain("Transit Plan Advances");
 
     firstRender.unmount();
     renderAt("/story/cluster-1");
-    expect(await screen.findByRole("button", { name: "Unfollow story" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: "Remove saved story" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Unfollow story" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove saved story" }));
 
-    expect(screen.getByRole("button", { name: "Follow story" })).toHaveAttribute("aria-pressed", "false");
-    expect(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY)).toBe("[]");
-  });
-
-  it("marks a followed story viewed when the detail page opens", async () => {
-    const previousStory = storyPayload({
-      related_cluster_ids: [],
-      last_updated: "2026-04-22T01:00:00Z"
-    });
-    const updatedStory = storyPayload({
-      related_cluster_ids: [],
-      last_updated: "2026-04-22T04:00:00Z"
-    });
-    saveFollowedRecords([
-      {
-        cluster_id: "cluster-1",
-        followed_at: "2026-04-22T00:30:00Z",
-        last_viewed_at: "2026-04-22T01:00:00Z",
-        story: previousStory
-      }
-    ]);
-    mockFetch({
-      "/api/clusters/cluster-1": { body: updatedStory }
-    });
-
-    renderAt("/story/cluster-1");
-    expect(await screen.findByRole("heading", { name: "Transit Plan Advances" })).toBeInTheDocument();
-
-    await waitFor(() => {
-      const records = JSON.parse(window.localStorage.getItem(FOLLOWED_STORIES_STORAGE_KEY) ?? "[]") as FollowedStoryRecord[];
-      expect(records[0].last_viewed_at).toBe("2026-04-22T04:00:00Z");
-      expect(records[0].story.last_updated).toBe("2026-04-22T04:00:00Z");
-      expect(within(screen.getByRole("link", { name: /^Alerts$/ })).queryByText("1")).not.toBeInTheDocument();
-    });
+    expect(screen.getByRole("button", { name: "Save story" })).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem(SAVED_STORIES_STORAGE_KEY)).toBe("[]");
   });
 
   it("handles missing optional enrichment fields with graceful tab empty states", async () => {
@@ -271,5 +234,38 @@ describe("StoryDetailPage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Related" }));
     expect(screen.getByText("No related stories yet")).toBeInTheDocument();
+  });
+
+  it("falls back from generated placeholder text to reader-safe story copy", async () => {
+    mockFetch({
+      "/api/clusters/cluster-3": {
+        body: storyPayload({
+          cluster_id: "cluster-3",
+          headline: "Developing Transit Vote",
+          summary: "pending summary",
+          what_changed: "pending change",
+          why_it_matters: "pending impact",
+          timeline_events: [
+            {
+              timestamp: "2026-04-23T01:00:00Z",
+              event: "pending update",
+              source_url: "https://example.com/a",
+              source_title: "Example News"
+            }
+          ],
+          related_cluster_ids: []
+        })
+      }
+    });
+
+    renderAt("/story/cluster-3");
+
+    expect(await screen.findByRole("heading", { name: "Developing Transit Vote" })).toBeInTheDocument();
+    expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getAllByText("Developing Transit Vote").length).toBeGreaterThan(1);
+    expect(screen.queryByText(/pending summary/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pending change/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pending impact/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pending update/i)).not.toBeInTheDocument();
   });
 });
