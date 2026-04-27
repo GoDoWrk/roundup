@@ -167,11 +167,13 @@ export interface ClusterDebugThresholds {
   score_threshold: number;
   title_signal_threshold: number;
   entity_overlap_threshold: number;
+  primary_entity_overlap_required: boolean;
   keyword_overlap_threshold: number;
   topic_semantic_score_threshold: number;
   attach_override_title_similarity_threshold: number;
   attach_override_time_proximity_threshold: number;
   min_sources_for_api: number;
+  min_distinct_sources_for_api: number;
   min_sources_for_top_stories: number;
   min_sources_for_developing_stories: number;
 }
@@ -202,11 +204,22 @@ export interface ClusterDebugJoinDecision {
   entity_overlap: number;
   keyword_overlap: number;
   location_overlap: number;
+  title_token_overlap: number;
   source_match: boolean;
   topic_match: boolean;
+  primary_entity_overlap: boolean;
+  title_primary_entity_overlap: boolean;
+  near_duplicate_title: boolean;
+  same_source_update_chain: boolean;
   time_proximity: number;
   signal_gate_passed: boolean;
   signal_reasons: string[];
+  source_quality_reasons: string[];
+  source_trust: string;
+  article_content_class: string;
+  cluster_content_class: string;
+  candidate_rejection_reason: string | null;
+  membership_rejection_status: string | null;
   warnings: string[];
 }
 
@@ -219,6 +232,8 @@ export interface ClusterDebugExplanation {
   score_breakdown: ClusterDebugScoreBreakdown;
   decision_counts: Record<string, number>;
   recent_join_decisions: ClusterDebugJoinDecision[];
+  source_quality_summary: Record<string, number>;
+  content_class_summary: Record<string, number>;
   warnings: string[];
 }
 
@@ -252,10 +267,24 @@ export interface ParsedMetrics {
   articles_malformed_total: number | null;
   ingest_source_failures_total: number | null;
   latest_articles_fetched: number | null;
+  configured_feed_count: number | null;
+  active_feed_count: number | null;
+  feeds_checked: number | null;
+  feeds_with_new_articles: number | null;
+  miniflux_entries_seen: number | null;
+  articles_fetched_raw: number | null;
   latest_articles_stored: number | null;
+  articles_stored: number | null;
   latest_duplicate_articles_skipped: number | null;
+  duplicate_articles_skipped: number | null;
   latest_articles_malformed: number | null;
+  articles_rejected_quality: number | null;
+  articles_rejected_stale: number | null;
+  articles_rejected_service_finance: number | null;
   latest_failed_source_count: number | null;
+  candidate_clusters_created: number | null;
+  clusters_promoted: number | null;
+  clusters_hidden: number | null;
   clusters_created_total: number | null;
   clusters_updated_total: number | null;
   cluster_candidates_evaluated_total: number | null;

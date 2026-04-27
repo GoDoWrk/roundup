@@ -42,6 +42,218 @@ def _sample_entries() -> list[dict]:
     ]
 
 
+def _recent_entry(entry_id: int, feed_id: int, title: str, category: str = "Top News", url: str | None = None) -> dict:
+    return {
+        "id": entry_id,
+        "title": title,
+        "url": url or f"https://example.com/{feed_id}/{entry_id}",
+        "published_at": datetime.now(timezone.utc).isoformat(),
+        "content": f"{title} detailed report from source {feed_id}.",
+        "feed": {"id": feed_id, "title": f"Feed {feed_id}", "category": {"title": category}},
+    }
+
+
+def _feed(feed_id: int, title: str, category: str = "Top News") -> dict:
+    return {
+        "id": feed_id,
+        "title": title,
+        "feed_url": f"https://example.com/{feed_id}.xml",
+        "category": {"title": category},
+        "disabled": False,
+    }
+
+
+def _wire_miniflux(
+    monkeypatch: pytest.MonkeyPatch,
+    feed_entries: dict[int, list[dict]],
+    feeds: list[dict] | None = None,
+) -> None:
+    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_feeds", lambda self: feeds or [_feed(1, "Feed")])
+
+    def _fetch_feed_entries(self, feed_id: int, *, limit: int, offset: int = 0):
+        return feed_entries.get(feed_id, [])[offset : offset + limit]
+
+    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_feed_entries", _fetch_feed_entries)
+
+
+def test_pipeline_ingests_beyond_legacy_global_100_cap(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    feeds = [_feed(feed_id, f"Feed {feed_id}", "World" if feed_id % 2 else "Local") for feed_id in range(1, 13)]
+    feed_entries = {
+        feed["id"]: [
+            _recent_entry(feed["id"] * 100 + index, feed["id"], f"City Council briefing update {feed['id']}-{index}")
+            for index in range(10)
+        ]
+        for feed in feeds
+    }
+    _wire_miniflux(monkeypatch, feed_entries, feeds=feeds)
+    settings = _settings(
+        tmp_path,
+        ingest_max_total_articles=120,
+        ingest_max_articles_per_feed=10,
+        clustering_batch_size=200,
+    )
+
+    result = run_pipeline(db_session, settings, run_id="beyond-100")
+
+    assert result.fetched == 120
+    assert result.ingested == 120
+    stats = db_session.get(PipelineStats, 1)
+    assert stats is not None
+    assert stats.configured_feed_count == 12
+    assert stats.active_feed_count == 12
+    assert stats.feeds_checked == 12
+    assert stats.miniflux_entries_seen == 120
+    assert stats.articles_fetched_raw == 120
+    assert stats.latest_articles_fetched == 120
+
+
+def test_pipeline_respects_per_feed_cap(db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    feeds = [_feed(1, "High Volume Local", "Local")]
+    feed_entries = {1: [_recent_entry(1000 + index, 1, f"Phoenix budget update {index}") for index in range(20)]}
+    _wire_miniflux(monkeypatch, feed_entries, feeds=feeds)
+    settings = _settings(tmp_path, ingest_max_total_articles=1000, ingest_max_articles_per_feed=3)
+
+    result = run_pipeline(db_session, settings, run_id="per-feed-cap")
+
+    assert result.fetched == 3
+    assert result.ingested == 3
+    assert db_session.scalar(select(func.count()).select_from(Article)) == 3
+
+
+def test_pipeline_reports_duplicates_from_balanced_feed_fetch(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    feeds = [_feed(1, "Local One", "Local"), _feed(2, "Local Two", "Local")]
+    shared_url = "https://example.com/shared/phoenix-council"
+    feed_entries = {
+        1: [_recent_entry(1, 1, "Phoenix council approves transit grant", url=shared_url)],
+        2: [_recent_entry(2, 2, "Phoenix council approves transit grant update", url=shared_url)],
+    }
+    _wire_miniflux(monkeypatch, feed_entries, feeds=feeds)
+    settings = _settings(tmp_path, ingest_max_total_articles=10, ingest_max_articles_per_feed=2)
+
+    result = run_pipeline(db_session, settings, run_id="duplicates")
+
+    assert result.fetched == 2
+    assert result.ingested == 1
+    assert result.deduplicated == 1
+    stats = db_session.get(PipelineStats, 1)
+    assert stats is not None
+    assert stats.latest_duplicate_articles_skipped == 1
+
+
+def test_pipeline_deduplicates_existing_articles_on_repeated_runs(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    feeds = [_feed(1, "Local One", "Local")]
+    feed_entries = {1: [_recent_entry(1, 1, "Phoenix council approves transit grant")]}
+    _wire_miniflux(monkeypatch, feed_entries, feeds=feeds)
+    settings = _settings(tmp_path, ingest_max_total_articles=10, ingest_max_articles_per_feed=2)
+
+    first = run_pipeline(db_session, settings, run_id="dedupe-first")
+    second = run_pipeline(db_session, settings, run_id="dedupe-second")
+
+    assert first.ingested == 1
+    assert second.fetched == 1
+    assert second.ingested == 0
+    assert second.deduplicated == 1
+    assert db_session.scalar(select(func.count()).select_from(Article)) == 1
+    stats = db_session.get(PipelineStats, 1)
+    assert stats is not None
+    assert stats.latest_duplicate_articles_skipped == 1
+
+
+def test_pipeline_continues_when_one_miniflux_feed_fails(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    feeds = [_feed(1, "Broken Feed", "World"), _feed(2, "Reliable Feed", "Local")]
+    feed_entries = {2: [_recent_entry(20, 2, "Phoenix officials approve heat relief plan", "Local")]}
+    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_feeds", lambda self: feeds)
+
+    def _fetch_feed_entries(self, feed_id: int, *, limit: int, offset: int = 0):
+        if feed_id == 1:
+            raise MinifluxRequestError("feed read timed out")
+        return feed_entries.get(feed_id, [])[offset : offset + limit]
+
+    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_feed_entries", _fetch_feed_entries)
+    settings = _settings(tmp_path, ingest_max_total_articles=10, ingest_max_articles_per_feed=2)
+
+    result = run_pipeline(db_session, settings, run_id="partial-miniflux-failure")
+
+    assert result.ingestion_source == "miniflux"
+    assert result.fetched == 1
+    assert result.ingested == 1
+    assert result.source_failures == 1
+    assert db_session.scalar(select(func.count()).select_from(Article)) == 1
+    stats = db_session.get(PipelineStats, 1)
+    assert stats is not None
+    assert stats.configured_feed_count == 2
+    assert stats.active_feed_count == 2
+    assert stats.feeds_checked == 2
+    assert stats.feeds_with_new_articles == 1
+    assert stats.latest_failed_source_count == 1
+    assert stats.miniflux_entries_seen == 1
+
+
+def test_pipeline_balances_categories_so_high_volume_feed_does_not_crowd_out_low_volume_sources(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    feeds = [
+        _feed(1, "High Volume Business", "Business"),
+        _feed(2, "Local Public Radio", "Local"),
+        _feed(3, "World Wire", "World"),
+    ]
+    feed_entries = {
+        1: [_recent_entry(100 + index, 1, f"Company earnings update {index}", "Business") for index in range(10)],
+        2: [_recent_entry(200, 2, "Phoenix council approves heat plan", "Local")],
+        3: [_recent_entry(300, 3, "UN envoy briefs Security Council", "World")],
+    }
+    _wire_miniflux(monkeypatch, feed_entries, feeds=feeds)
+    settings = _settings(
+        tmp_path,
+        ingest_max_total_articles=3,
+        ingest_max_articles_per_feed=10,
+        ingest_category_quotas_enabled=True,
+    )
+
+    result = run_pipeline(db_session, settings, run_id="category-balance")
+
+    assert result.fetched == 3
+    stored_publishers = set(db_session.scalars(select(Article.publisher)).all())
+    assert stored_publishers == {"Feed 1", "Feed 2", "Feed 3"}
+
+
+def test_pipeline_metrics_report_raw_seen_stored_rejected_and_clustered(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    feeds = [_feed(1, "Mixed Feed", "Business")]
+    feed_entries = {
+        1: [
+            _recent_entry(1, 1, "Federal Reserve officials signal rate decision", "Business"),
+            _recent_entry(2, 1, "The 7 best high-yield savings accounts of April 2023", "Business"),
+        ]
+    }
+    _wire_miniflux(monkeypatch, feed_entries, feeds=feeds)
+    settings = _settings(tmp_path, ingest_max_total_articles=10, ingest_max_articles_per_feed=10)
+
+    result = run_pipeline(db_session, settings, run_id="detailed-metrics")
+
+    assert result.fetched == 2
+    assert result.ingested == 1
+    assert result.rejected == 1
+    stats = db_session.get(PipelineStats, 1)
+    assert stats is not None
+    assert stats.miniflux_entries_seen == 2
+    assert stats.articles_fetched_raw == 2
+    assert stats.latest_articles_stored == 1
+    assert stats.articles_rejected_quality == 1
+    assert stats.articles_rejected_stale == 1
+    assert stats.articles_rejected_service_finance == 1
+    assert stats.latest_candidate_clusters_created >= 1
+
+
 def _sample_three_entries() -> list[dict]:
     return [
         {
@@ -77,7 +289,7 @@ def _sample_three_entries() -> list[dict]:
 def test_pipeline_handles_zero_new_articles(db_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_entries", lambda self, limit: [])
+    _wire_miniflux(monkeypatch, {1: []})
 
     result = run_pipeline(db_session, settings, run_id="zero")
 
@@ -94,10 +306,10 @@ def test_pipeline_does_not_fallback_to_sample_when_miniflux_is_configured(
     sample_path.write_text(json.dumps(_sample_entries()), encoding="utf-8")
     settings = _settings(tmp_path, sample_miniflux_data_path=str(sample_path))
 
-    def _raise(self, limit: int):
+    def _raise(self):
         raise MinifluxRequestError("boom")
 
-    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_entries", _raise)
+    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_feeds", _raise)
 
     result = run_pipeline(db_session, settings, run_id="miniflux-failure")
 
@@ -136,7 +348,7 @@ def test_pipeline_skips_malformed_entry_and_ingests_rest(
             "id": 1,
             "title": "Valid entry",
             "url": "https://example.com/valid",
-            "published_at": "2026-04-22T10:00:00Z",
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "content": "Body",
             "feed": {"title": "Feed"},
         },
@@ -150,7 +362,7 @@ def test_pipeline_skips_malformed_entry_and_ingests_rest(
         },
     ]
 
-    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_entries", lambda self, limit: entries)
+    _wire_miniflux(monkeypatch, {1: entries})
 
     result = run_pipeline(db_session, settings, run_id="malformed")
 
@@ -165,7 +377,6 @@ def test_pipeline_skips_malformed_entry_and_ingests_rest(
     assert article.title == "Valid entry"
     assert article.url == "https://example.com/valid"
     assert article.publisher == "Feed"
-    assert article.published_at.isoformat().startswith("2026-04-22T10:00:00")
 
     stats = db_session.get(PipelineStats, 1)
     assert stats is not None
@@ -182,10 +393,10 @@ def test_pipeline_survives_miniflux_failure_without_sample(
 ) -> None:
     settings = _settings(tmp_path, sample_miniflux_data_path=None)
 
-    def _raise(self, limit: int):
+    def _raise(self):
         raise MinifluxRequestError("unavailable")
 
-    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_entries", _raise)
+    monkeypatch.setattr("app.services.miniflux_client.MinifluxClient.fetch_feeds", _raise)
 
     result = run_pipeline(db_session, settings, run_id="source-error")
 

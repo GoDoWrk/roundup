@@ -7,25 +7,46 @@ import time
 from dataclasses import dataclass
 from ipaddress import ip_address
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import httpx
+
+from app.core.logging import SecretRedactionFilter
 
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
+_redaction_filter = SecretRedactionFilter()
+logging.getLogger().addFilter(_redaction_filter)
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_redaction_filter)
 logger = logging.getLogger("bootstrap_miniflux")
+
+SECRET_QUERY_KEYS = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth",
+    "auth_token",
+    "key",
+    "password",
+    "secret",
+    "token",
+}
 
 
 @dataclass(frozen=True)
 class SeedFeed:
     url: str
     category: str
+    priority: str = "normal"
+    allow_service_content: bool = False
+    promote_to_home: bool = True
 
 
-def _is_safe_feed_url(feed_url: str) -> bool:
+def _is_safe_feed_url(feed_url: str, *, allow_private_network: bool = False) -> bool:
     parsed = urlparse(feed_url.strip())
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         return False
@@ -34,12 +55,22 @@ def _is_safe_feed_url(feed_url: str) -> bool:
     if not hostname:
         return False
 
-    if hostname == "localhost" or hostname.endswith(".localhost"):
+    if parsed.username or parsed.password:
         return False
+
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    if any(key.strip().lower() in SECRET_QUERY_KEYS for key, _ in query_pairs):
+        return False
+
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return allow_private_network
 
     try:
         address = ip_address(hostname)
     except ValueError:
+        return True
+
+    if allow_private_network:
         return True
 
     return not (
@@ -52,7 +83,19 @@ def _is_safe_feed_url(feed_url: str) -> bool:
     )
 
 
-def _load_seed_feeds(path: Path, default_category: str) -> list[SeedFeed]:
+def _seed_bool(value: object, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y"}:
+            return True
+        if normalized in {"false", "0", "no", "n"}:
+            return False
+    return default
+
+
+def _load_seed_feeds(path: Path, default_category: str, *, allow_private_network: bool = False) -> list[SeedFeed]:
     if not path.exists():
         raise RuntimeError(f"Feed seed file does not exist: {path}")
 
@@ -66,9 +109,23 @@ def _load_seed_feeds(path: Path, default_category: str) -> list[SeedFeed]:
         if isinstance(item, str):
             feed_url = item.strip()
             category = default_category
+            priority = "normal"
+            allow_service_content = False
+            promote_to_home = True
         elif isinstance(item, dict):
             feed_url = str(item.get("url", "")).strip()
             category = str(item.get("category", "")).strip() or default_category
+            priority = str(item.get("priority", "normal")).strip().lower()
+            if priority not in {"high", "normal", "low"}:
+                logger.warning(
+                    "miniflux_seed_feed_priority_defaulted reason=invalid_priority url=%s priority=%s index=%s",
+                    feed_url,
+                    priority,
+                    idx,
+                )
+                priority = "normal"
+            allow_service_content = _seed_bool(item.get("allow_service_content"), False)
+            promote_to_home = _seed_bool(item.get("promote_to_home"), True)
         else:
             raise RuntimeError(f"Feed seed entry #{idx} must be a string or object.")
 
@@ -76,7 +133,7 @@ def _load_seed_feeds(path: Path, default_category: str) -> list[SeedFeed]:
             logger.warning("miniflux_seed_feed_skipped reason=missing_url index=%s", idx)
             continue
 
-        if not _is_safe_feed_url(feed_url):
+        if not _is_safe_feed_url(feed_url, allow_private_network=allow_private_network):
             logger.warning("miniflux_seed_feed_skipped reason=unsafe_url url=%s index=%s", feed_url, idx)
             continue
 
@@ -86,7 +143,15 @@ def _load_seed_feeds(path: Path, default_category: str) -> list[SeedFeed]:
             continue
 
         seen.add(key)
-        parsed.append(SeedFeed(url=feed_url, category=category))
+        parsed.append(
+            SeedFeed(
+                url=feed_url,
+                category=category,
+                priority=priority,
+                allow_service_content=allow_service_content,
+                promote_to_home=promote_to_home,
+            )
+        )
 
     return parsed
 
@@ -152,7 +217,11 @@ class MinifluxBootstrap:
 
     def verify_api_token(self, token: str) -> bool:
         endpoint = f"{self.base_url}/v1/me"
-        response = self.client.get(endpoint, headers={"X-Auth-Token": token})
+        try:
+            response = self.client.get(endpoint, headers={"X-Auth-Token": token})
+        except httpx.RequestError as exc:
+            logger.warning("miniflux_api_key_verify_failed reason=request_error endpoint=%s error=%s", endpoint, exc)
+            return False
         return response.status_code == 200
 
     def create_api_key(self, description: str) -> str:
@@ -234,10 +303,10 @@ class MinifluxBootstrap:
 
             try:
                 category_id = self._ensure_category(token, feed.category, existing_categories)
-            except httpx.RequestError as exc:
+            except (RuntimeError, httpx.RequestError) as exc:
                 failed += 1
                 logger.warning(
-                    "miniflux_feed_seed_failed reason=request_error phase=ensure_category url=%s category=%s error=%s",
+                    "miniflux_feed_seed_failed reason=category_error phase=ensure_category url=%s category=%s error=%s",
                     feed.url,
                     feed.category,
                     exc,
@@ -264,7 +333,14 @@ class MinifluxBootstrap:
             if response.status_code in {200, 201}:
                 imported += 1
                 existing_feed_urls.add(normalized_url)
-                logger.info("miniflux_feed_seed_imported url=%s category=%s", feed.url, feed.category)
+                logger.info(
+                    "miniflux_feed_seed_imported url=%s category=%s priority=%s allow_service_content=%s promote_to_home=%s",
+                    feed.url,
+                    feed.category,
+                    feed.priority,
+                    feed.allow_service_content,
+                    feed.promote_to_home,
+                )
                 continue
 
             body_lower = response.text.lower()
@@ -287,7 +363,11 @@ class MinifluxBootstrap:
 
     def trigger_refresh(self, token: str) -> None:
         endpoint = f"{self.base_url}/v1/feeds/refresh"
-        response = self.client.put(endpoint, headers={"X-Auth-Token": token})
+        try:
+            response = self.client.put(endpoint, headers={"X-Auth-Token": token})
+        except httpx.RequestError as exc:
+            logger.warning("miniflux_refresh_all_feeds_failed reason=request_error endpoint=%s error=%s", endpoint, exc)
+            return
         if response.status_code not in {200, 202, 204}:
             logger.warning(
                 "miniflux_refresh_all_feeds_failed status=%s endpoint=%s body=%s",
@@ -322,6 +402,18 @@ def _required_env(name: str, default: str = "") -> str:
     raise RuntimeError(f"Required environment variable is missing or empty: {name}")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "y"}:
+        return True
+    if normalized in {"false", "0", "no", "n"}:
+        return False
+    raise RuntimeError(f"{name} must be true or false.")
+
+
 def main() -> None:
     base_url = _required_env("MINIFLUX_URL", "http://miniflux:8080")
     admin_username = _required_env("MINIFLUX_ADMIN_USERNAME", "roundup_admin")
@@ -333,15 +425,21 @@ def main() -> None:
     timeout_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_TIMEOUT_SECONDS", "10"))
     max_wait_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_WAIT_SECONDS", "240"))
     retry_interval_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_RETRY_INTERVAL_SECONDS", "3"))
+    allow_private_feed_urls = _env_bool("ROUNDUP_ALLOW_PRIVATE_FEED_URLS", False)
 
     logger.info(
-        "miniflux_bootstrap_started base_url=%s feed_seed_file=%s token_file=%s",
+        "miniflux_bootstrap_started base_url=%s feed_seed_file=%s token_file=%s allow_private_feed_urls=%s",
         base_url,
         feed_seed_file,
         token_file,
+        allow_private_feed_urls,
     )
 
-    feeds = _load_seed_feeds(feed_seed_file, default_category=default_category)
+    feeds = _load_seed_feeds(
+        feed_seed_file,
+        default_category=default_category,
+        allow_private_network=allow_private_feed_urls,
+    )
     if not feeds:
         raise RuntimeError(f"No usable seed feeds found in {feed_seed_file}.")
 

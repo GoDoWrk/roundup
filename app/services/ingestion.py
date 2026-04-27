@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Article
+from app.services.content_quality import classify_article_content, evaluate_normalized_article_quality
 from app.services.normalizer import NormalizedArticle, normalize_miniflux_entry
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,9 @@ class IngestResult:
     ingested: int
     deduplicated: int
     malformed: int
+    rejected: int
+    rejected_stale: int
+    rejected_service_finance: int
     normalized: list[NormalizedArticle]
     errors: list[str]
 
@@ -25,6 +29,9 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
     ingested = 0
     deduplicated = 0
     malformed = 0
+    rejected = 0
+    rejected_stale = 0
+    rejected_service_finance = 0
     inserted: list[NormalizedArticle] = []
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
@@ -40,7 +47,49 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             normalized = normalize_miniflux_entry(entry)
             if not normalized.canonical_url:
                 raise ValueError("missing or blank url")
+
+            quality = evaluate_normalized_article_quality(normalized)
+            classification = classify_article_content(
+                title=normalized.title,
+                url=normalized.url,
+                publisher=normalized.publisher,
+                content_text=normalized.content_text,
+                raw_payload=normalized.raw_payload,
+                source_trust=quality.source_trust,
+            )
+            if quality.action == "reject":
+                rejected += 1
+                if "stale_content" in quality.reasons:
+                    rejected_stale += 1
+                if "affiliate_finance" in quality.reasons:
+                    rejected_service_finance += 1
+                logger.info(
+                    "ingest_article_rejected entry_index=%s entry_id=%r reasons=%s source_trust=%s "
+                    "priority=%s promote_to_home=%s canonical_url=%s title=%r",
+                    index,
+                    entry_id,
+                    ",".join(quality.reasons),
+                    quality.source_trust,
+                    quality.source_controls.priority,
+                    quality.source_controls.promote_to_home,
+                    normalized.canonical_url,
+                    normalized.title,
+                )
+                continue
+
             prepared_entries.append((index, entry_id, normalized))
+            metadata = dict(normalized.raw_payload.get("__roundup", {})) if isinstance(normalized.raw_payload, dict) else {}
+            metadata.update(
+                {
+                    "content_class": classification.content_class,
+                    "classification_reasons": list(classification.reasons),
+                    "primary_entities": list(classification.primary_entities),
+                    "secondary_entities": list(classification.secondary_entities),
+                    "quality_reasons": list(quality.reasons),
+                    "source_trust": quality.source_trust,
+                }
+            )
+            normalized.raw_payload["__roundup"] = metadata
         except Exception as exc:
             malformed += 1
             message = f"entry_index={index} entry_id={entry_id!r} error={exc}"
@@ -52,6 +101,9 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             ingested=ingested,
             deduplicated=deduplicated,
             malformed=malformed,
+            rejected=rejected,
+            rejected_stale=rejected_stale,
+            rejected_service_finance=rejected_service_finance,
             normalized=inserted,
             errors=errors,
         )
@@ -160,6 +212,9 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
         ingested=ingested,
         deduplicated=deduplicated,
         malformed=malformed,
+        rejected=rejected,
+        rejected_stale=rejected_stale,
+        rejected_service_finance=rejected_service_finance,
         normalized=inserted,
         errors=errors,
     )

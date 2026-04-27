@@ -36,6 +36,9 @@ Safe default profile:
 - `API_WORKERS=1`
 - `INSPECTOR_WORKER_PROCESSES=1`
 - `SCHEDULER_ENABLED=true`
+- `ROUNDUP_INGEST_MAX_TOTAL_ARTICLES=1000`
+- `ROUNDUP_INGEST_MAX_ARTICLES_PER_FEED=10`
+- `ROUNDUP_INGEST_LOOKBACK_HOURS=24`
 - `INGESTION_CONCURRENCY=1`
 - `SUMMARIZATION_CONCURRENCY=1`
 - `CLUSTERING_BATCH_SIZE=100`
@@ -44,6 +47,9 @@ Safe default profile:
 Recommended low-power profile for Raspberry Pi or small NAS:
 - keep `API_WORKERS=1`
 - keep `INSPECTOR_WORKER_PROCESSES=1`
+- set `ROUNDUP_INGEST_MAX_TOTAL_ARTICLES=300`
+- set `ROUNDUP_INGEST_MAX_ARTICLES_PER_FEED=5`
+- set `ROUNDUP_INGEST_LOOKBACK_HOURS=12`
 - set `CLUSTERING_BATCH_SIZE=50` if cycles are CPU-heavy
 
 Only the dedicated `worker` service runs scheduled ingestion and clustering. API worker count does not create extra schedulers. If multiple worker containers are accidentally started, the scheduler uses a Postgres advisory lock so only one cycle runs at a time.
@@ -53,6 +59,7 @@ Default mode should use live Miniflux:
 - `DEMO_MODE=false`
 - `MINIFLUX_URL=http://miniflux:8080`
 - bootstrap writes `/miniflux-bootstrap/miniflux_api_key`
+- ingestion iterates active feeds and applies `ROUNDUP_INGEST_MAX_ARTICLES_PER_FEED`, `ROUNDUP_INGEST_LOOKBACK_HOURS`, `ROUNDUP_INGEST_MAX_TOTAL_ARTICLES`, and category balancing before clustering
 
 Demo mode is explicit only:
 - set `DEMO_MODE=true`
@@ -65,6 +72,15 @@ Metrics that should move:
 - `clusters_updated_total`
 
 Metrics that indicate ingestion trouble:
+- `configured_feed_count`
+- `active_feed_count`
+- `feeds_checked`
+- `feeds_with_new_articles`
+- `miniflux_entries_seen`
+- `articles_fetched_raw`
+- `articles_rejected_quality`
+- `articles_rejected_stale`
+- `articles_rejected_service_finance`
 - `articles_malformed_total`
 - `ingest_source_failures_total`
 

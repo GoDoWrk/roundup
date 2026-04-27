@@ -14,10 +14,15 @@ _TERM_BLOCKLIST = {
     "and",
     "as",
     "at",
+    "blank",
     "but",
     "by",
+    "com",
     "for",
     "from",
+    "href",
+    "http",
+    "https",
     "in",
     "into",
     "is",
@@ -37,6 +42,7 @@ _TERM_BLOCKLIST = {
     "update",
     "updated",
     "with",
+    "www",
     "year",
 }
 
@@ -241,7 +247,6 @@ def build_timeline_events(
 
     timeline_with_meta: list[dict] = []
     deduplicated_count = 0
-    seen_terms: set[str] = set()
 
     for article in ordered:
         title = (article.title or "").strip() or "Untitled update"
@@ -265,18 +270,8 @@ def build_timeline_events(
             deduplicated_count += 1
             continue
 
-        fresh_terms = [
-            term
-            for term in (article.entities + article.keywords)
-            if term and term not in seen_terms and _is_meaningful_term(term)
-        ]
-        topic_delta_terms = [term for term in fresh_terms if term.lower() not in {"been", "has", "his"}]
-        topic_delta = ", ".join(topic_delta_terms[:3])
-
-        if topic_delta:
-            event_text = f"Update focuses on {topic_delta}."
-        else:
-            event_text = title
+        verb = "reported" if publisher.lower() not in {"unknown", "unknown source"} else "published"
+        event_text = f"{publisher} {verb}: {title}."
 
         timeline_with_meta.append(
             {
@@ -288,8 +283,6 @@ def build_timeline_events(
                 "normalized_title": normalized,
             }
         )
-
-        seen_terms.update(term for term in article.entities + article.keywords if term and _is_meaningful_term(term))
 
     timeline = [
         TimelineEntry(

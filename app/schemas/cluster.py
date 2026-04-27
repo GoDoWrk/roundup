@@ -97,11 +97,13 @@ class ClusterDebugThresholds(BaseModel):
     score_threshold: float
     title_signal_threshold: float
     entity_overlap_threshold: int
+    primary_entity_overlap_required: bool = True
     keyword_overlap_threshold: int
     topic_semantic_score_threshold: float
     attach_override_title_similarity_threshold: float
     attach_override_time_proximity_threshold: float
     min_sources_for_api: int
+    min_distinct_sources_for_api: int = 1
     min_sources_for_top_stories: int
     min_sources_for_developing_stories: int
 
@@ -132,11 +134,22 @@ class ClusterDebugJoinDecision(BaseModel):
     entity_overlap: int
     keyword_overlap: int
     location_overlap: int
+    title_token_overlap: int = 0
     source_match: bool
     topic_match: bool
+    primary_entity_overlap: bool = False
+    title_primary_entity_overlap: bool = False
+    near_duplicate_title: bool = False
+    same_source_update_chain: bool = False
     time_proximity: float
     signal_gate_passed: bool
     signal_reasons: list[str]
+    source_quality_reasons: list[str] = Field(default_factory=list)
+    source_trust: str = "normal"
+    article_content_class: str = "unknown"
+    cluster_content_class: str = "unknown"
+    candidate_rejection_reason: str | None = None
+    membership_rejection_status: str | None = None
     warnings: list[str]
 
 
@@ -149,6 +162,8 @@ class ClusterDebugExplanation(BaseModel):
     score_breakdown: ClusterDebugScoreBreakdown
     decision_counts: dict[str, int]
     recent_join_decisions: list[ClusterDebugJoinDecision]
+    source_quality_summary: dict[str, int] = Field(default_factory=dict)
+    content_class_summary: dict[str, int] = Field(default_factory=dict)
     warnings: list[str]
 
 

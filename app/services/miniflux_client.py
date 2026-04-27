@@ -25,6 +25,7 @@ class MinifluxClient:
     base_url: str
     api_token: str
     timeout_seconds: int = 20
+    request_retries: int = 1
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -55,7 +56,35 @@ class MinifluxClient:
         except httpx.RequestError:
             return False
 
-    def fetch_entries(self, limit: int = 100) -> list[dict]:
+    def _get_json(self, endpoint: str, params: dict | None = None) -> object:
+        attempts = max(1, self.request_retries + 1)
+        for attempt in range(1, attempts + 1):
+            try:
+                with httpx.Client(timeout=self.timeout_seconds) as client:
+                    response = client.get(endpoint, params=params, headers=self._headers())
+                    response.raise_for_status()
+                    return response.json()
+            except httpx.HTTPStatusError as exc:
+                raise MinifluxRequestError(
+                    f"Miniflux API returned HTTP {exc.response.status_code} from {endpoint}."
+                ) from exc
+            except httpx.RequestError as exc:
+                if attempt < attempts:
+                    logger.warning(
+                        "miniflux_request_retrying endpoint=%s attempt=%s max_attempts=%s error=%s",
+                        endpoint,
+                        attempt,
+                        attempts,
+                        exc,
+                    )
+                    continue
+                raise MinifluxRequestError(f"Miniflux request to {endpoint} failed: {exc}") from exc
+            except ValueError as exc:
+                raise MinifluxRequestError(f"Miniflux response from {endpoint} was not valid JSON.") from exc
+
+        raise MinifluxRequestError(f"Miniflux request to {endpoint} failed without a response.")
+
+    def fetch_entries(self, limit: int = 100, offset: int = 0) -> list[dict]:
         if not self.api_token.strip():
             raise MinifluxConfigError(
                 "MINIFLUX_API_KEY is missing. Set MINIFLUX_API_KEY or configure SAMPLE_MINIFLUX_DATA_PATH "
@@ -71,21 +100,10 @@ class MinifluxClient:
             "order": "published_at",
             "status": "unread",
             "limit": limit,
+            "offset": offset,
         }
 
-        try:
-            with httpx.Client(timeout=self.timeout_seconds) as client:
-                response = client.get(endpoint, params=params, headers=self._headers())
-                response.raise_for_status()
-                payload = response.json()
-        except httpx.HTTPStatusError as exc:
-            raise MinifluxRequestError(
-                f"Miniflux API returned HTTP {exc.response.status_code} from {endpoint}."
-            ) from exc
-        except httpx.RequestError as exc:
-            raise MinifluxRequestError(f"Miniflux request to {endpoint} failed: {exc}") from exc
-        except ValueError as exc:
-            raise MinifluxRequestError(f"Miniflux response from {endpoint} was not valid JSON.") from exc
+        payload = self._get_json(endpoint, params=params)
 
         entries = payload.get("entries") if isinstance(payload, dict) else None
         if not isinstance(entries, list):
@@ -96,6 +114,33 @@ class MinifluxClient:
             logger.info("miniflux_feed_empty endpoint=%s", endpoint)
         return entries
 
+    def fetch_feed_entries(self, feed_id: int, *, limit: int, offset: int = 0) -> list[dict]:
+        if not self.api_token.strip():
+            raise MinifluxConfigError("MINIFLUX_API_KEY is missing. Feed entry fetch requires Miniflux credentials.")
+
+        if not self.base_url.strip():
+            raise MinifluxConfigError("MINIFLUX_URL is missing while MINIFLUX_API_KEY is set.")
+
+        endpoint = f"{self.base_url.rstrip('/')}/v1/feeds/{feed_id}/entries"
+        params = {
+            "direction": "desc",
+            "order": "published_at",
+            "status": "unread",
+            "limit": limit,
+            "offset": offset,
+        }
+        payload = self._get_json(endpoint, params=params)
+        entries = payload.get("entries") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            raise MinifluxRequestError("Miniflux response did not include a valid feed 'entries' list.")
+        logger.debug(
+            "miniflux_feed_entries_fetch_success feed_id=%s count=%s endpoint=%s",
+            feed_id,
+            len(entries),
+            endpoint,
+        )
+        return entries
+
     def fetch_feeds(self) -> list[dict]:
         if not self.api_token.strip():
             raise MinifluxConfigError("MINIFLUX_API_KEY is missing. Source metadata requires Miniflux credentials.")
@@ -104,19 +149,7 @@ class MinifluxClient:
             raise MinifluxConfigError("MINIFLUX_URL is missing while MINIFLUX_API_KEY is set.")
 
         endpoint = f"{self.base_url.rstrip('/')}/v1/feeds"
-        try:
-            with httpx.Client(timeout=self.timeout_seconds) as client:
-                response = client.get(endpoint, headers=self._headers())
-                response.raise_for_status()
-                payload = response.json()
-        except httpx.HTTPStatusError as exc:
-            raise MinifluxRequestError(
-                f"Miniflux API returned HTTP {exc.response.status_code} from {endpoint}."
-            ) from exc
-        except httpx.RequestError as exc:
-            raise MinifluxRequestError(f"Miniflux request to {endpoint} failed: {exc}") from exc
-        except ValueError as exc:
-            raise MinifluxRequestError(f"Miniflux response from {endpoint} was not valid JSON.") from exc
+        payload = self._get_json(endpoint)
 
         if not isinstance(payload, list):
             raise MinifluxRequestError("Miniflux response did not include a valid feeds list.")

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { fetchSearchResults } from "../api/client";
+import { describeApiError, fetchSearchResults } from "../api/client";
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import type { SearchResponse, SearchResult, SearchResultType } from "../types";
 import { formatReadableTimestamp, formatRelativeTime } from "../utils/format";
@@ -154,7 +154,7 @@ export function SearchPage() {
         if (requestIdRef.current !== requestId) {
           return;
         }
-        setError((err as Error).message);
+        setError(describeApiError(err));
         setResponse(null);
       })
       .finally(() => {

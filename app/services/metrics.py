@@ -28,7 +28,16 @@ def update_ingest_metrics(
     *,
     fetched: int = 0,
     malformed: int = 0,
+    rejected: int = 0,
+    rejected_stale: int = 0,
+    rejected_service_finance: int = 0,
     source_failures: int = 0,
+    configured_feed_count: int = 0,
+    active_feed_count: int = 0,
+    feeds_checked: int = 0,
+    feeds_with_new_articles: int = 0,
+    miniflux_entries_seen: int = 0,
+    articles_fetched_raw: int = 0,
 ) -> None:
     stats = get_or_create_pipeline_stats(session)
     stats.articles_ingested_total += ingested
@@ -40,6 +49,15 @@ def update_ingest_metrics(
     stats.latest_duplicate_articles_skipped = deduplicated
     stats.latest_articles_malformed = malformed
     stats.latest_failed_source_count = source_failures
+    stats.configured_feed_count = configured_feed_count
+    stats.active_feed_count = active_feed_count
+    stats.feeds_checked = feeds_checked
+    stats.feeds_with_new_articles = feeds_with_new_articles
+    stats.miniflux_entries_seen = miniflux_entries_seen
+    stats.articles_fetched_raw = articles_fetched_raw
+    stats.articles_rejected_quality = rejected
+    stats.articles_rejected_stale = rejected_stale
+    stats.articles_rejected_service_finance = rejected_service_finance
     stats.last_ingest_time = utcnow()
 
 
@@ -135,15 +153,48 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP latest_articles_fetched Articles fetched in the latest pipeline run",
         "# TYPE latest_articles_fetched gauge",
         f"latest_articles_fetched {stats.latest_articles_fetched}",
+        "# HELP configured_feed_count Miniflux feeds configured at the latest pipeline run",
+        "# TYPE configured_feed_count gauge",
+        f"configured_feed_count {stats.configured_feed_count}",
+        "# HELP active_feed_count Active Miniflux feeds considered at the latest pipeline run",
+        "# TYPE active_feed_count gauge",
+        f"active_feed_count {stats.active_feed_count}",
+        "# HELP feeds_checked Active feeds queried at the latest pipeline run",
+        "# TYPE feeds_checked gauge",
+        f"feeds_checked {stats.feeds_checked}",
+        "# HELP feeds_with_new_articles Feeds with recent entries in the latest pipeline run",
+        "# TYPE feeds_with_new_articles gauge",
+        f"feeds_with_new_articles {stats.feeds_with_new_articles}",
+        "# HELP miniflux_entries_seen Raw entries returned by Miniflux before lookback and balancing filters",
+        "# TYPE miniflux_entries_seen gauge",
+        f"miniflux_entries_seen {stats.miniflux_entries_seen}",
+        "# HELP articles_fetched_raw Recent per-feed candidate entries before global category balancing",
+        "# TYPE articles_fetched_raw gauge",
+        f"articles_fetched_raw {stats.articles_fetched_raw}",
         "# HELP latest_articles_stored Articles stored in the latest pipeline run",
         "# TYPE latest_articles_stored gauge",
         f"latest_articles_stored {stats.latest_articles_stored}",
+        "# HELP articles_stored Articles stored in the latest pipeline run",
+        "# TYPE articles_stored gauge",
+        f"articles_stored {stats.latest_articles_stored}",
         "# HELP latest_duplicate_articles_skipped Duplicate articles skipped in the latest pipeline run",
         "# TYPE latest_duplicate_articles_skipped gauge",
         f"latest_duplicate_articles_skipped {stats.latest_duplicate_articles_skipped}",
+        "# HELP duplicate_articles_skipped Duplicate articles skipped in the latest pipeline run",
+        "# TYPE duplicate_articles_skipped gauge",
+        f"duplicate_articles_skipped {stats.latest_duplicate_articles_skipped}",
         "# HELP latest_articles_malformed Malformed articles skipped in the latest pipeline run",
         "# TYPE latest_articles_malformed gauge",
         f"latest_articles_malformed {stats.latest_articles_malformed}",
+        "# HELP articles_rejected_quality Articles rejected by quality filters in the latest pipeline run",
+        "# TYPE articles_rejected_quality gauge",
+        f"articles_rejected_quality {stats.articles_rejected_quality}",
+        "# HELP articles_rejected_stale Articles rejected by stale-content filters in the latest pipeline run",
+        "# TYPE articles_rejected_stale gauge",
+        f"articles_rejected_stale {stats.articles_rejected_stale}",
+        "# HELP articles_rejected_service_finance Articles rejected by affiliate/service-finance filters in the latest pipeline run",
+        "# TYPE articles_rejected_service_finance gauge",
+        f"articles_rejected_service_finance {stats.articles_rejected_service_finance}",
         "# HELP latest_failed_source_count Source failures in the latest pipeline run",
         "# TYPE latest_failed_source_count gauge",
         f"latest_failed_source_count {stats.latest_failed_source_count}",
@@ -192,15 +243,24 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP latest_candidate_clusters_created Candidate clusters created in the latest pipeline run",
         "# TYPE latest_candidate_clusters_created gauge",
         f"latest_candidate_clusters_created {stats.latest_candidate_clusters_created}",
+        "# HELP candidate_clusters_created Candidate clusters created in the latest pipeline run",
+        "# TYPE candidate_clusters_created gauge",
+        f"candidate_clusters_created {stats.latest_candidate_clusters_created}",
         "# HELP latest_clusters_updated Clusters updated in the latest pipeline run",
         "# TYPE latest_clusters_updated gauge",
         f"latest_clusters_updated {stats.latest_clusters_updated}",
         "# HELP latest_clusters_hidden Current hidden cluster count captured by the latest clustering run",
         "# TYPE latest_clusters_hidden gauge",
         f"latest_clusters_hidden {stats.latest_clusters_hidden}",
+        "# HELP clusters_hidden Current hidden cluster count captured by the latest clustering run",
+        "# TYPE clusters_hidden gauge",
+        f"clusters_hidden {stats.latest_clusters_hidden}",
         "# HELP latest_clusters_promoted Clusters promoted in the latest pipeline run",
         "# TYPE latest_clusters_promoted gauge",
         f"latest_clusters_promoted {stats.latest_clusters_promoted}",
+        "# HELP clusters_promoted Clusters promoted in the latest pipeline run",
+        "# TYPE clusters_promoted gauge",
+        f"clusters_promoted {stats.latest_clusters_promoted}",
         "# HELP latest_visible_clusters Current visible cluster count captured by the latest clustering run",
         "# TYPE latest_visible_clusters gauge",
         f"latest_visible_clusters {stats.latest_visible_clusters}",

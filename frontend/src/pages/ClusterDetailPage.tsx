@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchClusterDetail, fetchDebugClusters } from "../api/client";
+import { describeApiError, fetchClusterDetail, fetchDebugClusters } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
 import type { ClusterDebugItem, StoryCluster } from "../types";
 import { formatScore, formatTimestamp } from "../utils/format";
@@ -12,6 +12,7 @@ export function ClusterDetailPage() {
   const [debugRows, setDebugRows] = useState<ClusterDebugItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [debugError, setDebugError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clusterId) {
@@ -20,13 +21,24 @@ export function ClusterDetailPage() {
 
     setLoading(true);
     setError(null);
+    setDebugError(null);
 
     try {
-      const [clusterData, debugData] = await Promise.all([fetchClusterDetail(clusterId), fetchDebugClusters()]);
-      setCluster(clusterData);
-      setDebugRows(debugData.items);
+      const [clusterData, debugData] = await Promise.allSettled([fetchClusterDetail(clusterId), fetchDebugClusters()]);
+      if (clusterData.status === "fulfilled") {
+        setCluster(clusterData.value);
+      } else {
+        setCluster(null);
+        setError(describeApiError(clusterData.reason));
+      }
+      if (debugData.status === "fulfilled") {
+        setDebugRows(debugData.value.items);
+      } else {
+        setDebugRows([]);
+        setDebugError(describeApiError(debugData.reason));
+      }
     } catch (err) {
-      setError((err as Error).message);
+      setError(describeApiError(err));
     } finally {
       setLoading(false);
     }
@@ -54,6 +66,7 @@ export function ClusterDetailPage() {
         </div>
 
         {error && <p className="error">{error}</p>}
+        {debugError && <p className="error">Debug cluster API unavailable: {debugError}</p>}
         {!error && loading && <p>Loading cluster...</p>}
 
         {!error && !loading && cluster && (

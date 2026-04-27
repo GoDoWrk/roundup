@@ -195,6 +195,430 @@ def test_generic_stopword_keyword_overlap_does_not_attach(db_session: Session) -
     assert second_breakdown["thresholds_met"]["signal_gate_passed"] is False
 
 
+def test_shared_keywords_without_primary_entity_creates_new_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="entity-required-1",
+        title="Transit funding plan advances after board vote",
+        normalized_title="transit funding plan advances after board vote",
+        keywords=["transit", "funding", "plan", "board", "vote"],
+        entities=[],
+        published_at=now - timedelta(hours=2),
+        publisher="Metro Daily",
+    )
+    first.topic = "Transit"
+    second = _article(
+        dedupe_hash="entity-required-2",
+        title="Transit funding plan draws regional response",
+        normalized_title="transit funding plan draws regional response",
+        keywords=["transit", "funding", "plan", "regional", "response"],
+        entities=[],
+        published_at=now - timedelta(hours=1),
+        publisher="Regional Wire",
+    )
+    second.topic = "Transit"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["candidate_rejection_reason"] == "missing_primary_entity_overlap"
+    assert second_breakdown["thresholds_met"]["primary_entity_overlap_met"] is False
+
+
+def test_same_source_update_chain_can_attach_without_named_entity_overlap(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="same-source-1",
+        title="Transit agency approves station repair funding",
+        normalized_title="transit agency approves station repair funding",
+        keywords=["transit", "agency", "station", "funding", "repairs"],
+        entities=[],
+        published_at=now - timedelta(minutes=40),
+        publisher="Metro Daily",
+    )
+    first.topic = "Transit"
+    second = _article(
+        dedupe_hash="same-source-2",
+        title="Transit agency details station repair funding timeline",
+        normalized_title="transit agency details station repair funding timeline",
+        keywords=["transit", "agency", "station", "funding", "timeline"],
+        entities=[],
+        published_at=now - timedelta(minutes=10),
+        publisher="Metro Daily",
+    )
+    second.topic = "Transit"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert "same_source_update_chain" in second_breakdown["signal_reasons"]
+    assert second_breakdown["thresholds_met"]["primary_entity_overlap_met"] is False
+    assert second_breakdown["thresholds_met"]["same_source_update_chain_met"] is True
+    assert second_breakdown["overlap_counts"]["title_token_overlap"] >= 2
+
+
+def test_same_source_byline_overlap_does_not_merge_unrelated_articles(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="planetizen-1",
+        title="Houston pedestrian promenade on track for World Cup crowds",
+        normalized_title="houston pedestrian promenade on track for world cup crowds",
+        keywords=["diana", "ionescu", "planetizen", "geography", "houston", "promenade"],
+        entities=["Diana Ionescu"],
+        published_at=now - timedelta(hours=2),
+        publisher="Planetizen",
+    )
+    second = _article(
+        dedupe_hash="planetizen-2",
+        title="APA conference draws 4,000 urban planners to Detroit this weekend",
+        normalized_title="apa conference draws 4000 urban planners to detroit this weekend",
+        keywords=["diana", "ionescu", "planetizen", "geography", "detroit", "conference"],
+        entities=["Diana Ionescu"],
+        published_at=now - timedelta(hours=1),
+        publisher="Planetizen",
+    )
+    first.topic = "Diana Ionescu"
+    second.topic = "Diana Ionescu"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["candidate_rejection_reason"] == "weak_primary_entity_context"
+    assert second_breakdown["thresholds_met"]["primary_entity_overlap_met"] is True
+    assert second_breakdown["thresholds_met"]["title_primary_entity_overlap_met"] is False
+
+
+def test_topic_followup_requires_primary_entity_in_title(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="topic-followup-1",
+        title="Israeli strikes kill 14 in Lebanon as Israel warns residents beyond buffer zone",
+        normalized_title="israeli strikes kill 14 in lebanon as israel warns residents beyond buffer zone",
+        keywords=["israeli", "strikes", "lebanon", "security"],
+        entities=["Israel", "Iran", "Lebanon"],
+        published_at=now - timedelta(hours=2),
+        publisher="Reuters",
+    )
+    first.topic = "Iran War"
+    unrelated_context = _article(
+        dedupe_hash="topic-followup-2",
+        title="National security concerns rise after strikes beyond buffer zone",
+        normalized_title="national security concerns rise after strikes beyond buffer zone",
+        keywords=["national", "security", "strikes", "buffer"],
+        entities=["Israel", "Iran"],
+        published_at=now - timedelta(hours=1),
+        publisher="Environment Desk",
+    )
+    unrelated_context.topic = "Iran War"
+    db_session.add(first)
+    db_session.add(unrelated_context)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["candidate_rejection_reason"] == "weak_primary_entity_context"
+    assert second_breakdown["thresholds_met"]["primary_entity_overlap_met"] is True
+    assert second_breakdown["thresholds_met"]["title_primary_entity_overlap_met"] is False
+    assert "topic_followup_continuity" not in second_breakdown["signal_reasons"]
+
+
+def test_low_trust_aggregator_context_does_not_attach_without_near_duplicate_title(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    official = _article(
+        dedupe_hash="official-local-1",
+        title="Phoenix police arrest suspect after armed robbery near downtown",
+        normalized_title="phoenix police arrest suspect after armed robbery near downtown",
+        keywords=["phoenix", "police", "armed", "robbery", "suspect"],
+        entities=["Phoenix Police"],
+        published_at=now - timedelta(hours=2),
+        publisher="Phoenix Police Department",
+    )
+    official.raw_payload = {"feed": {"feed_url": "https://www.phoenix.gov/newsroom/rss", "title": "Phoenix.gov"}}
+    google = _article(
+        dedupe_hash="google-local-1",
+        title="Juveniles detained after an armed robbery in Phoenix - 12News",
+        normalized_title="juveniles detained after an armed robbery in phoenix 12news",
+        keywords=["phoenix", "armed", "robbery", "detained"],
+        entities=["Phoenix"],
+        published_at=now - timedelta(hours=1),
+        publisher="Google News",
+    )
+    google.raw_payload = {"feed": {"feed_url": "https://news.google.com/rss/search?q=Phoenix", "title": "Google News"}}
+    db_session.add(official)
+    db_session.add(google)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    google_breakdown = links[-1].heuristic_breakdown
+    assert google_breakdown["candidate_rejection_reason"] == "low_trust_aggregator_attach_blocked"
+    assert google_breakdown["membership_rejection_status"] == "low_trust_aggregator_only"
+
+
+def test_service_finance_does_not_merge_with_trump_white_house_story(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="poison-finance-1",
+            title="The 7 best high-yield savings accounts of April 2023",
+            normalized_title="the 7 best high yield savings accounts of april 2023",
+            keywords=["best", "high-yield", "savings", "accounts", "april"],
+            entities=[],
+            published_at=now - timedelta(hours=2),
+            publisher="Affiliate Finance",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="poison-trump-1",
+            title="Donald Trump to discuss White House press dinner shooting on 60 Minutes",
+            normalized_title="donald trump to discuss white house press dinner shooting on 60 minutes",
+            keywords=["trump", "white", "house", "dinner", "shooting"],
+            entities=["Donald Trump", "White House"],
+            published_at=now - timedelta(hours=1),
+            publisher="CBS News",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    trump_breakdown = links[-1].heuristic_breakdown
+    assert trump_breakdown["membership_rejection_status"] in {
+        "rejected_content_class_mismatch",
+        "rejected_low_similarity",
+    }
+
+
+def test_trump_white_house_story_does_not_merge_with_ben_sasse_cancer_interview(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="poison-trump-2",
+            title="Donald Trump to discuss White House press dinner shooting on 60 Minutes",
+            normalized_title="donald trump to discuss white house press dinner shooting on 60 minutes",
+            keywords=["trump", "white", "house", "dinner", "shooting", "minutes"],
+            entities=["Donald Trump", "White House"],
+            published_at=now - timedelta(hours=2),
+            publisher="CBS News",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="poison-sasse-1",
+            title="Ben Sasse, living with cancer, sees an opportunity in living on a deadline",
+            normalized_title="ben sasse living with cancer sees an opportunity in living on a deadline",
+            keywords=["ben", "sasse", "cancer", "deadline", "living", "america"],
+            entities=["Ben Sasse"],
+            published_at=now - timedelta(hours=1),
+            publisher="CBS News",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_home_equity_cashout_does_not_merge_with_general_business_news(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="poison-home-equity",
+            title="Turn Your Rising Home Equity Into Cash You Can Use",
+            normalized_title="turn your rising home equity into cash you can use",
+            keywords=["home", "equity", "cash", "use"],
+            entities=[],
+            published_at=now - timedelta(hours=2),
+            publisher="Lending Partner",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="business-news-1",
+            title="Federal Reserve officials signal rate decision after inflation report",
+            normalized_title="federal reserve officials signal rate decision after inflation report",
+            keywords=["federal", "reserve", "inflation", "rates", "decision"],
+            entities=["Federal Reserve"],
+            published_at=now - timedelta(hours=1),
+            publisher="Reuters",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_stale_service_finance_does_not_merge_with_current_business_cluster(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="current-business-1",
+            title="Reuters reports Federal Reserve rate outlook after inflation data",
+            normalized_title="reuters reports federal reserve rate outlook after inflation data",
+            keywords=["federal", "reserve", "rate", "inflation", "outlook"],
+            entities=["Federal Reserve", "Reuters"],
+            published_at=now - timedelta(hours=2),
+            publisher="Reuters",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="stale-finance-1",
+            title="Best CD rates of March 2024",
+            normalized_title="best cd rates of march 2024",
+            keywords=["best", "cd", "rates", "march"],
+            entities=[],
+            published_at=now - timedelta(hours=1),
+            publisher="Affiliate Finance",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_ben_sasse_interview_updates_merge(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="sasse-1",
+            title="Former Sen. Ben Sasse, dying of cancer, on his hopes for America's future",
+            normalized_title="former sen ben sasse dying of cancer on his hopes for americas future",
+            keywords=["ben", "sasse", "cancer", "future", "america"],
+            entities=["Ben Sasse"],
+            published_at=now - timedelta(hours=2),
+            publisher="CBS News",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="sasse-2",
+            title="Extended interview: Ben Sasse on lessons for America",
+            normalized_title="extended interview ben sasse on lessons for america",
+            keywords=["ben", "sasse", "interview", "lessons", "america"],
+            entities=["Ben Sasse"],
+            published_at=now - timedelta(hours=1),
+            publisher="CBS News",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    assert db_session.query(Cluster).count() == 1
+
+
+def test_same_story_from_wire_and_public_media_merges_on_primary_entity(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    sources = ["AP", "Reuters", "NPR", "PBS"]
+    for index, publisher in enumerate(sources):
+        db_session.add(
+            _article(
+                dedupe_hash=f"wire-entity-{index}",
+                title=f"{publisher} reports Pine Ridge Dam evacuation order after structural cracks",
+                normalized_title=f"{publisher.lower()} reports pine ridge dam evacuation order after structural cracks",
+                keywords=["pine", "ridge", "dam", "evacuation", "cracks"],
+                entities=["Pine Ridge Dam"],
+                published_at=now - timedelta(minutes=40 - index),
+                publisher=publisher,
+            )
+        )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 3
+    assert db_session.query(Cluster).count() == 1
+
+
+def test_local_phoenix_updates_merge_with_shared_location_and_entity(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    fixtures = [
+        ("az-1", "Phoenix officials open cooling centers after heat emergency", "AZCentral"),
+        ("az-2", "Phoenix heat emergency prompts more cooling centers", "KJZZ"),
+        ("az-3", "Phoenix expands cooling centers during heat emergency", "ABC15"),
+    ]
+    for index, (dedupe_hash, title, publisher) in enumerate(fixtures):
+        db_session.add(
+            _article(
+                dedupe_hash=dedupe_hash,
+                title=title,
+                normalized_title=title.lower(),
+                keywords=["phoenix", "heat", "emergency", "cooling", "centers"],
+                entities=["Phoenix"],
+                published_at=now - timedelta(minutes=30 - index),
+                publisher=publisher,
+            )
+        )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 2
+    assert db_session.query(Cluster).count() == 1
+
+
 def test_clustering_batch_size_limits_articles_per_cycle(db_session: Session) -> None:
     now = datetime.now(timezone.utc)
     fixtures = [
@@ -397,6 +821,9 @@ def test_timeline_deduplicates_repetitive_same_publisher_updates(db_session: Ses
     assert cluster is not None
     event_count = db_session.query(ClusterTimelineEvent).filter(ClusterTimelineEvent.cluster_id == cluster.id).count()
     assert event_count < 3
+    events = list(db_session.scalars(select(ClusterTimelineEvent.event)).all())
+    assert all("Update focuses on" not in event for event in events)
+    assert any("reported:" in event for event in events)
 
 
 def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session: Session) -> None:
@@ -407,7 +834,7 @@ def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session:
             title="City Council Approves Transit Expansion Plan",
             normalized_title="city council approves transit expansion plan",
             keywords=["city", "council", "expansion", "transit", "and", "approved", "details", "funding", "plan"],
-            entities=[],
+            entities=["City Council", "Transit Authority"],
             published_at=now - timedelta(hours=5),
             publisher="Metro Daily",
         )
@@ -418,7 +845,7 @@ def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session:
             title="Regional Leaders React to Transit Expansion Funding",
             normalized_title="regional leaders react to transit expansion funding",
             keywords=["expansion", "funding", "leaders", "regional", "transit", "approved", "package", "react", "the"],
-            entities=[],
+            entities=["City Council", "Transit Authority"],
             published_at=now - timedelta(hours=2),
             publisher="Regional Wire",
         )
@@ -429,7 +856,7 @@ def test_sample_like_transit_articles_merge_into_publishable_cluster(db_session:
             title="Transit Agencies Publish First Implementation Timeline",
             normalized_title="transit agencies publish first implementation timeline",
             keywords=["agencies", "implementation", "transit", "expected", "milestones", "publish", "the", "timeline", "vote"],
-            entities=[],
+            entities=["City Council", "Transit Authority"],
             published_at=now - timedelta(hours=1),
             publisher="Transport Bulletin",
         )

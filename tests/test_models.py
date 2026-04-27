@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.db.models import Cluster
-from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
+from app.schemas.cluster import StoryCluster
 
 
 def _valid_story_cluster() -> dict:
