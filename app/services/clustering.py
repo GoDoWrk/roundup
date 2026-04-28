@@ -23,7 +23,7 @@ from app.services.enrichment import (
     build_why_it_matters,
 )
 from app.services.normalizer import normalize_title
-from app.services.topics import derive_topic_from_article, derive_topic_from_articles, topic_matches
+from app.services.topics import apply_topic_classification, classify_topic_from_article, derive_topic_from_article, derive_topic_from_articles, topic_matches
 from app.services.validation import validate_cluster_record
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,10 @@ class FeatureVector:
     title_tokens: set[str]
     title_entities: set[str]
     topic: str
+    primary_topic: str
+    subtopic: str | None
+    geography: str | None
+    event_type: str | None
     published_at: datetime
     publishers: set[str]
     content_class: str
@@ -162,6 +166,10 @@ class CandidateEvaluation:
     near_duplicate_title: bool
     same_source_update_chain: bool
     primary_entity_conflict: bool
+    subtopic_match: bool
+    subtopic_conflict: bool
+    geography_conflict: bool
+    event_type_conflict: bool
     article_content_class: str
     cluster_content_class: str
     score: float
@@ -268,13 +276,21 @@ def _membership_rejection_status(
         "distinct_primary_entities",
         "location_conflict_without_entity_overlap",
         "distinct_event_signatures",
+        "event_type_conflict",
+        "geography_conflict",
         "generic_keyword_only_overlap",
         "weak_primary_entity_context",
     }:
         return "rejected_low_entity_overlap"
     if candidate_rejection_reason == "low_trust_aggregator_attach_blocked":
         return "low_trust_aggregator_only"
-    if candidate_rejection_reason in {"weak_semantic_signals", "topic_mismatch", "story_window_expired"}:
+    if candidate_rejection_reason in {
+        "primary_topic_mismatch",
+        "subtopic_mismatch_without_strong_entity_overlap",
+        "weak_semantic_signals",
+        "topic_mismatch",
+        "story_window_expired",
+    }:
         return "rejected_low_similarity"
     return "candidate_needs_more_sources"
 
@@ -322,6 +338,83 @@ def _semantic_locations(*, title: str, keywords: set[str], entities: set[str]) -
     return {token for token in candidates if token in LOCATION_TERMS}
 
 
+def _clean_lane_value(value: str | None) -> str | None:
+    cleaned = (value or "").strip().lower().replace(" ", "_")
+    return cleaned or None
+
+
+def _geography_bucket(value: str | None) -> str | None:
+    cleaned = _clean_lane_value(value)
+    if cleaned in {
+        "alabama",
+        "alaska",
+        "arizona",
+        "arkansas",
+        "california",
+        "colorado",
+        "connecticut",
+        "delaware",
+        "florida",
+        "georgia",
+        "hawaii",
+        "idaho",
+        "illinois",
+        "indiana",
+        "iowa",
+        "kansas",
+        "kentucky",
+        "louisiana",
+        "maine",
+        "maryland",
+        "massachusetts",
+        "michigan",
+        "minnesota",
+        "mississippi",
+        "missouri",
+        "montana",
+        "nebraska",
+        "nevada",
+        "new_hampshire",
+        "new_jersey",
+        "new_mexico",
+        "new_york",
+        "north_carolina",
+        "north_dakota",
+        "ohio",
+        "oklahoma",
+        "oregon",
+        "pennsylvania",
+        "rhode_island",
+        "south_carolina",
+        "south_dakota",
+        "tennessee",
+        "texas",
+        "utah",
+        "vermont",
+        "virginia",
+        "washington",
+        "west_virginia",
+        "wisconsin",
+        "wyoming",
+    }:
+        return "united_states"
+    return cleaned
+
+
+def _geography_conflicts(left: str | None, right: str | None) -> bool:
+    left_clean = _clean_lane_value(left)
+    right_clean = _clean_lane_value(right)
+    if not left_clean or not right_clean or left_clean == right_clean:
+        return False
+    return _geography_bucket(left_clean) != _geography_bucket(right_clean)
+
+
+def _event_type_conflicts(left: str | None, right: str | None) -> bool:
+    left_clean = _clean_lane_value(left)
+    right_clean = _clean_lane_value(right)
+    return bool(left_clean and right_clean and left_clean != right_clean)
+
+
 def _title_signature_tokens(title: str) -> set[str]:
     return {
         token
@@ -359,6 +452,7 @@ def _entities_mentioned_in_title(entities: set[str], title: str) -> set[str]:
 def _article_features(article: Article) -> FeatureVector:
     keywords = _semantic_keywords(article.keywords)
     entities = _semantic_entities(article.entities)
+    topic_classification = apply_topic_classification(article)
     raw_payload = article.raw_payload if isinstance(article.raw_payload, dict) else {}
     quality = evaluate_article_quality(article)
     classification = classify_article_content(
@@ -380,6 +474,10 @@ def _article_features(article: Article) -> FeatureVector:
         title_tokens=_title_signature_tokens(article.normalized_title),
         title_entities=_entities_mentioned_in_title(primary_entities, article.title or article.normalized_title),
         topic=derive_topic_from_article(article),
+        primary_topic=topic_classification.primary_topic,
+        subtopic=topic_classification.subtopic,
+        geography=topic_classification.geography,
+        event_type=topic_classification.event_type,
         published_at=article.published_at,
         publishers={(article.publisher or "").strip().lower()} if (article.publisher or "").strip() else set(),
         content_class=classification.content_class,
@@ -391,6 +489,10 @@ def _cluster_features(cluster: Cluster) -> FeatureVector:
     keywords = _semantic_keywords(cluster.keywords)
     entities = _semantic_entities(cluster.entities)
     primary_entities = _primary_entities_from_values(cluster.entities)
+    primary_topic = (cluster.primary_topic or "").strip()
+    subtopic = cluster.subtopic
+    geography = cluster.geography
+    event_type = cluster.event_type
     publishers = {
         (link.article.publisher or "").strip().lower()
         for link in cluster.source_links
@@ -412,6 +514,14 @@ def _cluster_features(cluster: Cluster) -> FeatureVector:
         )
         article_class = classification.content_class
         class_counts[article_class] = class_counts.get(article_class, 0) + 1
+        topic_classification = classify_topic_from_article(link.article)
+        primary_topic = primary_topic or topic_classification.primary_topic
+        if subtopic is None:
+            subtopic = topic_classification.subtopic
+        if geography is None:
+            geography = topic_classification.geography
+        if event_type is None:
+            event_type = topic_classification.event_type
         primary_entities.update(_primary_entities_from_values(link.article.entities, classification.primary_entities))
     content_class = max(class_counts.items(), key=lambda item: (item[1], item[0]))[0] if class_counts else "unknown"
     return FeatureVector(
@@ -423,6 +533,10 @@ def _cluster_features(cluster: Cluster) -> FeatureVector:
         title_tokens=_title_signature_tokens(cluster.normalized_headline),
         title_entities=_entities_mentioned_in_title(primary_entities, cluster.headline or cluster.normalized_headline),
         topic=cluster_topic,
+        primary_topic=primary_topic or "U.S.",
+        subtopic=subtopic,
+        geography=geography,
+        event_type=event_type,
         published_at=cluster.last_updated,
         publishers=publishers,
         content_class=content_class,
@@ -442,6 +556,8 @@ def _evaluate_candidate(
     time_proximity = _time_proximity(article.published_at, cluster_features.published_at, settings.cluster_time_window_hours)
     topic_match = topic_matches(article.topic, cluster_features.topic)
     class_mismatch = _content_class_mismatch(article.content_class, cluster_features.content_class)
+    primary_topic_match = article.primary_topic == cluster_features.primary_topic
+    subtopic_match = not article.subtopic or not cluster_features.subtopic or article.subtopic == cluster_features.subtopic
 
     entity_overlap = len(article.entities.intersection(cluster_features.entities))
     keyword_overlap = len(article.keywords.intersection(cluster_features.keywords))
@@ -460,6 +576,10 @@ def _evaluate_candidate(
         article.keywords.intersection(cluster_features.keywords) - CLUSTER_GENERIC_NEWS_TERMS
     )
     title_primary_entity_overlap = bool(article.title_entities.intersection(cluster_features.title_entities))
+    strong_entity_overlap = primary_entity_overlap and entity_overlap >= max(2, settings.cluster_min_entity_overlap + 1)
+    subtopic_conflict = bool(not subtopic_match and not strong_entity_overlap)
+    geography_conflict = _geography_conflicts(article.geography, cluster_features.geography)
+    event_type_conflict = _event_type_conflicts(article.event_type, cluster_features.event_type)
 
     score = round(
         0.45 * title_similarity
@@ -543,7 +663,19 @@ def _evaluate_candidate(
     signal_gate_passed = bool(signal_reasons) and (
         topic_match or semantic_backstop or primary_entity_continuity or same_source_update_chain
     )
-    if class_mismatch:
+    if not primary_topic_match:
+        signal_gate_passed = False
+        rejection_reason = "primary_topic_mismatch"
+    elif subtopic_conflict:
+        signal_gate_passed = False
+        rejection_reason = "subtopic_mismatch_without_strong_entity_overlap"
+    elif geography_conflict:
+        signal_gate_passed = False
+        rejection_reason = "geography_conflict"
+    elif event_type_conflict:
+        signal_gate_passed = False
+        rejection_reason = "event_type_conflict"
+    elif class_mismatch:
         signal_gate_passed = False
         rejection_reason = "content_class_mismatch"
     elif article.content_class == "low_trust_aggregator" and not (
@@ -554,7 +686,7 @@ def _evaluate_candidate(
     elif time_proximity <= 0 and not near_duplicate_title:
         signal_gate_passed = False
         rejection_reason = "story_window_expired"
-    elif primary_entity_conflict and not same_source_update_chain:
+    elif primary_entity_conflict:
         signal_gate_passed = False
         rejection_reason = "distinct_primary_entities"
     elif (
@@ -609,6 +741,10 @@ def _evaluate_candidate(
         near_duplicate_title=near_duplicate_title,
         same_source_update_chain=same_source_update_chain,
         primary_entity_conflict=primary_entity_conflict,
+        subtopic_match=subtopic_match,
+        subtopic_conflict=subtopic_conflict,
+        geography_conflict=geography_conflict,
+        event_type_conflict=event_type_conflict,
         article_content_class=article.content_class,
         cluster_content_class=cluster_features.content_class,
         score=score,
@@ -649,9 +785,10 @@ def _load_unclustered_articles(session: Session, limit: int, article_ids: list[i
 
 def _load_candidate_clusters(session: Session, article: Article, settings: Settings) -> list[Cluster]:
     threshold_time = article.published_at - timedelta(hours=settings.cluster_time_window_hours)
+    primary_topic = (article.primary_topic or "").strip() or apply_topic_classification(article).primary_topic
     stmt: Select[tuple[Cluster]] = (
         select(Cluster)
-        .where(Cluster.last_updated >= threshold_time)
+        .where(Cluster.last_updated >= threshold_time, Cluster.primary_topic == primary_topic)
         .order_by(Cluster.last_updated.desc())
     )
     return list(session.scalars(stmt).all())
@@ -751,6 +888,43 @@ def _promotion_blockers(
             )
 
     return blockers
+
+
+def _most_common(values: list[str | None]) -> str | None:
+    counts: dict[str, int] = {}
+    first_seen: dict[str, int] = {}
+    for index, value in enumerate(values):
+        cleaned = (value or "").strip()
+        if not cleaned:
+            continue
+        counts[cleaned] = counts.get(cleaned, 0) + 1
+        first_seen.setdefault(cleaned, index)
+    if not counts:
+        return None
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], first_seen[item[0]], item[0]))
+    return ranked[0][0]
+
+
+def _cluster_lane_metadata(articles: list[Article]) -> tuple[str, str | None, list[str], str | None, str | None]:
+    classifications = [apply_topic_classification(article) for article in articles]
+    primary_topic = _most_common([item.primary_topic for item in classifications]) or "U.S."
+    subtopic = _most_common([item.subtopic for item in classifications if item.primary_topic == primary_topic])
+    geography = _most_common([item.geography for item in classifications])
+    event_type = _most_common([item.event_type for item in classifications])
+    key_entities: list[str] = []
+    seen: set[str] = set()
+    for classification in classifications:
+        for entity in classification.key_entities:
+            key = entity.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            key_entities.append(entity)
+            if len(key_entities) >= 12:
+                break
+        if len(key_entities) >= 12:
+            break
+    return primary_topic, subtopic, key_entities, geography, event_type
 
 
 def _source_count_subquery():
@@ -857,6 +1031,10 @@ def _build_heuristic_breakdown(
         near_duplicate_title = False
         same_source_update_chain = False
         primary_entity_conflict = False
+        subtopic_match = False
+        subtopic_conflict = False
+        geography_conflict = False
+        event_type_conflict = False
     else:
         components = {
             "title_similarity": evaluation.title_similarity,
@@ -883,9 +1061,15 @@ def _build_heuristic_breakdown(
         near_duplicate_title = evaluation.near_duplicate_title
         same_source_update_chain = evaluation.same_source_update_chain
         primary_entity_conflict = evaluation.primary_entity_conflict
+        subtopic_match = evaluation.subtopic_match
+        subtopic_conflict = evaluation.subtopic_conflict
+        geography_conflict = evaluation.geography_conflict
+        event_type_conflict = evaluation.event_type_conflict
 
     topic_match = evaluation.topic_match if evaluation is not None else False
     selected_topic = evaluation.cluster.topic if evaluation is not None else None
+    selected_primary_topic = evaluation.cluster.primary_topic if evaluation is not None else None
+    selected_subtopic = evaluation.cluster.subtopic if evaluation is not None else None
     thresholds = {
         "score_threshold": settings.cluster_score_threshold,
         "title_signal_threshold": settings.cluster_min_title_signal,
@@ -908,11 +1092,15 @@ def _build_heuristic_breakdown(
         "topic_semantic_score_met": topic_match
         and components["semantic_score"] >= settings.cluster_min_topic_semantic_score,
         "topic_match_met": topic_match,
+        "subtopic_match_met": subtopic_match,
         "signal_gate_passed": signal_gate_passed,
         "attach_override_met": attach_override_met,
         "near_duplicate_title_met": near_duplicate_title,
         "same_source_update_chain_met": same_source_update_chain,
         "primary_entity_conflict_met": primary_entity_conflict,
+        "subtopic_conflict_met": subtopic_conflict,
+        "geography_conflict_met": geography_conflict,
+        "event_type_conflict_met": event_type_conflict,
     }
 
     matched_features: list[str] = []
@@ -937,6 +1125,14 @@ def _build_heuristic_breakdown(
         matched_features.append("same_source_update_chain")
     if thresholds_met["primary_entity_conflict_met"]:
         ignored_features.append("primary_entity_conflict")
+    if thresholds_met["subtopic_match_met"]:
+        matched_features.append("subtopic_match")
+    if thresholds_met["subtopic_conflict_met"]:
+        ignored_features.append("subtopic_conflict")
+    if thresholds_met["geography_conflict_met"]:
+        ignored_features.append("geography_conflict")
+    if thresholds_met["event_type_conflict_met"]:
+        ignored_features.append("event_type_conflict")
     if components["time_proximity"] > 0:
         if signal_gate_passed:
             matched_features.append("time_proximity_support")
@@ -972,6 +1168,8 @@ def _build_heuristic_breakdown(
         "candidate_count": candidate_count,
         "selected_cluster_id": selected_cluster_id,
         "selected_topic": selected_topic,
+        "selected_primary_topic": selected_primary_topic,
+        "selected_subtopic": selected_subtopic,
         "selected_score": round(selected_score, 4),
         "selected_topic_match": topic_match,
         "selected_source_match": evaluation.source_match if evaluation is not None else False,
@@ -1033,6 +1231,7 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     keyword_union: set[str] = set()
     entity_union: set[str] = set()
     cluster_topics = derive_topic_from_articles(articles)
+    primary_topic, subtopic, key_entities, geography, event_type = _cluster_lane_metadata(articles)
     similarity_stmt = select(func.avg(ClusterArticle.similarity_score)).where(ClusterArticle.cluster_id == cluster.id)
     avg_similarity = session.scalar(similarity_stmt) or 0.0
 
@@ -1051,6 +1250,11 @@ def _rebuild_cluster(session: Session, cluster: Cluster, settings: Settings) -> 
     cluster.keywords = sorted(keyword_union)
     cluster.entities = sorted(entity_union)
     cluster.topic = cluster_topics
+    cluster.primary_topic = primary_topic
+    cluster.subtopic = subtopic
+    cluster.key_entities = key_entities
+    cluster.geography = geography
+    cluster.event_type = event_type
     cluster.score = round(float(avg_similarity), 4)
     cluster.status = build_status(
         source_count=source_count,
@@ -1145,6 +1349,7 @@ def _attach_article_to_cluster(
 
 
 def _create_cluster(session: Session, article: Article) -> Cluster:
+    topic_classification = apply_topic_classification(article)
     cluster = Cluster(
         id=str(uuid.uuid4()),
         headline="pending headline",
@@ -1159,6 +1364,11 @@ def _create_cluster(session: Session, article: Article) -> Cluster:
         keywords=sorted(_semantic_keywords(article.keywords)),
         entities=sorted(_semantic_entities(article.entities)),
         topic=article.topic,
+        primary_topic=topic_classification.primary_topic,
+        subtopic=topic_classification.subtopic,
+        key_entities=list(topic_classification.key_entities),
+        geography=topic_classification.geography,
+        event_type=topic_classification.event_type,
     )
     session.add(cluster)
     session.flush()
@@ -1310,6 +1520,8 @@ def cluster_new_articles(session: Session, settings: Settings, article_ids: list
             "candidate_cluster_id": breakdown["selected_cluster_id"],
             "strongest_candidate_cluster_id": breakdown["selected_cluster_id"],
             "strongest_candidate_topic": breakdown["selected_topic"],
+            "strongest_candidate_primary_topic": breakdown["selected_primary_topic"],
+            "strongest_candidate_subtopic": breakdown["selected_subtopic"],
             "final_score": chosen_score,
             "candidate_score": breakdown["selected_score"],
             "title_similarity": breakdown["components"]["title_similarity"],
@@ -1322,10 +1534,14 @@ def cluster_new_articles(session: Session, settings: Settings, article_ids: list
             "title_token_overlap": breakdown["overlap_counts"]["title_token_overlap"],
             "source_match": breakdown["selected_source_match"],
             "topic_match": breakdown["selected_topic_match"],
+            "subtopic_match": breakdown["thresholds_met"]["subtopic_match_met"],
             "primary_entity_overlap": breakdown["thresholds_met"]["primary_entity_overlap_met"],
             "title_primary_entity_overlap": breakdown["thresholds_met"]["title_primary_entity_overlap_met"],
             "near_duplicate_title": breakdown["thresholds_met"]["near_duplicate_title_met"],
             "same_source_update_chain": breakdown["thresholds_met"]["same_source_update_chain_met"],
+            "subtopic_conflict": breakdown["thresholds_met"]["subtopic_conflict_met"],
+            "geography_conflict": breakdown["thresholds_met"]["geography_conflict_met"],
+            "event_type_conflict": breakdown["thresholds_met"]["event_type_conflict_met"],
             "time_proximity": breakdown["components"]["time_proximity"],
             "signal_gate_passed": breakdown["thresholds_met"]["signal_gate_passed"],
             "signal_reasons": breakdown["signal_reasons"],

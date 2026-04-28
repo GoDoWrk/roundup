@@ -9,7 +9,7 @@ from app.schemas.cluster import SourceReference, StoryCluster, TimelineEvent
 from app.services.content_quality import classify_article_content, evaluate_article_quality
 from app.services.enrichment import build_key_facts
 from app.services.normalizer import extract_image_url
-from app.services.topics import derive_topic_from_article, derive_topic_from_articles
+from app.services.topics import apply_topic_classification, classify_topic_from_article, derive_topic_from_article, derive_topic_from_articles
 
 MAX_CLUSTER_THUMBNAILS = 4
 
@@ -62,6 +62,7 @@ def _cluster_image_urls(cluster: Cluster) -> list[str]:
 
 
 def article_to_response(article: Article) -> ArticleResponse:
+    topic_classification = apply_topic_classification(article)
     return ArticleResponse(
         article_id=article.id,
         title=article.title,
@@ -70,6 +71,11 @@ def article_to_response(article: Article) -> ArticleResponse:
         published_at=article.published_at,
         image_url=_article_image_url(article),
         topic=derive_topic_from_article(article),
+        primary_topic=topic_classification.primary_topic,
+        subtopic=topic_classification.subtopic,
+        key_entities=list(topic_classification.key_entities),
+        geography=topic_classification.geography,
+        event_type=topic_classification.event_type,
     )
 
 
@@ -84,6 +90,7 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         raw_payload=raw_payload,
         source_trust=quality.source_trust,
     )
+    topic_classification = apply_topic_classification(article)
     return ArticleDebugItem(
         article_id=article.id,
         dedupe_hash=article.dedupe_hash,
@@ -95,6 +102,11 @@ def article_to_debug(article: Article) -> ArticleDebugItem:
         keywords=list(article.keywords),
         entities=list(article.entities),
         topic=derive_topic_from_article(article),
+        primary_topic=topic_classification.primary_topic,
+        subtopic=topic_classification.subtopic,
+        key_entities=list(topic_classification.key_entities),
+        geography=topic_classification.geography,
+        event_type=topic_classification.event_type,
         quality_action=quality.action,
         quality_reasons=list(quality.reasons),
         source_trust=quality.source_trust,
@@ -162,6 +174,9 @@ def build_story_cluster(
         reverse=True,
     )
     thumbnail_urls = _cluster_image_urls(cluster)
+    primary_topic = (cluster.primary_topic or "").strip()
+    if not primary_topic and articles:
+        primary_topic = classify_topic_from_article(articles[0]).primary_topic
 
     timeline = [
         TimelineEvent(
@@ -195,6 +210,11 @@ def build_story_cluster(
         cluster_id=cluster.id,
         headline=cluster.headline,
         topic=_story_topic(cluster, articles),
+        primary_topic=primary_topic or "U.S.",
+        subtopic=cluster.subtopic,
+        key_entities=_string_list(getattr(cluster, "key_entities", [])),
+        geography=cluster.geography,
+        event_type=cluster.event_type,
         summary=cluster.summary,
         what_changed=cluster.what_changed,
         why_it_matters=cluster.why_it_matters,

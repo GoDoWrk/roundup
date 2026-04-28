@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, func, select
@@ -17,11 +17,13 @@ from app.schemas.cluster import (
     ClusterDebugResponse,
     ClusterDebugScoreBreakdown,
     ClusterDebugThresholds,
+    TopicLaneDebugItem,
+    TopicLaneDebugResponse,
 )
 from app.services.serialization import article_to_debug
 from app.services.clustering import _promotion_blockers
 from app.services.content_quality import classify_article_content, evaluate_article_quality
-from app.services.topics import derive_topic_from_articles
+from app.services.topics import apply_topic_classification, derive_topic_from_articles
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
@@ -168,6 +170,10 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
                 title_primary_entity_overlap=bool(met.get("title_primary_entity_overlap_met")),
                 near_duplicate_title=bool(met.get("near_duplicate_title_met")),
                 same_source_update_chain=bool(met.get("same_source_update_chain_met")),
+                subtopic_match=bool(met.get("subtopic_match_met")),
+                subtopic_conflict=bool(met.get("subtopic_conflict_met")),
+                geography_conflict=bool(met.get("geography_conflict_met")),
+                event_type_conflict=bool(met.get("event_type_conflict_met")),
                 time_proximity=round(float(component_values.get("time_proximity") or 0.0), 4),
                 signal_gate_passed=bool(met.get("signal_gate_passed")),
                 signal_reasons=[str(item) for item in breakdown.get("signal_reasons") or [] if str(item)],
@@ -290,6 +296,7 @@ def debug_clusters(
     for cluster in rows:
         source_count = len(cluster.source_links)
         cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
+        primary_topic = (cluster.primary_topic or "").strip() or "U.S."
         visibility_threshold = settings.cluster_min_sources_for_api
         promotion_blockers = _promotion_blockers(
             source_count=source_count,
@@ -304,6 +311,11 @@ def debug_clusters(
                 status=cluster.status,
                 score=cluster.score,
                 topic=cluster_topic,
+                primary_topic=primary_topic,
+                subtopic=cluster.subtopic,
+                key_entities=[str(item) for item in cluster.key_entities or [] if str(item).strip()],
+                geography=cluster.geography,
+                event_type=cluster.event_type,
                 source_count=source_count,
                 visibility_threshold=visibility_threshold,
                 promotion_eligible=promotion_eligible,
@@ -320,3 +332,65 @@ def debug_clusters(
         )
 
     return ClusterDebugResponse(total=total, items=items)
+
+
+@router.get("/topic-lanes", response_model=TopicLaneDebugResponse)
+def debug_topic_lanes(db: Session = Depends(get_db_session)) -> TopicLaneDebugResponse:
+    settings = get_settings()
+    article_counts: Counter[tuple[str, str | None]] = Counter()
+    cluster_counts: dict[tuple[str, str | None], Counter[str]] = defaultdict(Counter)
+    hidden_reasons: dict[tuple[str, str | None], Counter[str]] = defaultdict(Counter)
+
+    article_rows = list(db.scalars(select(Article)).all())
+    for article in article_rows:
+        stored_topic = (article.primary_topic or "").strip()
+        if stored_topic:
+            article_counts.update([(stored_topic, article.subtopic)])
+            continue
+        classification = apply_topic_classification(article)
+        article_counts.update([(classification.primary_topic, classification.subtopic)])
+
+    cluster_rows = list(
+        db.scalars(
+            select(Cluster)
+            .options(selectinload(Cluster.source_links).selectinload(ClusterArticle.article))
+            .order_by(Cluster.primary_topic.asc(), Cluster.subtopic.asc(), Cluster.last_updated.desc())
+        )
+        .unique()
+        .all()
+    )
+    for cluster in cluster_rows:
+        topic = (cluster.primary_topic or "").strip() or "U.S."
+        subtopic = cluster.subtopic
+        key = (topic, subtopic)
+        source_count = len(cluster.source_links)
+        if cluster.status == "hidden":
+            cluster_counts[key].update(["hidden"])
+            blockers = _promotion_blockers(
+                source_count=source_count,
+                validation_error=cluster.validation_error,
+                settings=settings,
+                articles=[link.article for link in cluster.source_links if link.article is not None],
+            )
+            reasons = blockers or [cluster.promotion_reason or cluster.validation_error or "hidden_without_reason"]
+            for reason in reasons:
+                hidden_reasons[key].update([str(reason).split(":", 1)[0]])
+        elif cluster.promoted_at is not None or source_count >= settings.cluster_min_sources_for_api:
+            cluster_counts[key].update(["promoted"])
+        else:
+            cluster_counts[key].update(["candidate"])
+
+    keys = set(article_counts).union(cluster_counts)
+    items = [
+        TopicLaneDebugItem(
+            topic=topic,
+            subtopic=subtopic,
+            article_count=int(article_counts.get((topic, subtopic), 0)),
+            candidate_clusters=int(cluster_counts[(topic, subtopic)].get("candidate", 0)),
+            promoted_clusters=int(cluster_counts[(topic, subtopic)].get("promoted", 0)),
+            hidden_clusters=int(cluster_counts[(topic, subtopic)].get("hidden", 0)),
+            reason_hidden={key: int(value) for key, value in sorted(hidden_reasons[(topic, subtopic)].items())},
+        )
+        for topic, subtopic in sorted(keys, key=lambda item: (item[0], item[1] or ""))
+    ]
+    return TopicLaneDebugResponse(total=len(items), items=items)

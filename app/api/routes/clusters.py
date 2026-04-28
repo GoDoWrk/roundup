@@ -75,11 +75,11 @@ def _visibility_label(cluster: Cluster, fallback: str) -> str:
 
 
 def _is_detail_visible(cluster: Cluster, source_count: int, settings) -> bool:
-    if cluster.status == "hidden":
-        return False
-
     if cluster.validation_error is not None and not _is_legacy_source_count_validation_error(cluster.validation_error, settings):
         return False
+
+    if cluster.status == "hidden":
+        return bool(settings.cluster_show_just_in_single_source and source_count >= 1)
 
     if cluster.status != "hidden" and source_count >= settings.cluster_min_sources_for_developing_stories:
         return True
@@ -170,8 +170,7 @@ def homepage_clusters(db: Session = Depends(get_db_session)) -> HomepageClusters
         for cluster in _load_section_clusters(
             db,
             filters=(
-                Cluster.status != "hidden",
-                source_count >= settings.cluster_min_sources_for_developing_stories,
+                source_count >= (1 if settings.cluster_show_just_in_single_source else settings.cluster_min_sources_for_developing_stories),
                 valid_or_legacy_source_count,
             ),
             order_by=(Cluster.last_updated.desc(), Cluster.id.asc()),
@@ -214,7 +213,7 @@ def homepage_clusters(db: Session = Depends(get_db_session)) -> HomepageClusters
             just_in=[
                 build_story_cluster(
                     cluster,
-                    visibility="public",
+                    visibility="candidate" if cluster.status == "hidden" or len(cluster.source_links) == 1 else "public",
                     visibility_label=_visibility_label(cluster, "Latest update"),
                 )
                 for cluster in just_in_rows
@@ -257,4 +256,6 @@ def get_cluster(cluster_id: str, db: Session = Depends(get_db_session)) -> Story
     source_count = len(cluster.source_links) if cluster is not None else 0
     if cluster is None or not _is_detail_visible(cluster, source_count, settings):
         raise HTTPException(status_code=404, detail="Cluster not found")
+    if cluster.status == "hidden":
+        return build_story_cluster(cluster, visibility="candidate", visibility_label=_visibility_label(cluster, "Latest update"))
     return build_story_cluster(cluster)

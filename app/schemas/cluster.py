@@ -37,6 +37,11 @@ class StoryCluster(BaseModel):
     primary_image_url: str | None
     thumbnail_urls: list[str]
     topic: str
+    primary_topic: str = "U.S."
+    subtopic: str | None = None
+    key_entities: list[str] = Field(default_factory=list)
+    geography: str | None = None
+    event_type: str | None = None
     region: str | None
     story_type: str
     first_seen: datetime
@@ -141,6 +146,10 @@ class ClusterDebugJoinDecision(BaseModel):
     title_primary_entity_overlap: bool = False
     near_duplicate_title: bool = False
     same_source_update_chain: bool = False
+    subtopic_match: bool = False
+    subtopic_conflict: bool = False
+    geography_conflict: bool = False
+    event_type_conflict: bool = False
     time_proximity: float
     signal_gate_passed: bool
     signal_reasons: list[str]
@@ -174,6 +183,11 @@ class ClusterDebugItem(BaseModel):
     status: str
     score: float
     topic: str
+    primary_topic: str = "U.S."
+    subtopic: str | None = None
+    key_entities: list[str] = Field(default_factory=list)
+    geography: str | None = None
+    event_type: str | None = None
     source_count: int
     visibility_threshold: int
     promotion_eligible: bool
@@ -191,3 +205,18 @@ class ClusterDebugItem(BaseModel):
 class ClusterDebugResponse(BaseModel):
     total: int
     items: list[ClusterDebugItem]
+
+
+class TopicLaneDebugItem(BaseModel):
+    topic: str
+    subtopic: str | None = None
+    article_count: int
+    candidate_clusters: int
+    promoted_clusters: int
+    hidden_clusters: int
+    reason_hidden: dict[str, int] = Field(default_factory=dict)
+
+
+class TopicLaneDebugResponse(BaseModel):
+    total: int
+    items: list[TopicLaneDebugItem]

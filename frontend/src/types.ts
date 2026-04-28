@@ -30,6 +30,11 @@ export interface StoryCluster {
   thumbnail_urls: string[];
   region: string | null;
   story_type: string;
+  primary_topic?: string;
+  subtopic?: string | null;
+  key_entities?: string[];
+  geography?: string | null;
+  event_type?: string | null;
   first_seen: string;
   last_updated: string;
   is_developing: boolean;
@@ -211,6 +216,10 @@ export interface ClusterDebugJoinDecision {
   title_primary_entity_overlap: boolean;
   near_duplicate_title: boolean;
   same_source_update_chain: boolean;
+  subtopic_match?: boolean;
+  subtopic_conflict?: boolean;
+  geography_conflict?: boolean;
+  event_type_conflict?: boolean;
   time_proximity: number;
   signal_gate_passed: boolean;
   signal_reasons: string[];
@@ -244,6 +253,11 @@ export interface ClusterDebugItem {
   status: string;
   score: number;
   topic: string;
+  primary_topic?: string;
+  subtopic?: string | null;
+  key_entities?: string[];
+  geography?: string | null;
+  event_type?: string | null;
   source_count: number;
   visibility_threshold: number;
   promotion_eligible: boolean;
@@ -261,6 +275,21 @@ export interface ClusterDebugItem {
 export interface ClusterDebugResponse {
   total: number;
   items: ClusterDebugItem[];
+}
+
+export interface TopicLaneDebugItem {
+  topic: string;
+  subtopic: string | null;
+  article_count: number;
+  candidate_clusters: number;
+  promoted_clusters: number;
+  hidden_clusters: number;
+  reason_hidden: Record<string, number>;
+}
+
+export interface TopicLaneDebugResponse {
+  total: number;
+  items: TopicLaneDebugItem[];
 }
 
 export interface ParsedMetrics {

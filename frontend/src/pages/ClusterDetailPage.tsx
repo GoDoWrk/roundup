@@ -91,6 +91,22 @@ export function ClusterDetailPage() {
                 <div>{cluster.topic || "(missing)"}</div>
               </div>
               <div>
+                <strong>primary_topic</strong>
+                <div>{cluster.primary_topic || "(missing)"}</div>
+              </div>
+              <div>
+                <strong>subtopic</strong>
+                <div>{cluster.subtopic || "(none)"}</div>
+              </div>
+              <div>
+                <strong>geography</strong>
+                <div>{cluster.geography || "(none)"}</div>
+              </div>
+              <div>
+                <strong>event_type</strong>
+                <div>{cluster.event_type || "(none)"}</div>
+              </div>
+              <div>
                 <strong>score</strong>
                 <div>{formatScore(cluster.score)}</div>
               </div>
@@ -234,6 +250,22 @@ export function ClusterDetailPage() {
           </p>
           <p>
             <strong>debug topic:</strong> {debugItem.topic || "(missing)"}
+          </p>
+          <p>
+            <strong>debug primary_topic:</strong> {debugItem.primary_topic || "(missing)"}
+          </p>
+          <p>
+            <strong>debug subtopic:</strong> {debugItem.subtopic || "none"}
+          </p>
+          <p>
+            <strong>debug geography:</strong> {debugItem.geography || "none"}
+          </p>
+          <p>
+            <strong>debug event_type:</strong> {debugItem.event_type || "none"}
+          </p>
+          <p>
+            <strong>debug key_entities:</strong>{" "}
+            {debugItem.key_entities && debugItem.key_entities.length > 0 ? debugItem.key_entities.join(", ") : "none"}
           </p>
           <p>
             <strong>debug source_count:</strong> {debugItem.source_count}

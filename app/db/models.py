@@ -31,6 +31,11 @@ class Article(Base):
     keywords: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    primary_topic: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    subtopic: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    key_entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    geography: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     dedupe_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
 
     cluster_link: Mapped[ClusterArticle | None] = relationship(back_populates="article", uselist=False)
@@ -42,6 +47,7 @@ class Article(Base):
         Index("ix_articles_canonical_url", "canonical_url"),
         Index("ix_articles_publisher", "publisher"),
         Index("ix_articles_topic", "topic"),
+        Index("ix_articles_primary_subtopic", "primary_topic", "subtopic"),
     )
 
 
@@ -68,6 +74,11 @@ class Cluster(Base):
     key_facts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     related_cluster_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    primary_topic: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    subtopic: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    key_entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    geography: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     validation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -85,6 +96,7 @@ class Cluster(Base):
         Index("ix_clusters_status_last_updated", "status", "last_updated", "id"),
         Index("ix_clusters_score_last_updated", "score", "last_updated", "id"),
         Index("ix_clusters_topic", "topic"),
+        Index("ix_clusters_primary_subtopic", "primary_topic", "subtopic"),
     )
 
 

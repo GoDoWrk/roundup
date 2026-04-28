@@ -5,10 +5,11 @@ import {
   fetchClusterList,
   fetchDebugClusters,
   fetchHealth,
+  fetchTopicLanes,
   type ApiErrorDetails
 } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
-import type { ClusterDebugItem, ClusterListResponse, HealthResponse } from "../types";
+import type { ClusterDebugItem, ClusterListResponse, HealthResponse, TopicLaneDebugItem } from "../types";
 import { toClusterListRows } from "../utils/clusterView";
 import { formatScore, formatTimestamp } from "../utils/format";
 
@@ -89,11 +90,13 @@ function RuntimeHealthPanel({ health, error }: { health: HealthResponse | null; 
 export function ClusterListPage() {
   const [clusters, setClusters] = useState<ClusterListResponse | null>(null);
   const [debugClusters, setDebugClusters] = useState<ClusterDebugItem[]>([]);
+  const [topicLanes, setTopicLanes] = useState<TopicLaneDebugItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorDetails, setErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [clusterApiErrorDetails, setClusterApiErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [debugErrorDetails, setDebugErrorDetails] = useState<ApiErrorDetails | null>(null);
+  const [topicLaneErrorDetails, setTopicLaneErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [healthErrorDetails, setHealthErrorDetails] = useState<ApiErrorDetails | null>(null);
 
   const load = useCallback(async () => {
@@ -101,12 +104,14 @@ export function ClusterListPage() {
     setErrorDetails(null);
     setClusterApiErrorDetails(null);
     setDebugErrorDetails(null);
+    setTopicLaneErrorDetails(null);
     setHealthErrorDetails(null);
 
     try {
-      const [clusterList, debug, healthStatus] = await Promise.allSettled([
+      const [clusterList, debug, lanes, healthStatus] = await Promise.allSettled([
         fetchClusterList({ limit: 100, offset: 0 }),
         fetchDebugClusters(),
+        fetchTopicLanes(),
         fetchHealth()
       ]);
 
@@ -122,6 +127,13 @@ export function ClusterListPage() {
       } else {
         setDebugClusters([]);
         setDebugErrorDetails(getApiErrorDetails(debug.reason));
+      }
+
+      if (lanes.status === "fulfilled") {
+        setTopicLanes(lanes.value.items);
+      } else {
+        setTopicLanes([]);
+        setTopicLaneErrorDetails(getApiErrorDetails(lanes.reason));
       }
 
       if (healthStatus.status === "fulfilled") {
@@ -151,6 +163,7 @@ export function ClusterListPage() {
   const error = errorDetails?.message ?? null;
   const apiError = clusterApiErrorDetails?.message ?? null;
   const debugError = debugErrorDetails?.message ?? null;
+  const topicLaneError = topicLaneErrorDetails?.message ?? null;
 
   function isRecentlyPromoted(promotedAt: string | null): boolean {
     if (!promotedAt) {
@@ -309,6 +322,56 @@ export function ClusterListPage() {
                     <div>
                       <QualityBadges text={row.summary || ""} />
                     </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="section">
+        <h3>Topic Lanes</h3>
+        <p className="muted">Article and cluster counts from <code>/debug/topic-lanes</code>.</p>
+        {topicLaneErrorDetails && (
+          <p className="error">
+            Topic lane debug API unavailable: {topicLaneErrorDetails.title}. {topicLaneError}
+          </p>
+        )}
+        {!error && !topicLaneError && !loading && topicLanes.length === 0 && <p>No topic lane counts currently visible.</p>}
+        {!error && !topicLaneError && !loading && topicLanes.length > 0 && (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Topic Lane</th>
+                <th>Articles</th>
+                <th>Candidate</th>
+                <th>Promoted</th>
+                <th>Hidden</th>
+                <th>Hidden Reasons</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topicLanes.map((lane) => (
+                <tr key={`${lane.topic}:${lane.subtopic ?? "none"}`}>
+                  <td>
+                    <strong>{lane.topic}</strong>
+                    <div className="muted">{lane.subtopic || "no subtopic"}</div>
+                  </td>
+                  <td>{lane.article_count}</td>
+                  <td>{lane.candidate_clusters}</td>
+                  <td>{lane.promoted_clusters}</td>
+                  <td>{lane.hidden_clusters}</td>
+                  <td>
+                    {Object.keys(lane.reason_hidden).length === 0 ? (
+                      <span className="muted">(none)</span>
+                    ) : (
+                      <div className="quality-warn">
+                        {Object.entries(lane.reason_hidden).map(([reason, count]) => (
+                          <code key={reason}>{reason}: {count}</code>
+                        ))}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

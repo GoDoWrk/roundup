@@ -66,6 +66,11 @@ ENRICHED_STORY_FIELDS = {
     "primary_image_url",
     "thumbnail_urls",
     "topic",
+    "primary_topic",
+    "subtopic",
+    "key_entities",
+    "geography",
+    "event_type",
     "region",
     "story_type",
     "first_seen",
@@ -126,6 +131,9 @@ def _assert_enriched_story_contract(
     assert len(payload["timeline_events"]) == 3
     assert isinstance(payload["topic"], str)
     assert payload["topic"]
+    assert isinstance(payload["primary_topic"], str)
+    assert payload["primary_topic"]
+    assert isinstance(payload["key_entities"], list)
     assert payload["region"] is None
     assert payload["story_type"] == "general"
     assert payload["is_developing"] is developing_expected
@@ -159,6 +167,7 @@ def test_root_index_lists_debug_endpoints(client) -> None:
     assert payload["endpoints"]["search"] == "/api/search?q=..."
     assert payload["endpoints"]["sources"] == "/api/sources"
     assert payload["endpoints"]["debug_clusters"] == "/debug/clusters"
+    assert payload["endpoints"]["debug_topic_lanes"] == "/debug/topic-lanes"
     assert payload["endpoints"]["metrics"] == "/metrics"
 
 
@@ -235,10 +244,13 @@ def test_homepage_clusters_sections_promoted_and_latest_public_stories(
     payload = response.json()
     assert [item["cluster_id"] for item in payload["sections"]["top_stories"]] == ["homepage-top"]
     assert [item["cluster_id"] for item in payload["sections"]["developing_stories"]] == ["homepage-developing"]
-    assert [item["cluster_id"] for item in payload["sections"]["just_in"]] == ["homepage-latest"]
+    assert [item["cluster_id"] for item in payload["sections"]["just_in"]] == ["homepage-latest", "homepage-candidate"]
     assert payload["sections"]["just_in"][0]["visibility"] == "public"
     assert payload["sections"]["just_in"][0]["visibility_label"] == "Latest update"
     assert payload["sections"]["just_in"][0]["is_single_source"] is False
+    assert payload["sections"]["just_in"][1]["visibility"] == "candidate"
+    assert payload["sections"]["just_in"][1]["visibility_label"] == "Single source"
+    assert payload["sections"]["just_in"][1]["is_single_source"] is True
     assert payload["status"]["visible_clusters"] == 3
     assert payload["status"]["candidate_clusters"] == 1
 
@@ -246,8 +258,10 @@ def test_homepage_clusters_sections_promoted_and_latest_public_stories(
     assert detail_response.status_code == 200
     assert detail_response.json()["cluster_id"] == "homepage-latest"
 
-    hidden_detail_response = client.get("/api/clusters/homepage-candidate")
-    assert hidden_detail_response.status_code == 404
+    candidate_detail_response = client.get("/api/clusters/homepage-candidate")
+    assert candidate_detail_response.status_code == 200
+    assert candidate_detail_response.json()["visibility"] == "candidate"
+    assert candidate_detail_response.json()["visibility_label"] == "Single source"
 
 
 def test_api_cluster_detail_visible_when_homepage_developing_threshold_is_met(

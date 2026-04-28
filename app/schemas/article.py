@@ -11,6 +11,11 @@ class ArticleResponse(BaseModel):
     published_at: datetime
     image_url: str | None = None
     topic: str
+    primary_topic: str = "U.S."
+    subtopic: str | None = None
+    key_entities: list[str] = Field(default_factory=list)
+    geography: str | None = None
+    event_type: str | None = None
 
 
 class ArticleListResponse(BaseModel):
@@ -31,6 +36,11 @@ class ArticleDebugItem(BaseModel):
     keywords: list[str]
     entities: list[str]
     topic: str
+    primary_topic: str = "U.S."
+    subtopic: str | None = None
+    key_entities: list[str] = Field(default_factory=list)
+    geography: str | None = None
+    event_type: str | None = None
     quality_action: str
     quality_reasons: list[str]
     source_trust: str

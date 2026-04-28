@@ -5,7 +5,8 @@ import type {
   HealthResponse,
   SearchResponse,
   SourceListResponse,
-  StoryCluster
+  StoryCluster,
+  TopicLaneDebugResponse
 } from "../types";
 
 type ApiErrorKind = "http" | "network" | "invalid_json" | "invalid_response";
@@ -137,6 +138,12 @@ function assertDebugClusterResponse(value: ClusterDebugResponse, endpoint: strin
   assertRecord(value, endpoint);
   assertArrayField(value, "items", endpoint);
   return value as ClusterDebugResponse;
+}
+
+function assertTopicLaneDebugResponse(value: TopicLaneDebugResponse, endpoint: string): TopicLaneDebugResponse {
+  assertRecord(value, endpoint);
+  assertArrayField(value, "items", endpoint);
+  return value as TopicLaneDebugResponse;
 }
 
 function assertStoryCluster(value: StoryCluster, endpoint: string): StoryCluster {
@@ -326,6 +333,11 @@ export async function fetchHealth(): Promise<HealthResponse> {
 export async function fetchDebugClusters(): Promise<ClusterDebugResponse> {
   const endpoint = "/debug/clusters";
   return assertDebugClusterResponse(await fetchJson<ClusterDebugResponse>(endpoint), endpoint);
+}
+
+export async function fetchTopicLanes(): Promise<TopicLaneDebugResponse> {
+  const endpoint = "/debug/topic-lanes";
+  return assertTopicLaneDebugResponse(await fetchJson<TopicLaneDebugResponse>(endpoint), endpoint);
 }
 
 export async function fetchMetricsText(): Promise<string> {

@@ -41,6 +41,7 @@ def api_index() -> ApiIndexResponse:
             "search": "/api/search?q=...",
             "sources": "/api/sources",
             "debug_clusters": "/debug/clusters",
+            "debug_topic_lanes": "/debug/topic-lanes",
             "metrics": "/metrics",
         },
     )

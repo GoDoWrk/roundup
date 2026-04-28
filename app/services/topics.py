@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 from app.db.models import Article
 
@@ -494,6 +495,212 @@ _GENERIC_ENTITY_HINTS = {
 
 _TOPIC_THEME_WORDS = {"war", "files", "admin"}
 
+PRIMARY_TOPICS = ("World", "U.S.", "Politics", "Business", "Technology", "Science", "Health")
+
+SUBTOPICS_BY_PRIMARY_TOPIC: dict[str, tuple[str, ...]] = {
+    "Politics": (
+        "elections",
+        "courts",
+        "congress",
+        "white_house",
+        "redistricting",
+        "political_violence",
+    ),
+    "Technology": (
+        "artificial_intelligence",
+        "cybersecurity",
+        "platforms",
+        "devices",
+        "regulation",
+    ),
+    "World": (
+        "middle_east",
+        "europe",
+        "asia",
+        "ukraine_russia",
+        "humanitarian_crisis",
+    ),
+    "Business": (
+        "markets",
+        "inflation",
+        "energy",
+        "labor",
+        "corporate_earnings",
+    ),
+    "Health": (
+        "public_health",
+        "medicine",
+        "food_drug_safety",
+        "insurance",
+    ),
+    "Science": (
+        "climate",
+        "space",
+        "research",
+        "environment",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class TopicClassification:
+    primary_topic: str
+    subtopic: str | None
+    key_entities: tuple[str, ...]
+    geography: str | None
+    event_type: str | None
+
+
+_US_STATE_TERMS = {
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+}
+
+_WORLD_GEO_TERMS = {
+    "afghanistan",
+    "africa",
+    "asia",
+    "australia",
+    "britain",
+    "canada",
+    "china",
+    "europe",
+    "france",
+    "gaza",
+    "germany",
+    "india",
+    "iran",
+    "iraq",
+    "israel",
+    "japan",
+    "lebanon",
+    "middle east",
+    "nato",
+    "russia",
+    "sudan",
+    "syria",
+    "taiwan",
+    "ukraine",
+    "united kingdom",
+    "yemen",
+}
+
+_PRIMARY_TOPIC_RULES: list[tuple[str, set[str]]] = [
+    ("Health", {"covid", "disease", "health", "hospital", "medicine", "medical", "drug", "fda", "vaccine", "cancer", "doctor", "public health", "insurance", "alzheimer", "asthma", "patient", "patients", "pharma"}),
+    ("Science", {"climate", "space", "nasa", "research", "scientists", "science", "environment", "emissions", "species", "wildlife", "planet", "weather"}),
+    ("Technology", {"ai", "artificial intelligence", "openai", "deepseek", "cyber", "cybersecurity", "hack", "data breach", "platform", "meta", "google", "apple", "device", "chip", "software", "technology", "tech"}),
+    ("Business", {"business", "markets", "stocks", "inflation", "federal reserve", "fed", "earnings", "company", "corporate", "labor", "jobs", "energy", "oil", "gas", "tariff", "economy"}),
+    ("Politics", {"election", "elections", "campaign", "vote", "voting", "poll", "court", "supreme court", "judge", "congress", "senate", "sen", "senator", "house", "white house", "president", "trump", "biden", "desantis", "ben sasse", "sasse", "redistricting", "gerrymander", "political"}),
+    ("World", _WORLD_GEO_TERMS | {"war", "ceasefire", "humanitarian", "refugee", "foreign", "international"}),
+    ("U.S.", {"u.s.", "us", "usa", "united states", "america", "american", "state", "governor", "mayor", "police", "city", "county", "transit", "agency", "board", "museum", "officials", "dam", "evacuation", "emergency", "phoenix"}),
+]
+
+_SUBTOPIC_RULES: dict[str, list[tuple[str, set[str]]]] = {
+    "Politics": [
+        ("redistricting", {"redistricting", "gerrymander", "map", "maps", "district"}),
+        ("political_violence", {"shooting", "attack", "assassination", "bomb", "threat", "violence"}),
+        ("white_house", {"white house", "president", "administration"}),
+        ("congress", {"congress", "senate", "house", "speaker", "lawmakers", "capitol"}),
+        ("courts", {"court", "courts", "judge", "lawsuit", "trial", "ruling", "supreme court"}),
+        ("elections", {"election", "elections", "campaign", "vote", "voting", "poll", "ballot"}),
+    ],
+    "Technology": [
+        ("cybersecurity", {"cyber", "cybersecurity", "hack", "hacked", "breach", "ransomware", "malware"}),
+        ("artificial_intelligence", {"ai", "artificial intelligence", "openai", "chatgpt", "deepseek", "model", "llm"}),
+        ("regulation", {"regulation", "regulator", "rules", "antitrust", "ban", "privacy", "lawmakers"}),
+        ("platforms", {"platform", "platforms", "meta", "facebook", "instagram", "x", "tiktok", "youtube"}),
+        ("devices", {"device", "devices", "iphone", "android", "chip", "semiconductor", "hardware"}),
+    ],
+    "World": [
+        ("ukraine_russia", {"ukraine", "russia", "putin", "kyiv", "moscow"}),
+        ("middle_east", {"gaza", "israel", "iran", "iraq", "lebanon", "syria", "yemen", "middle east", "hamas", "hezbollah"}),
+        ("humanitarian_crisis", {"humanitarian", "famine", "refugee", "aid", "displaced", "civilians"}),
+        ("europe", {"europe", "eu", "uk", "britain", "france", "germany", "nato"}),
+        ("asia", {"china", "india", "japan", "taiwan", "korea", "pakistan"}),
+    ],
+    "Business": [
+        ("inflation", {"inflation", "prices", "consumer price", "cpi", "federal reserve", "fed", "rates"}),
+        ("corporate_earnings", {"earnings", "profit", "revenue", "quarterly", "guidance"}),
+        ("markets", {"market", "markets", "stocks", "shares", "bond", "yield", "dow", "nasdaq"}),
+        ("energy", {"energy", "oil", "gas", "electricity", "power", "opec"}),
+        ("labor", {"labor", "jobs", "workers", "union", "strike", "wages"}),
+    ],
+    "Health": [
+        ("food_drug_safety", {"fda", "recall", "contamination", "food safety", "drug safety", "side effect"}),
+        ("public_health", {"public health", "outbreak", "covid", "vaccine", "pandemic", "disease"}),
+        ("medicine", {"medicine", "medical", "treatment", "drug", "therapy", "cancer", "doctor"}),
+        ("insurance", {"insurance", "medicaid", "medicare", "coverage", "premium"}),
+    ],
+    "Science": [
+        ("climate", {"climate", "warming", "emissions", "carbon"}),
+        ("space", {"space", "nasa", "rocket", "moon", "mars", "satellite"}),
+        ("environment", {"environment", "wildlife", "species", "pollution", "conservation"}),
+        ("research", {"research", "study", "scientists", "journal", "discovery"}),
+    ],
+}
+
+_EVENT_TYPE_RULES: list[tuple[str, set[str]]] = [
+    ("redistricting", {"redistricting", "gerrymander", "district map", "maps"}),
+    ("election", {"election", "campaign", "vote", "voting", "poll", "ballot"}),
+    ("legal", {"court", "judge", "lawsuit", "sues", "trial", "ruling", "charged", "indictment"}),
+    ("regulation_policy", {"regulation", "regulate", "rule", "rules", "bill", "law", "ban", "order", "policy"}),
+    ("violence_conflict", {"shooting", "attack", "strike", "war", "ceasefire", "bomb", "killed"}),
+    ("markets", {"market", "stocks", "shares", "inflation", "rates", "fed"}),
+    ("corporate_results", {"earnings", "profit", "revenue", "quarterly"}),
+    ("labor_action", {"strike", "union", "workers", "labor", "wages"}),
+    ("public_health", {"outbreak", "vaccine", "disease", "public health"}),
+    ("research", {"study", "research", "scientists", "discovery"}),
+    ("product_launch", {"launch", "release", "unveils", "announces", "model"}),
+]
+
 
 def normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
@@ -929,3 +1136,152 @@ def topic_matches(left: str, right: str) -> bool:
 
     shared_terms = left_terms.intersection(right_terms)
     return bool(shared_terms - _TOPIC_BLOCKLIST)
+
+
+def _contains_any(text_key: str, tokens: set[str], markers: set[str]) -> bool:
+    for marker in markers:
+        marker_key = _normalize_topic_key(marker)
+        if not marker_key:
+            continue
+        if " " in marker_key and marker_key in text_key:
+            return True
+        if marker_key in tokens:
+            return True
+    return False
+
+
+def _classification_text(
+    title: str,
+    content_text: str,
+    *,
+    keywords: list[str] | None = None,
+    entities: list[str] | None = None,
+) -> tuple[str, set[str]]:
+    values = [
+        normalize_whitespace(title),
+        normalize_whitespace(content_text[:3000]),
+        " ".join(str(item) for item in keywords or []),
+        " ".join(str(item) for item in entities or []),
+    ]
+    text_key = _normalize_topic_key(" ".join(value for value in values if value))
+    return text_key, set(text_key.split())
+
+
+def _classify_primary_topic(text_key: str, tokens: set[str]) -> str:
+    scores: dict[str, int] = {topic: 0 for topic in PRIMARY_TOPICS}
+    for topic, markers in _PRIMARY_TOPIC_RULES:
+        for marker in markers:
+            marker_key = _normalize_topic_key(marker)
+            if not marker_key:
+                continue
+            if " " in marker_key:
+                scores[topic] += 2 if marker_key in text_key else 0
+            elif marker_key in tokens:
+                scores[topic] += 1
+
+    ranked = sorted(scores.items(), key=lambda item: (-item[1], PRIMARY_TOPICS.index(item[0])))
+    if ranked and ranked[0][1] > 0:
+        return ranked[0][0]
+    return "U.S." if tokens.intersection({"us", "u", "s", "american", "state", "city", "county"}) else "World"
+
+
+def _classify_subtopic(primary_topic: str, text_key: str, tokens: set[str]) -> str | None:
+    for subtopic, markers in _SUBTOPIC_RULES.get(primary_topic, []):
+        if _contains_any(text_key, tokens, markers):
+            return subtopic
+    return None
+
+
+def _classify_geography(text_key: str, tokens: set[str], entities: list[str] | None) -> str | None:
+    for entity in entities or []:
+        entity_key = _normalize_topic_key(entity)
+        if entity_key in _US_STATE_TERMS or entity_key in _WORLD_GEO_TERMS:
+            return entity_key.replace(" ", "_")
+
+    for state in sorted(_US_STATE_TERMS, key=len, reverse=True):
+        if (" " in state and state in text_key) or state in tokens:
+            return state.replace(" ", "_")
+
+    for location in sorted(_WORLD_GEO_TERMS, key=len, reverse=True):
+        if (" " in location and location in text_key) or location in tokens:
+            if location in {"gaza", "israel", "iran", "iraq", "lebanon", "syria", "yemen", "middle east"}:
+                return "middle_east"
+            if location in {"ukraine", "russia"}:
+                return "ukraine_russia"
+            if location in {"europe", "eu", "france", "germany", "britain", "united kingdom", "uk"}:
+                return "europe"
+            if location in {"china", "india", "japan", "taiwan"}:
+                return "asia"
+            return location.replace(" ", "_")
+
+    if tokens.intersection({"us", "usa", "american"}) or "united states" in text_key:
+        return "united_states"
+    return None
+
+
+def _classify_event_type(text_key: str, tokens: set[str]) -> str | None:
+    for event_type, markers in _EVENT_TYPE_RULES:
+        if _contains_any(text_key, tokens, markers):
+            return event_type
+    return None
+
+
+def _key_entities_from_values(
+    title: str,
+    content_text: str,
+    *,
+    entities: list[str] | None = None,
+    limit: int = 8,
+) -> tuple[str, ...]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for value in [*(entities or []), *_candidate_subject_entities(title, content_text)]:
+        normalized = normalize_whitespace(str(value))
+        key = _normalize_topic_key(normalized)
+        if not normalized or not key or key in seen or _is_generic_topic(normalized):
+            continue
+        seen.add(key)
+        candidates.append(normalized)
+        if len(candidates) >= limit:
+            break
+    return tuple(candidates)
+
+
+def classify_topic_from_text(
+    title: str,
+    content_text: str = "",
+    *,
+    keywords: list[str] | None = None,
+    entities: list[str] | None = None,
+) -> TopicClassification:
+    text_key, tokens = _classification_text(title, content_text, keywords=keywords, entities=entities)
+    primary_topic = _classify_primary_topic(text_key, tokens)
+    return TopicClassification(
+        primary_topic=primary_topic,
+        subtopic=_classify_subtopic(primary_topic, text_key, tokens),
+        key_entities=_key_entities_from_values(title, content_text, entities=entities),
+        geography=_classify_geography(text_key, tokens, entities),
+        event_type=_classify_event_type(text_key, tokens),
+    )
+
+
+def classify_topic_from_article(article: Article) -> TopicClassification:
+    source_article = getattr(article, "article", None)
+    if source_article is not None:
+        return classify_topic_from_article(source_article)
+    return classify_topic_from_text(
+        getattr(article, "title", "") or "",
+        f"{getattr(article, 'publisher', '') or ''} {getattr(article, 'content_text', '') or ''}",
+        keywords=list(getattr(article, "keywords", []) or []),
+        entities=list(getattr(article, "entities", []) or []),
+    )
+
+
+def apply_topic_classification(article: Article) -> TopicClassification:
+    classification = classify_topic_from_article(article)
+    article.primary_topic = classification.primary_topic
+    article.subtopic = classification.subtopic
+    article.key_entities = list(classification.key_entities)
+    article.geography = classification.geography
+    article.event_type = classification.event_type
+    return classification

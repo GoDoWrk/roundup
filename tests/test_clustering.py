@@ -426,6 +426,7 @@ def test_service_finance_does_not_merge_with_trump_white_house_story(db_session:
     assert trump_breakdown["membership_rejection_status"] in {
         "rejected_content_class_mismatch",
         "rejected_low_similarity",
+        "candidate_needs_more_sources",
     }
 
 
@@ -996,6 +997,153 @@ def test_near_duplicate_title_does_not_override_distinct_primary_entities(db_ses
     assert second_breakdown["thresholds_met"]["near_duplicate_title_met"] is True
     assert second_breakdown["thresholds_met"]["primary_entity_conflict_met"] is True
     assert "primary_entity_conflict" in second_breakdown["ignored_features"]
+
+
+def test_desantis_redistricting_articles_cluster_together(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="desantis-redistricting-1",
+        title="DeSantis asks Florida lawmakers to advance redistricting map",
+        normalized_title="desantis asks florida lawmakers to advance redistricting map",
+        keywords=["desantis", "florida", "redistricting", "map", "lawmakers"],
+        entities=["Ron DeSantis", "Florida"],
+        published_at=now - timedelta(hours=2),
+        publisher="Tallahassee Ledger",
+    )
+    second = _article(
+        dedupe_hash="desantis-redistricting-2",
+        title="Florida redistricting push by DeSantis draws new court scrutiny",
+        normalized_title="florida redistricting push by desantis draws new court scrutiny",
+        keywords=["florida", "redistricting", "desantis", "map", "court"],
+        entities=["Ron DeSantis", "Florida"],
+        published_at=now - timedelta(hours=1),
+        publisher="Capitol Wire",
+    )
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    cluster = db_session.scalars(select(Cluster)).one()
+    assert cluster.primary_topic == "Politics"
+    assert cluster.subtopic == "redistricting"
+    assert cluster.event_type == "redistricting"
+
+
+def test_unrelated_politics_stories_do_not_merge_with_topic_lane_match(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="politics-redistricting",
+            title="DeSantis asks Florida lawmakers to advance redistricting map",
+            normalized_title="desantis asks florida lawmakers to advance redistricting map",
+            keywords=["desantis", "florida", "redistricting", "map"],
+            entities=["Ron DeSantis", "Florida"],
+            published_at=now - timedelta(hours=2),
+            publisher="Tallahassee Ledger",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="politics-white-house",
+            title="White House officials brief Congress on security funding bill",
+            normalized_title="white house officials brief congress on security funding bill",
+            keywords=["white", "house", "congress", "security", "funding"],
+            entities=["White House", "Congress"],
+            published_at=now - timedelta(hours=1),
+            publisher="National Desk",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["candidate_rejection_reason"] in {
+        "distinct_primary_entities",
+        "subtopic_mismatch_without_strong_entity_overlap",
+        "event_type_conflict",
+    }
+
+
+def test_ai_regulation_stories_cluster_separately_from_ai_lawsuit_stories(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="ai-regulation",
+            title="Lawmakers propose AI regulation bill for OpenAI and other model developers",
+            normalized_title="lawmakers propose ai regulation bill for openai and other model developers",
+            keywords=["ai", "regulation", "bill", "openai", "models"],
+            entities=["OpenAI", "Congress"],
+            published_at=now - timedelta(hours=2),
+            publisher="Tech Policy Daily",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="ai-lawsuit",
+            title="OpenAI faces copyright lawsuit over AI training data",
+            normalized_title="openai faces copyright lawsuit over ai training data",
+            keywords=["openai", "ai", "lawsuit", "copyright", "training"],
+            entities=["OpenAI"],
+            published_at=now - timedelta(hours=1),
+            publisher="Court Tech Wire",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    lawsuit_breakdown = links[-1].heuristic_breakdown
+    assert lawsuit_breakdown["candidate_rejection_reason"] == "event_type_conflict"
+    assert lawsuit_breakdown["thresholds_met"]["event_type_conflict_met"] is True
+
+
+def test_health_stories_do_not_merge_with_science_environment_keyword_overlap(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="health-pollution",
+            title="Doctors warn pollution exposure is worsening asthma cases",
+            normalized_title="doctors warn pollution exposure is worsening asthma cases",
+            keywords=["pollution", "health", "asthma", "doctors"],
+            entities=["American Medical Association"],
+            published_at=now - timedelta(hours=2),
+            publisher="Health Desk",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="science-pollution",
+            title="Scientists track pollution effects on river wildlife habitat",
+            normalized_title="scientists track pollution effects on river wildlife habitat",
+            keywords=["pollution", "environment", "scientists", "wildlife"],
+            entities=["River Research Institute"],
+            published_at=now - timedelta(hours=1),
+            publisher="Science Journal",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.candidates_evaluated == 0
+    clusters = list(db_session.scalars(select(Cluster).order_by(Cluster.primary_topic.asc())).all())
+    assert {cluster.primary_topic for cluster in clusters} == {"Health", "Science"}
 
 
 def _cluster_with_sources(

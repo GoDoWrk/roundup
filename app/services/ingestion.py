@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Article
 from app.services.content_quality import classify_article_content, evaluate_normalized_article_quality
 from app.services.normalizer import NormalizedArticle, normalize_miniflux_entry
+from app.services.topics import classify_topic_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
     errors: list[str] = []
-    prepared_entries: list[tuple[int, object, NormalizedArticle]] = []
+    prepared_entries: list[tuple[int, object, NormalizedArticle, object]] = []
 
     for index, entry in enumerate(entries):
         entry_id = entry.get("id") if isinstance(entry, dict) else None
@@ -57,6 +58,12 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
                 content_text=normalized.content_text,
                 raw_payload=normalized.raw_payload,
                 source_trust=quality.source_trust,
+            )
+            topic_classification = classify_topic_from_text(
+                normalized.title,
+                f"{normalized.publisher} {normalized.content_text}",
+                keywords=normalized.keywords,
+                entities=normalized.entities,
             )
             if quality.action == "reject":
                 rejected += 1
@@ -78,7 +85,7 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
                 )
                 continue
 
-            prepared_entries.append((index, entry_id, normalized))
+            prepared_entries.append((index, entry_id, normalized, topic_classification))
             metadata = dict(normalized.raw_payload.get("__roundup", {})) if isinstance(normalized.raw_payload, dict) else {}
             metadata.update(
                 {
@@ -88,6 +95,11 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
                     "secondary_entities": list(classification.secondary_entities),
                     "quality_reasons": list(quality.reasons),
                     "source_trust": quality.source_trust,
+                    "primary_topic": topic_classification.primary_topic,
+                    "subtopic": topic_classification.subtopic,
+                    "key_entities": list(topic_classification.key_entities),
+                    "geography": topic_classification.geography,
+                    "event_type": topic_classification.event_type,
                 }
             )
             normalized.raw_payload["__roundup"] = metadata
@@ -109,8 +121,8 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             errors=errors,
         )
 
-    canonical_urls = {normalized.canonical_url for _, _, normalized in prepared_entries}
-    dedupe_hashes = {normalized.dedupe_hash for _, _, normalized in prepared_entries}
+    canonical_urls = {normalized.canonical_url for _, _, normalized, _ in prepared_entries}
+    dedupe_hashes = {normalized.dedupe_hash for _, _, normalized, _ in prepared_entries}
 
     existing_url_article_ids = {
         canonical_url: article_id
@@ -129,7 +141,7 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
         ).all()
     }
 
-    for index, entry_id, normalized in prepared_entries:
+    for index, entry_id, normalized, topic_classification in prepared_entries:
         if normalized.canonical_url in seen_urls:
             deduplicated += 1
             logger.info(
@@ -192,6 +204,11 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             keywords=normalized.keywords,
             entities=normalized.entities,
             topic=normalized.topic,
+            primary_topic=topic_classification.primary_topic,
+            subtopic=topic_classification.subtopic,
+            key_entities=list(topic_classification.key_entities),
+            geography=topic_classification.geography,
+            event_type=topic_classification.event_type,
             dedupe_hash=normalized.dedupe_hash,
         )
         try:

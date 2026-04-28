@@ -89,6 +89,11 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     item = next(entry for entry in payload["items"] if entry["cluster_id"] == "debug-cluster")
     explanation = item["debug_explanation"]
     assert "topic" in item
+    assert "primary_topic" in item
+    assert "subtopic" in item
+    assert "key_entities" in item
+    assert "geography" in item
+    assert "event_type" in item
     assert "visibility_threshold" in item
     assert "promotion_eligible" in item
     assert "promoted_at" in item
@@ -122,6 +127,44 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     assert "article_content_class" in join
     assert "cluster_content_class" in join
     assert "membership_rejection_status" in join
+    assert "subtopic_match" in join
+    assert "subtopic_conflict" in join
+    assert "geography_conflict" in join
+    assert "event_type_conflict" in join
+
+
+def test_debug_topic_lanes_returns_counts_and_hidden_reasons(client, db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    cluster = _cluster("lane-hidden-cluster", now)
+    cluster.status = "hidden"
+    cluster.primary_topic = "Politics"
+    cluster.subtopic = "courts"
+    cluster.promotion_reason = "source_count_below_threshold"
+    db_session.add(cluster)
+    db_session.flush()
+
+    article = _article(1, cluster.id, now, "Daily One")
+    article.primary_topic = "Politics"
+    article.subtopic = "courts"
+    db_session.add(article)
+    db_session.flush()
+    db_session.add(
+        ClusterArticle(
+            cluster_id=cluster.id,
+            article_id=article.id,
+            similarity_score=0.7,
+            heuristic_breakdown={"decision": "create_new_cluster", "selected_score": 1.0},
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/debug/topic-lanes")
+    assert response.status_code == 200
+    payload = response.json()
+    lane = next(item for item in payload["items"] if item["topic"] == "Politics" and item["subtopic"] == "courts")
+    assert lane["article_count"] == 1
+    assert lane["hidden_clusters"] == 1
+    assert "source_count_below_threshold" in lane["reason_hidden"]
 
 
 def test_debug_clusters_exposes_low_trust_aggregator_promotion_blocker(client, db_session: Session) -> None:
