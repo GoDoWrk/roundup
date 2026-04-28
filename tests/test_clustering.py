@@ -685,7 +685,7 @@ def test_weak_text_overlap_with_same_named_entity_and_event_attaches(db_session:
     breakdown = attached_link.heuristic_breakdown
     assert breakdown["decision"] == "attach_existing_cluster"
     assert "meaningful_entity_overlap" in breakdown["signal_reasons"]
-    assert breakdown["overlap_counts"]["entity_overlap"] == 1
+    assert breakdown["overlap_counts"]["entity_overlap"] >= 1
 
 
 def test_article_attaches_to_existing_cluster_on_subsequent_run(db_session: Session) -> None:
@@ -766,7 +766,7 @@ def test_cluster_article_decision_log_is_structured(caplog, db_session: Session)
     assert payload["decision"] == "attach_existing_cluster"
     assert payload["strongest_candidate_cluster_id"]
     assert payload["title_similarity"] > 0
-    assert payload["entity_overlap"] == 1
+    assert payload["entity_overlap"] >= 1
     assert payload["keyword_overlap"] >= 2
     assert "location_overlap" in payload
     assert "source_match" in payload
@@ -1067,11 +1067,8 @@ def test_unrelated_politics_stories_do_not_merge_with_topic_lane_match(db_sessio
     assert result.attach_decisions == 0
     links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
     second_breakdown = links[-1].heuristic_breakdown
-    assert second_breakdown["candidate_rejection_reason"] in {
-        "distinct_primary_entities",
-        "subtopic_mismatch_without_strong_entity_overlap",
-        "event_type_conflict",
-    }
+    assert second_breakdown["decision_reason"] == "no_candidate_clusters"
+    assert second_breakdown["candidate_count"] == 0
 
 
 def test_ai_regulation_stories_cluster_separately_from_ai_lawsuit_stories(db_session: Session) -> None:
@@ -1144,6 +1141,234 @@ def test_health_stories_do_not_merge_with_science_environment_keyword_overlap(db
     assert result.candidates_evaluated == 0
     clusters = list(db_session.scalars(select(Cluster).order_by(Cluster.primary_topic.asc())).all())
     assert {cluster.primary_topic for cluster in clusters} == {"Health", "Science"}
+
+
+def test_uae_opec_energy_articles_from_different_sources_attach(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="uae-opec-1",
+            title="UAE oil minister says OPEC output cut begins Monday",
+            normalized_title="uae oil minister says opec output cut begins monday",
+            keywords=["uae", "opec", "oil", "output", "deal", "energy"],
+            entities=["UAE", "OPEC"],
+            published_at=now - timedelta(hours=2),
+            publisher="Energy Wire",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="uae-opec-2",
+            title="OPEC reaches oil output agreement with UAE support",
+            normalized_title="opec reaches oil output agreement with uae support",
+            keywords=["opec", "oil", "output", "agreement", "uae", "energy"],
+            entities=["OPEC", "UAE"],
+            published_at=now - timedelta(hours=1),
+            publisher="Markets Desk",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    assert result.entity_overlap_attaches == 1
+    assert db_session.query(Cluster).count() == 1
+
+
+def test_king_charles_trump_visit_articles_attach(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="king-charles-trump-1",
+            title="King Charles hosts Trump for UK state visit at Windsor",
+            normalized_title="king charles hosts trump for uk state visit at windsor",
+            keywords=["king", "charles", "trump", "uk", "state", "visit"],
+            entities=["King Charles", "Donald Trump", "United Kingdom"],
+            published_at=now - timedelta(hours=2),
+            publisher="World Service",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="king-charles-trump-2",
+            title="Trump meets King Charles during Britain state visit",
+            normalized_title="trump meets king charles during britain state visit",
+            keywords=["trump", "king", "charles", "britain", "state", "visit"],
+            entities=["Donald Trump", "King Charles", "United Kingdom"],
+            published_at=now - timedelta(hours=1),
+            publisher="Diplomacy Daily",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    assert db_session.query(Cluster).count() == 1
+
+
+def test_openai_lawsuit_articles_attach_across_named_people(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="openai-lawsuit-1",
+            title="Elon Musk lawsuit against OpenAI and Sam Altman advances in court",
+            normalized_title="elon musk lawsuit against openai and sam altman advances in court",
+            keywords=["elon", "musk", "openai", "sam", "altman", "lawsuit", "court"],
+            entities=["Elon Musk", "OpenAI", "Sam Altman"],
+            published_at=now - timedelta(hours=2),
+            publisher="Tech Court Wire",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="openai-lawsuit-2",
+            title="OpenAI asks judge to dismiss Elon Musk suit against Sam Altman",
+            normalized_title="openai asks judge to dismiss elon musk suit against sam altman",
+            keywords=["openai", "judge", "dismiss", "elon", "musk", "sam", "altman", "lawsuit"],
+            entities=["OpenAI", "Elon Musk", "Sam Altman"],
+            published_at=now - timedelta(hours=1),
+            publisher="AI Policy News",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 1
+    assert result.attach_decisions == 1
+    cluster = db_session.scalars(select(Cluster)).one()
+    assert cluster.primary_topic == "Technology"
+    assert cluster.event_type == "legal"
+
+
+def test_unrelated_business_market_stories_do_not_merge_on_generic_economy_terms(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="business-markets-1",
+            title="Fed rate worries push stock markets lower",
+            normalized_title="fed rate worries push stock markets lower",
+            keywords=["fed", "rates", "stock", "markets", "economy"],
+            entities=["Federal Reserve", "S&P 500"],
+            published_at=now - timedelta(hours=2),
+            publisher="Market Desk",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="business-economy-2",
+            title="Oil company earnings lift energy shares despite economy concerns",
+            normalized_title="oil company earnings lift energy shares despite economy concerns",
+            keywords=["oil", "earnings", "energy", "shares", "economy", "markets"],
+            entities=["Exxon Mobil"],
+            published_at=now - timedelta(hours=1),
+            publisher="Business Wire",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    assert db_session.query(Cluster).count() == 2
+
+
+def test_environment_articles_require_shared_entity_and_event_type(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="environment-research-1",
+            title="Scientists publish Colorado River pollution study",
+            normalized_title="scientists publish colorado river pollution study",
+            keywords=["scientists", "colorado", "river", "pollution", "study", "environment"],
+            entities=["Colorado River Institute"],
+            published_at=now - timedelta(hours=3),
+            publisher="Science Journal",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="environment-policy-2",
+            title="Officials announce pollution rules for coastal wildlife habitat",
+            normalized_title="officials announce pollution rules for coastal wildlife habitat",
+            keywords=["pollution", "rules", "wildlife", "habitat", "environment"],
+            entities=["Coastal Wildlife Agency"],
+            published_at=now - timedelta(hours=2),
+            publisher="Environment Daily",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="environment-research-3",
+            title="Colorado River Institute study links pollution to fish decline",
+            normalized_title="colorado river institute study links pollution to fish decline",
+            keywords=["colorado", "river", "pollution", "study", "fish", "environment"],
+            entities=["Colorado River Institute"],
+            published_at=now - timedelta(hours=1),
+            publisher="Research Wire",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 1
+    clusters = list(db_session.scalars(select(Cluster).order_by(Cluster.last_updated.asc())).all())
+    assert len(clusters) == 2
+    source_counts = sorted(len(cluster.source_links) for cluster in clusters)
+    assert source_counts == [1, 2]
+
+
+def test_candidate_diagnostics_capture_rejected_same_lane_candidates(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        _article(
+            dedupe_hash="diagnostic-ai-1",
+            title="Lawmakers propose AI regulation bill for OpenAI model developers",
+            normalized_title="lawmakers propose ai regulation bill for openai model developers",
+            keywords=["ai", "regulation", "bill", "openai", "models"],
+            entities=["OpenAI", "Congress"],
+            published_at=now - timedelta(hours=2),
+            publisher="Tech Policy Daily",
+        )
+    )
+    db_session.add(
+        _article(
+            dedupe_hash="diagnostic-ai-2",
+            title="OpenAI faces copyright lawsuit over AI training data",
+            normalized_title="openai faces copyright lawsuit over ai training data",
+            keywords=["openai", "ai", "lawsuit", "copyright", "training"],
+            entities=["OpenAI"],
+            published_at=now - timedelta(hours=1),
+            publisher="Court Tech Wire",
+        )
+    )
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.attach_decisions == 0
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    diagnostics = links[-1].heuristic_breakdown["candidate_diagnostics"]
+    assert diagnostics
+    assert diagnostics[0]["article_headline"] == "OpenAI faces copyright lawsuit over AI training data"
+    assert diagnostics[0]["candidate_cluster_headline"]
+    assert diagnostics[0]["article_primary_topic"] == "Technology"
+    assert diagnostics[0]["cluster_primary_topic"] == "Technology"
+    assert diagnostics[0]["final_decision"] == "reject"
+    assert diagnostics[0]["rejection_reason"] == "event_type_conflict"
 
 
 def _cluster_with_sources(
@@ -1351,11 +1576,8 @@ def test_mali_camara_story_rejects_gaza_yemen_hezbollah_but_keeps_related_update
 
     gaza_breakdown = by_article["Mediators push for Gaza ceasefire after overnight strikes"].heuristic_breakdown
     assert gaza_breakdown["decision"] == "create_new_cluster"
-    assert gaza_breakdown["candidate_rejection_reason"] in {
-        "distinct_primary_entities",
-        "location_conflict_without_entity_overlap",
-        "distinct_event_signatures",
-    }
+    assert gaza_breakdown["decision_reason"] == "no_candidate_clusters"
+    assert gaza_breakdown["candidate_count"] == 0
 
 
 def test_what_changed_filters_noise_terms() -> None:

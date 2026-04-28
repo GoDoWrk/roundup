@@ -92,6 +92,13 @@ export function MetricsPage() {
         ["clusters_active_total", metrics.clusters_active_total, "number", "Current active cluster count."],
         ["cluster_promotion_attempts_total", metrics.cluster_promotion_attempts_total, "number", "Total hidden-cluster promotion attempts."],
         ["cluster_promotion_failures_total", metrics.cluster_promotion_failures_total, "number", "Total promotion attempts that stayed hidden."],
+        ["cluster_candidates_same_topic_total", metrics.cluster_candidates_same_topic_total, "number", "Same-primary-topic lane candidates selected for scoring."],
+        ["cluster_candidates_cross_topic_rejected_total", metrics.cluster_candidates_cross_topic_rejected_total, "number", "Candidate comparisons rejected by primary topic mismatch."],
+        ["cluster_entity_overlap_attach_total", metrics.cluster_entity_overlap_attach_total, "number", "Attachments supported by shared normalized entities."],
+        ["cluster_entity_conflict_rejected_total", metrics.cluster_entity_conflict_rejected_total, "number", "Candidates rejected for conflicting primary entities."],
+        ["cluster_no_candidate_new_total", metrics.cluster_no_candidate_new_total, "number", "New clusters created with no topic-lane candidates."],
+        ["cluster_topic_lane_attach_total", metrics.cluster_topic_lane_attach_total, "number", "Attachments made after topic-lane candidate selection."],
+        ["cluster_topic_lane_new_total", metrics.cluster_topic_lane_new_total, "number", "New clusters created after topic-lane candidate selection."],
         ["last_ingest_time", metrics.last_ingest_time, "time", "Last ingestion timestamp."],
         ["last_cluster_time", metrics.last_cluster_time, "time", "Last clustering timestamp."]
       ]

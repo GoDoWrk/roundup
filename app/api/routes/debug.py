@@ -11,6 +11,7 @@ from app.db.models import Article, Cluster, ClusterArticle
 from app.db.session import get_db_session
 from app.schemas.article import ArticleDebugResponse
 from app.schemas.cluster import (
+    ClusterCandidateDiagnostic,
     ClusterDebugExplanation,
     ClusterDebugItem,
     ClusterDebugJoinDecision,
@@ -186,6 +187,25 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
                 candidate_rejection_reason=breakdown.get("candidate_rejection_reason"),
                 membership_rejection_status=breakdown.get("membership_rejection_status"),
                 warnings=warnings,
+                candidate_diagnostics=[
+                    ClusterCandidateDiagnostic(
+                        article_headline=str(item.get("article_headline") or ""),
+                        candidate_cluster_headline=str(item.get("candidate_cluster_headline") or ""),
+                        article_primary_topic=str(item.get("article_primary_topic") or ""),
+                        article_subtopic=item.get("article_subtopic"),
+                        cluster_primary_topic=str(item.get("cluster_primary_topic") or ""),
+                        cluster_subtopic=item.get("cluster_subtopic"),
+                        shared_entities=[str(entity) for entity in item.get("shared_entities") or [] if str(entity)],
+                        conflicting_entities=[
+                            str(entity) for entity in item.get("conflicting_entities") or [] if str(entity)
+                        ],
+                        similarity_score=round(float(item.get("similarity_score") or 0.0), 4),
+                        final_decision=str(item.get("final_decision") or "reject"),
+                        rejection_reason=item.get("rejection_reason"),
+                    )
+                    for item in breakdown.get("candidate_diagnostics") or []
+                    if isinstance(item, dict)
+                ],
             )
         )
 
@@ -199,7 +219,10 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
     topic_text = ", ".join((shared_entities + shared_keywords)[:3]) or "shared reporting themes"
     cluster_topic = cluster.topic or derive_topic_from_articles(list(cluster.source_links))
 
-    score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
+    score_formula = (
+        "0.40*title_similarity + 0.20*entity_jaccard + 0.15*keyword_jaccard + "
+        "0.15*entity_overlap_score + 0.10*time_proximity"
+    )
     semantic_formula = "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
     score_summary = (
         "Score is a weighted blend of title similarity, shared entities, shared keywords, and recency. "

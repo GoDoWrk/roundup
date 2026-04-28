@@ -78,6 +78,13 @@ def update_cluster_metrics(
     active_total: int = 0,
     promotion_attempts: int = 0,
     promotion_failures: int = 0,
+    candidates_same_topic: int = 0,
+    candidates_cross_topic_rejected: int = 0,
+    entity_overlap_attaches: int = 0,
+    entity_conflict_rejected: int = 0,
+    no_candidate_new: int = 0,
+    topic_lane_attaches: int = 0,
+    topic_lane_new: int = 0,
 ) -> None:
     stats = get_or_create_pipeline_stats(session)
     stats.clusters_created_total += created
@@ -94,6 +101,13 @@ def update_cluster_metrics(
     stats.clusters_active_total = active_total
     stats.cluster_promotion_attempts_total += promotion_attempts
     stats.cluster_promotion_failures_total += promotion_failures
+    stats.cluster_candidates_same_topic_total += candidates_same_topic
+    stats.cluster_candidates_cross_topic_rejected_total += candidates_cross_topic_rejected
+    stats.cluster_entity_overlap_attach_total += entity_overlap_attaches
+    stats.cluster_entity_conflict_rejected_total += entity_conflict_rejected
+    stats.cluster_no_candidate_new_total += no_candidate_new
+    stats.cluster_topic_lane_attach_total += topic_lane_attaches
+    stats.cluster_topic_lane_new_total += topic_lane_new
     stats.latest_candidate_clusters_created = created
     stats.latest_clusters_updated = updated
     stats.latest_clusters_hidden = hidden_total
@@ -240,6 +254,27 @@ def metrics_as_prometheus_text(session: Session) -> str:
         "# HELP cluster_promotion_failures_total Total hidden-cluster promotion attempts that remained hidden",
         "# TYPE cluster_promotion_failures_total counter",
         f"cluster_promotion_failures_total {stats.cluster_promotion_failures_total}",
+        "# HELP cluster_candidates_same_topic_total Total same-primary-topic lane candidates selected for scoring",
+        "# TYPE cluster_candidates_same_topic_total counter",
+        f"cluster_candidates_same_topic_total {stats.cluster_candidates_same_topic_total}",
+        "# HELP cluster_candidates_cross_topic_rejected_total Total candidate comparisons rejected for primary topic mismatch",
+        "# TYPE cluster_candidates_cross_topic_rejected_total counter",
+        f"cluster_candidates_cross_topic_rejected_total {stats.cluster_candidates_cross_topic_rejected_total}",
+        "# HELP cluster_entity_overlap_attach_total Total attachments supported by shared normalized entities",
+        "# TYPE cluster_entity_overlap_attach_total counter",
+        f"cluster_entity_overlap_attach_total {stats.cluster_entity_overlap_attach_total}",
+        "# HELP cluster_entity_conflict_rejected_total Total candidates rejected with conflicting primary entities",
+        "# TYPE cluster_entity_conflict_rejected_total counter",
+        f"cluster_entity_conflict_rejected_total {stats.cluster_entity_conflict_rejected_total}",
+        "# HELP cluster_no_candidate_new_total Total new clusters created because no viable topic-lane candidates existed",
+        "# TYPE cluster_no_candidate_new_total counter",
+        f"cluster_no_candidate_new_total {stats.cluster_no_candidate_new_total}",
+        "# HELP cluster_topic_lane_attach_total Total attachments made inside topic-lane candidate selection",
+        "# TYPE cluster_topic_lane_attach_total counter",
+        f"cluster_topic_lane_attach_total {stats.cluster_topic_lane_attach_total}",
+        "# HELP cluster_topic_lane_new_total Total new clusters created after topic-lane candidate selection",
+        "# TYPE cluster_topic_lane_new_total counter",
+        f"cluster_topic_lane_new_total {stats.cluster_topic_lane_new_total}",
         "# HELP latest_candidate_clusters_created Candidate clusters created in the latest pipeline run",
         "# TYPE latest_candidate_clusters_created gauge",
         f"latest_candidate_clusters_created {stats.latest_candidate_clusters_created}",

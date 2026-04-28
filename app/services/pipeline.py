@@ -320,6 +320,13 @@ def run_pipeline(session: Session, settings: Settings, *, run_id: str = "manual"
         active_total=cluster_result.active_total,
         promotion_attempts=cluster_result.promotion_attempts,
         promotion_failures=cluster_result.promotion_failures,
+        candidates_same_topic=cluster_result.candidates_same_topic,
+        candidates_cross_topic_rejected=cluster_result.candidates_cross_topic_rejected,
+        entity_overlap_attaches=cluster_result.entity_overlap_attaches,
+        entity_conflict_rejected=cluster_result.entity_conflict_rejected,
+        no_candidate_new=cluster_result.no_candidate_new,
+        topic_lane_attaches=cluster_result.topic_lane_attaches,
+        topic_lane_new=cluster_result.topic_lane_new,
     )
 
     session.commit()

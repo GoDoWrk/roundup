@@ -232,6 +232,21 @@ export interface ClusterDebugJoinDecision {
   candidate_rejection_reason: string | null;
   membership_rejection_status: string | null;
   warnings: string[];
+  candidate_diagnostics: ClusterCandidateDiagnostic[];
+}
+
+export interface ClusterCandidateDiagnostic {
+  article_headline: string;
+  candidate_cluster_headline: string;
+  article_primary_topic: string;
+  article_subtopic?: string | null;
+  cluster_primary_topic: string;
+  cluster_subtopic?: string | null;
+  shared_entities: string[];
+  conflicting_entities: string[];
+  similarity_score: number;
+  final_decision: string;
+  rejection_reason: string | null;
 }
 
 export interface ClusterDebugExplanation {
@@ -329,6 +344,13 @@ export interface ParsedMetrics {
   clusters_active_total: number | null;
   cluster_promotion_attempts_total: number | null;
   cluster_promotion_failures_total: number | null;
+  cluster_candidates_same_topic_total: number | null;
+  cluster_candidates_cross_topic_rejected_total: number | null;
+  cluster_entity_overlap_attach_total: number | null;
+  cluster_entity_conflict_rejected_total: number | null;
+  cluster_no_candidate_new_total: number | null;
+  cluster_topic_lane_attach_total: number | null;
+  cluster_topic_lane_new_total: number | null;
   latest_candidate_clusters_created: number | null;
   latest_clusters_updated: number | null;
   latest_clusters_hidden: number | null;

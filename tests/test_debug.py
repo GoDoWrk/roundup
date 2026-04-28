@@ -74,6 +74,21 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
                         "keyword_overlap_met": True,
                     },
                     "signal_reasons": ["strong_title_similarity", "meaningful_entity_overlap"],
+                    "candidate_diagnostics": [
+                        {
+                            "article_headline": article.title,
+                            "candidate_cluster_headline": cluster.headline,
+                            "article_primary_topic": "U.S.",
+                            "article_subtopic": None,
+                            "cluster_primary_topic": "U.S.",
+                            "cluster_subtopic": None,
+                            "shared_entities": ["city council"],
+                            "conflicting_entities": [],
+                            "similarity_score": 0.7,
+                            "final_decision": "attach",
+                            "rejection_reason": None,
+                        }
+                    ],
                     "warnings": [],
                 },
             )
@@ -131,6 +146,8 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     assert "subtopic_conflict" in join
     assert "geography_conflict" in join
     assert "event_type_conflict" in join
+    assert "candidate_diagnostics" in join
+    assert join["candidate_diagnostics"][0]["final_decision"] == "attach"
 
 
 def test_debug_topic_lanes_returns_counts_and_hidden_reasons(client, db_session: Session) -> None:

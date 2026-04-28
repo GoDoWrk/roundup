@@ -22,6 +22,13 @@ clusters_hidden_total 11
 clusters_active_total 8
 cluster_promotion_attempts_total 7
 cluster_promotion_failures_total 3
+cluster_candidates_same_topic_total 22
+cluster_candidates_cross_topic_rejected_total 1
+cluster_entity_overlap_attach_total 9
+cluster_entity_conflict_rejected_total 4
+cluster_no_candidate_new_total 5
+cluster_topic_lane_attach_total 10
+cluster_topic_lane_new_total 6
 last_ingest_time 1713000000
 last_cluster_time 1713000200
 `;
@@ -44,6 +51,13 @@ last_cluster_time 1713000200
     expect(parsed.clusters_active_total).toBe(8);
     expect(parsed.cluster_promotion_attempts_total).toBe(7);
     expect(parsed.cluster_promotion_failures_total).toBe(3);
+    expect(parsed.cluster_candidates_same_topic_total).toBe(22);
+    expect(parsed.cluster_candidates_cross_topic_rejected_total).toBe(1);
+    expect(parsed.cluster_entity_overlap_attach_total).toBe(9);
+    expect(parsed.cluster_entity_conflict_rejected_total).toBe(4);
+    expect(parsed.cluster_no_candidate_new_total).toBe(5);
+    expect(parsed.cluster_topic_lane_attach_total).toBe(10);
+    expect(parsed.cluster_topic_lane_new_total).toBe(6);
     expect(parsed.last_ingest_time).toBe(1713000000);
     expect(parsed.last_cluster_time).toBe(1713000200);
   });

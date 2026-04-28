@@ -321,6 +321,13 @@ def test_promotion_metrics_counters_update(db_session: Session) -> None:
         active_total=7,
         promotion_attempts=2,
         promotion_failures=1,
+        candidates_same_topic=5,
+        candidates_cross_topic_rejected=1,
+        entity_overlap_attaches=3,
+        entity_conflict_rejected=2,
+        no_candidate_new=4,
+        topic_lane_attaches=3,
+        topic_lane_new=4,
     )
     db_session.commit()
 
@@ -331,6 +338,13 @@ def test_promotion_metrics_counters_update(db_session: Session) -> None:
     assert stats.clusters_active_total == 7
     assert stats.cluster_promotion_attempts_total == 2
     assert stats.cluster_promotion_failures_total == 1
+    assert stats.cluster_candidates_same_topic_total == 5
+    assert stats.cluster_candidates_cross_topic_rejected_total == 1
+    assert stats.cluster_entity_overlap_attach_total == 3
+    assert stats.cluster_entity_conflict_rejected_total == 2
+    assert stats.cluster_no_candidate_new_total == 4
+    assert stats.cluster_topic_lane_attach_total == 3
+    assert stats.cluster_topic_lane_new_total == 4
     assert stats.latest_candidate_clusters_created == 0
     assert stats.latest_clusters_updated == 1
     assert stats.latest_clusters_hidden == 4

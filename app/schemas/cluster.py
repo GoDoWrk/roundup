@@ -124,6 +124,20 @@ class ClusterDebugScoreBreakdown(BaseModel):
     semantic_formula: str
 
 
+class ClusterCandidateDiagnostic(BaseModel):
+    article_headline: str
+    candidate_cluster_headline: str
+    article_primary_topic: str
+    article_subtopic: str | None = None
+    cluster_primary_topic: str
+    cluster_subtopic: str | None = None
+    shared_entities: list[str] = Field(default_factory=list)
+    conflicting_entities: list[str] = Field(default_factory=list)
+    similarity_score: float
+    final_decision: str
+    rejection_reason: str | None = None
+
+
 class ClusterDebugJoinDecision(BaseModel):
     article_id: int
     article_title: str
@@ -162,6 +176,7 @@ class ClusterDebugJoinDecision(BaseModel):
     candidate_rejection_reason: str | None = None
     membership_rejection_status: str | None = None
     warnings: list[str]
+    candidate_diagnostics: list[ClusterCandidateDiagnostic] = Field(default_factory=list)
 
 
 class ClusterDebugExplanation(BaseModel):
