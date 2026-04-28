@@ -173,7 +173,9 @@ describe("HomePage", () => {
 
     renderHome();
     expect(await screen.findByText("No stories available yet")).toBeInTheDocument();
-    expect(screen.getByText("The API is reachable, but no public or candidate clusters are available from the latest response.")).toBeInTheDocument();
+    expect(screen.getByText(/The API is reachable/i)).toBeInTheDocument();
+    expect(screen.getByText("/api/clusters/homepage")).toBeInTheDocument();
+    expect(screen.getByText(/returned no public or candidate clusters/i)).toBeInTheDocument();
   });
 
   it("distinguishes backend unavailable from an empty response", async () => {
@@ -185,6 +187,8 @@ describe("HomePage", () => {
     expect(await screen.findByText("Backend unavailable")).toBeInTheDocument();
     expect(screen.getByText("Could not reach Roundup")).toBeInTheDocument();
     expect(screen.getByText(/Roundup API is unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText("Start the Roundup stack with docker compose up --build, then retry this page.")).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to fetch/i)).not.toBeInTheDocument();
   });
 
   it("renders an error state when the API request fails", async () => {
@@ -195,6 +199,7 @@ describe("HomePage", () => {
 
     renderHome();
     expect(await screen.findByText("Could not load live stories")).toBeInTheDocument();
+    expect(screen.getByText("API returned an error")).toBeInTheDocument();
     expect(screen.getByText(/returned 500/i)).toBeInTheDocument();
   });
 

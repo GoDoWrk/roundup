@@ -12,7 +12,7 @@ from app.core.config import Settings
 from app.db.models import Article, Cluster, PipelineStats
 from app.services.ingestion import ingest_entries
 from app.services.miniflux_client import MinifluxRequestError
-from app.services.pipeline import run_pipeline
+from app.services.pipeline import _with_feed_metadata, run_pipeline
 from scripts.run_pipeline_once import reset_sample_mode_state_if_needed
 
 
@@ -61,6 +61,29 @@ def _feed(feed_id: int, title: str, category: str = "Top News") -> dict:
         "category": {"title": category},
         "disabled": False,
     }
+
+
+def test_feed_metadata_freezes_seed_quality_controls() -> None:
+    entry = {
+        "id": 1,
+        "title": "Google News candidate",
+        "url": "https://example.com/story",
+        "published_at": datetime.now(timezone.utc).isoformat(),
+        "content": "A report from an aggregator feed.",
+    }
+    feed = {
+        "id": 99,
+        "title": "Google News",
+        "feed_url": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
+        "category": {"title": "Google News"},
+        "disabled": False,
+    }
+
+    enriched = _with_feed_metadata(entry, feed)
+
+    assert enriched["feed"]["priority"] == "low"
+    assert enriched["feed"]["allow_service_content"] is False
+    assert enriched["feed"]["promote_to_home"] is False
 
 
 def _wire_miniflux(

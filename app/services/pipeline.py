@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.services.clustering import cluster_new_articles
+from app.services.content_quality import source_controls_from_payload
 from app.services.ingestion import ingest_entries
 from app.services.metrics import update_cluster_metrics, update_ingest_metrics
 from app.services.miniflux_client import MinifluxClient, MinifluxClientError
@@ -88,10 +89,6 @@ def _entry_published_at(entry: dict) -> datetime:
         return datetime.now(timezone.utc)
 
 
-def _entry_url_key(entry: dict) -> str:
-    return str(entry.get("url") or entry.get("external_url") or entry.get("id") or "").strip().lower()
-
-
 def _with_feed_metadata(entry: dict, feed: dict) -> dict:
     copied = dict(entry)
     existing_feed = copied.get("feed") if isinstance(copied.get("feed"), dict) else {}
@@ -99,6 +96,10 @@ def _with_feed_metadata(entry: dict, feed: dict) -> dict:
     for key in ("id", "title", "feed_url", "site_url", "category"):
         if key in feed and key not in merged_feed:
             merged_feed[key] = feed[key]
+    controls = source_controls_from_payload({"feed": merged_feed})
+    merged_feed.setdefault("priority", controls.priority)
+    merged_feed.setdefault("allow_service_content", controls.allow_service_content)
+    merged_feed.setdefault("promote_to_home", controls.promote_to_home)
     copied["feed"] = merged_feed
     return copied
 
@@ -254,6 +255,7 @@ def _resolve_entries(settings: Settings) -> ResolvedEntries:
             base_url=settings.miniflux_base_url,
             api_token=settings.miniflux_api_token_resolved,
             timeout_seconds=settings.miniflux_timeout_seconds,
+            request_retries=settings.miniflux_request_retries,
         )
         try:
             entries, fetch_metrics = _fetch_miniflux_entries(client, settings)

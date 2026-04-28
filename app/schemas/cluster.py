@@ -144,6 +144,8 @@ class ClusterDebugJoinDecision(BaseModel):
     time_proximity: float
     signal_gate_passed: bool
     signal_reasons: list[str]
+    matched_features: list[str] = Field(default_factory=list)
+    ignored_features: list[str] = Field(default_factory=list)
     source_quality_reasons: list[str] = Field(default_factory=list)
     source_trust: str = "normal"
     article_content_class: str = "unknown"

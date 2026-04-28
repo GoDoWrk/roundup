@@ -180,6 +180,6 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Sources" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Source health is unavailable");
-    expect(screen.getByText(/\/api\/sources returned 503/i)).toBeInTheDocument();
+    expect(screen.getByText(/\/api\/sources returned 503: backend unavailable/i)).toBeInTheDocument();
   });
 });

@@ -214,6 +214,8 @@ export interface ClusterDebugJoinDecision {
   time_proximity: number;
   signal_gate_passed: boolean;
   signal_reasons: string[];
+  matched_features: string[];
+  ignored_features: string[];
   source_quality_reasons: string[];
   source_trust: string;
   article_content_class: string;

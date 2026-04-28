@@ -33,7 +33,7 @@ def test_health_route_reports_db_failure_when_probe_raises() -> None:
     response = get_health(db)
 
     assert response.db == "error"
-    assert response.status == "degraded"
+    assert response.status == "error"
     assert response.runtime.api_workers == 1
 
 

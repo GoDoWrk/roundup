@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${ROUNDUP_DB_USER:-roundup}
-      POSTGRES_PASSWORD: ${ROUNDUP_DB_PASSWORD:-roundup}
+      POSTGRES_PASSWORD: ${ROUNDUP_DB_PASSWORD:-roundup_local_password_change_me}
       POSTGRES_DB: ${ROUNDUP_DB_NAME:-roundup}
     ports:
       - "${ROUNDUP_DB_BIND_HOST:-127.0.0.1}:5432:5432"
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${MINIFLUX_DB_USER:-miniflux}
-      POSTGRES_PASSWORD: ${MINIFLUX_DB_PASSWORD:-miniflux}
+      POSTGRES_PASSWORD: ${MINIFLUX_DB_PASSWORD:-miniflux_local_password_change_me}
       POSTGRES_DB: ${MINIFLUX_DB_NAME:-miniflux}
     volumes:
       - miniflux_postgres_data:/var/lib/postgresql/data
@@ -39,11 +39,11 @@ services:
     image: miniflux/miniflux:2.2.19
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${MINIFLUX_DB_USER:-miniflux}:${MINIFLUX_DB_PASSWORD:-miniflux}@miniflux-db:5432/${MINIFLUX_DB_NAME:-miniflux}?sslmode=disable
+      DATABASE_URL: postgres://${MINIFLUX_DB_USER:-miniflux}:${MINIFLUX_DB_PASSWORD:-miniflux_local_password_change_me}@miniflux-db:5432/${MINIFLUX_DB_NAME:-miniflux}?sslmode=disable
       RUN_MIGRATIONS: 1
       CREATE_ADMIN: 1
       ADMIN_USERNAME: ${MINIFLUX_ADMIN_USERNAME:-roundup_admin}
-      ADMIN_PASSWORD: ${MINIFLUX_ADMIN_PASSWORD:-roundup_admin_change_me}
+      ADMIN_PASSWORD: ${MINIFLUX_ADMIN_PASSWORD:-change_this_roundup_admin_password}
       POLLING_FREQUENCY: ${MINIFLUX_POLLING_FREQUENCY:-15}
     depends_on:
       miniflux-db:
@@ -58,9 +58,11 @@ services:
     build: .
     working_dir: /app
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg2://${ROUNDUP_DB_USER:-roundup}:${ROUNDUP_DB_PASSWORD:-roundup_local_password_change_me}@db:5432/${ROUNDUP_DB_NAME:-roundup}
       MINIFLUX_URL: ${MINIFLUX_URL:-http://miniflux:8080}
       MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
       MINIFLUX_BOOTSTRAP_FEEDS_FILE: ${MINIFLUX_BOOTSTRAP_FEEDS_FILE:-/app/data/miniflux_seed_feeds.json}
@@ -78,9 +80,11 @@ services:
     build: .
     working_dir: /app
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg2://${ROUNDUP_DB_USER:-roundup}:${ROUNDUP_DB_PASSWORD:-roundup_local_password_change_me}@db:5432/${ROUNDUP_DB_NAME:-roundup}
     command: alembic upgrade head
     depends_on:
       db:
@@ -91,9 +95,11 @@ services:
     restart: unless-stopped
     working_dir: /app
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg2://${ROUNDUP_DB_USER:-roundup}:${ROUNDUP_DB_PASSWORD:-roundup_local_password_change_me}@db:5432/${ROUNDUP_DB_NAME:-roundup}
       API_WORKERS: ${API_WORKERS:-1}
       INGESTION_CONCURRENCY: ${INGESTION_CONCURRENCY:-1}
       SUMMARIZATION_CONCURRENCY: ${SUMMARIZATION_CONCURRENCY:-1}
@@ -112,7 +118,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import json,sys,urllib.request; payload=json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=5)); sys.exit(0 if payload.get('status') in {'ok','degraded'} else 1)",
+          "import json,sys,urllib.request; payload=json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=5)); sys.exit(0 if payload.get('db') == 'ok' and payload.get('status') in {'ok','degraded'} else 1)",
         ]
       interval: 15s
       timeout: 5s
@@ -132,9 +138,11 @@ services:
     restart: unless-stopped
     working_dir: /app
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg2://${ROUNDUP_DB_USER:-roundup}:${ROUNDUP_DB_PASSWORD:-roundup_local_password_change_me}@db:5432/${ROUNDUP_DB_NAME:-roundup}
       INGESTION_CONCURRENCY: ${INGESTION_CONCURRENCY:-1}
       SUMMARIZATION_CONCURRENCY: ${SUMMARIZATION_CONCURRENCY:-1}
       CLUSTERING_BATCH_SIZE: ${CLUSTERING_BATCH_SIZE:-100}

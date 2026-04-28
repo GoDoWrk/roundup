@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import Article
@@ -193,8 +194,21 @@ def ingest_entries(session: Session, entries: list[dict]) -> IngestResult:
             topic=normalized.topic,
             dedupe_hash=normalized.dedupe_hash,
         )
-        session.add(article)
-        session.flush()
+        try:
+            with session.begin_nested():
+                session.add(article)
+                session.flush()
+        except IntegrityError as exc:
+            deduplicated += 1
+            logger.warning(
+                "ingest_article_deduplicated entry_index=%s entry_id=%r reason=integrity_conflict canonical_url=%s dedupe_hash=%s error=%s",
+                index,
+                entry_id,
+                normalized.canonical_url,
+                normalized.dedupe_hash,
+                exc.orig,
+            )
+            continue
         seen_urls.add(normalized.canonical_url)
         seen_hashes.add(normalized.dedupe_hash)
         ingested += 1

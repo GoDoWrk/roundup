@@ -7,3 +7,4 @@ TODO:
 - Decide whether hidden clusters with no promoted history should be compacted or archived after a configurable age.
 - Add a non-destructive maintenance command that reports candidate cleanup counts before changing anything.
 - Consider a safe canonical URL duplicate remediation workflow before adding a unique constraint on `articles.canonical_url`.
+- Decide whether query-heavy debug endpoints should get pagination-only retention limits or operator-only access before adding broader text indexes.

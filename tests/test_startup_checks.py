@@ -99,6 +99,19 @@ def test_startup_check_rejects_invalid_runtime_limits() -> None:
         summarization_concurrency=0,
         clustering_batch_size=0,
         clustering_concurrency=0,
+        cluster_score_threshold=1.2,
+        cluster_min_title_signal=-0.1,
+        cluster_min_topic_semantic_score=1.1,
+        cluster_attach_override_min_title_similarity=-0.1,
+        cluster_attach_override_min_time_proximity=1.1,
+        timeline_dedupe_title_similarity=2,
+        cluster_time_window_hours=0,
+        cluster_stale_hours=0,
+        cluster_emerging_hours=0,
+        timeline_dedupe_window_hours=0,
+        cluster_min_entity_overlap=0,
+        cluster_min_keyword_overlap=0,
+        miniflux_request_retries=-1,
         inspector_worker_processes=0,
         scheduler_interval_seconds=0,
     )
@@ -112,5 +125,18 @@ def test_startup_check_rejects_invalid_runtime_limits() -> None:
     assert "SUMMARIZATION_CONCURRENCY must be greater than 0" in message
     assert "CLUSTERING_BATCH_SIZE must be greater than 0" in message
     assert "CLUSTERING_CONCURRENCY must be greater than 0" in message
+    assert "CLUSTER_SCORE_THRESHOLD must be between 0 and 1" in message
+    assert "CLUSTER_MIN_TITLE_SIGNAL must be between 0 and 1" in message
+    assert "CLUSTER_MIN_TOPIC_SEMANTIC_SCORE must be between 0 and 1" in message
+    assert "CLUSTER_ATTACH_OVERRIDE_MIN_TITLE_SIMILARITY must be between 0 and 1" in message
+    assert "CLUSTER_ATTACH_OVERRIDE_MIN_TIME_PROXIMITY must be between 0 and 1" in message
+    assert "TIMELINE_DEDUPE_TITLE_SIMILARITY must be between 0 and 1" in message
+    assert "CLUSTER_TIME_WINDOW_HOURS must be greater than 0" in message
+    assert "CLUSTER_STALE_HOURS must be greater than 0" in message
+    assert "CLUSTER_EMERGING_HOURS must be greater than 0" in message
+    assert "TIMELINE_DEDUPE_WINDOW_HOURS must be greater than 0" in message
+    assert "CLUSTER_MIN_ENTITY_OVERLAP must be greater than 0" in message
+    assert "CLUSTER_MIN_KEYWORD_OVERLAP must be greater than 0" in message
+    assert "MINIFLUX_REQUEST_RETRIES must be greater than or equal to 0" in message
     assert "INSPECTOR_WORKER_PROCESSES must be greater than 0" in message
     assert "SCHEDULER_INTERVAL_SECONDS must be greater than 0" in message

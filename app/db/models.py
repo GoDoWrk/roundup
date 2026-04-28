@@ -83,6 +83,7 @@ class Cluster(Base):
         Index("ix_clusters_last_updated_id", "last_updated", "id"),
         Index("ix_clusters_status", "status"),
         Index("ix_clusters_status_last_updated", "status", "last_updated", "id"),
+        Index("ix_clusters_score_last_updated", "score", "last_updated", "id"),
         Index("ix_clusters_topic", "topic"),
     )
 

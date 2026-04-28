@@ -5,13 +5,12 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from ipaddress import ip_address
 from pathlib import Path
-from urllib.parse import parse_qsl, urlparse
 
 import httpx
 
 from app.core.logging import SecretRedactionFilter
+from app.core.url_security import safe_feed_url
 
 
 logging.basicConfig(
@@ -24,19 +23,6 @@ for _handler in logging.getLogger().handlers:
     _handler.addFilter(_redaction_filter)
 logger = logging.getLogger("bootstrap_miniflux")
 
-SECRET_QUERY_KEYS = {
-    "access_token",
-    "api_key",
-    "apikey",
-    "auth",
-    "auth_token",
-    "key",
-    "password",
-    "secret",
-    "token",
-}
-
-
 @dataclass(frozen=True)
 class SeedFeed:
     url: str
@@ -46,41 +32,8 @@ class SeedFeed:
     promote_to_home: bool = True
 
 
-def _is_safe_feed_url(feed_url: str, *, allow_private_network: bool = False) -> bool:
-    parsed = urlparse(feed_url.strip())
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
-        return False
-
-    hostname = (parsed.hostname or "").strip().lower()
-    if not hostname:
-        return False
-
-    if parsed.username or parsed.password:
-        return False
-
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    if any(key.strip().lower() in SECRET_QUERY_KEYS for key, _ in query_pairs):
-        return False
-
-    if hostname == "localhost" or hostname.endswith(".localhost"):
-        return allow_private_network
-
-    try:
-        address = ip_address(hostname)
-    except ValueError:
-        return True
-
-    if allow_private_network:
-        return True
-
-    return not (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_reserved
-        or address.is_multicast
-        or address.is_unspecified
-    )
+def _safe_seed_feed_url(feed_url: str, *, allow_private_network: bool = False) -> str | None:
+    return safe_feed_url(feed_url, allow_private_network=allow_private_network)
 
 
 def _seed_bool(value: object, default: bool) -> bool:
@@ -133,10 +86,12 @@ def _load_seed_feeds(path: Path, default_category: str, *, allow_private_network
             logger.warning("miniflux_seed_feed_skipped reason=missing_url index=%s", idx)
             continue
 
-        if not _is_safe_feed_url(feed_url, allow_private_network=allow_private_network):
+        safe_url = _safe_seed_feed_url(feed_url, allow_private_network=allow_private_network)
+        if safe_url is None:
             logger.warning("miniflux_seed_feed_skipped reason=unsafe_url url=%s index=%s", feed_url, idx)
             continue
 
+        feed_url = safe_url
         key = feed_url.lower()
         if key in seen:
             logger.info("miniflux_seed_feed_skipped reason=duplicate_in_seed url=%s", feed_url)
@@ -164,13 +119,50 @@ class MinifluxBootstrap:
         admin_username: str,
         admin_password: str,
         timeout_seconds: int,
+        request_retries: int = 1,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.admin_auth = (admin_username, admin_password)
         self.client = httpx.Client(timeout=timeout_seconds)
+        self.request_retries = max(0, request_retries)
 
     def close(self) -> None:
         self.client.close()
+
+    def _request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+        attempts = max(1, getattr(self, "request_retries", 1) + 1)
+        method_func = getattr(self.client, method.lower())
+        transient_statuses = {408, 425, 429, 500, 502, 503, 504}
+        for attempt in range(1, attempts + 1):
+            try:
+                response = method_func(endpoint, **kwargs)
+            except httpx.RequestError as exc:
+                if attempt < attempts:
+                    logger.warning(
+                        "miniflux_bootstrap_request_retrying method=%s endpoint=%s attempt=%s max_attempts=%s error=%s",
+                        method.upper(),
+                        endpoint,
+                        attempt,
+                        attempts,
+                        exc,
+                    )
+                    time.sleep(1)
+                    continue
+                raise
+            if response.status_code in transient_statuses and attempt < attempts:
+                logger.warning(
+                    "miniflux_bootstrap_request_retrying method=%s endpoint=%s attempt=%s max_attempts=%s status=%s",
+                    method.upper(),
+                    endpoint,
+                    attempt,
+                    attempts,
+                    response.status_code,
+                )
+                time.sleep(1)
+                continue
+            return response
+
+        raise RuntimeError(f"Miniflux bootstrap request failed without a response: {method.upper()} {endpoint}")
 
     def wait_until_ready(self, *, max_wait_seconds: int, retry_interval_seconds: int) -> None:
         deadline = time.monotonic() + max_wait_seconds
@@ -202,7 +194,7 @@ class MinifluxBootstrap:
 
     def verify_admin(self) -> int:
         endpoint = f"{self.base_url}/v1/me"
-        response = self.client.get(endpoint, auth=self.admin_auth)
+        response = self._request("get", endpoint, auth=self.admin_auth)
         if response.status_code != 200:
             raise RuntimeError(
                 "Failed to authenticate Miniflux admin credentials. "
@@ -218,7 +210,7 @@ class MinifluxBootstrap:
     def verify_api_token(self, token: str) -> bool:
         endpoint = f"{self.base_url}/v1/me"
         try:
-            response = self.client.get(endpoint, headers={"X-Auth-Token": token})
+            response = self._request("get", endpoint, headers={"X-Auth-Token": token})
         except httpx.RequestError as exc:
             logger.warning("miniflux_api_key_verify_failed reason=request_error endpoint=%s error=%s", endpoint, exc)
             return False
@@ -226,7 +218,7 @@ class MinifluxBootstrap:
 
     def create_api_key(self, description: str) -> str:
         endpoint = f"{self.base_url}/v1/api-keys"
-        response = self.client.post(endpoint, auth=self.admin_auth, json={"description": description})
+        response = self._request("post", endpoint, auth=self.admin_auth, json={"description": description})
         if response.status_code not in {200, 201}:
             raise RuntimeError(
                 "Unable to create Miniflux API key. "
@@ -241,7 +233,7 @@ class MinifluxBootstrap:
 
     def _get_categories(self, token: str) -> dict[str, int]:
         endpoint = f"{self.base_url}/v1/categories"
-        response = self.client.get(endpoint, headers={"X-Auth-Token": token})
+        response = self._request("get", endpoint, headers={"X-Auth-Token": token})
         if response.status_code != 200:
             raise RuntimeError(
                 f"Failed to read Miniflux categories status={response.status_code} endpoint={endpoint}"
@@ -260,7 +252,7 @@ class MinifluxBootstrap:
             return existing[title]
 
         endpoint = f"{self.base_url}/v1/categories"
-        response = self.client.post(endpoint, headers={"X-Auth-Token": token}, json={"title": title})
+        response = self._request("post", endpoint, headers={"X-Auth-Token": token}, json={"title": title})
         if response.status_code not in {200, 201}:
             raise RuntimeError(
                 "Failed creating Miniflux category. "
@@ -276,7 +268,7 @@ class MinifluxBootstrap:
 
     def _existing_feed_urls(self, token: str) -> set[str]:
         endpoint = f"{self.base_url}/v1/feeds"
-        response = self.client.get(endpoint, headers={"X-Auth-Token": token})
+        response = self._request("get", endpoint, headers={"X-Auth-Token": token})
         if response.status_code != 200:
             raise RuntimeError(f"Failed to read Miniflux feeds status={response.status_code} endpoint={endpoint}")
         payload = response.json()
@@ -315,7 +307,8 @@ class MinifluxBootstrap:
 
             endpoint = f"{self.base_url}/v1/feeds"
             try:
-                response = self.client.post(
+                response = self._request(
+                    "post",
                     endpoint,
                     headers={"X-Auth-Token": token},
                     json={"feed_url": feed.url, "category_id": category_id},
@@ -364,7 +357,7 @@ class MinifluxBootstrap:
     def trigger_refresh(self, token: str) -> None:
         endpoint = f"{self.base_url}/v1/feeds/refresh"
         try:
-            response = self.client.put(endpoint, headers={"X-Auth-Token": token})
+            response = self._request("put", endpoint, headers={"X-Auth-Token": token})
         except httpx.RequestError as exc:
             logger.warning("miniflux_refresh_all_feeds_failed reason=request_error endpoint=%s error=%s", endpoint, exc)
             return
@@ -377,6 +370,76 @@ class MinifluxBootstrap:
             )
             return
         logger.info("miniflux_refresh_all_feeds_requested")
+
+    def wait_for_entries_after_refresh(
+        self,
+        token: str,
+        *,
+        max_wait_seconds: int,
+        retry_interval_seconds: int,
+    ) -> bool:
+        if max_wait_seconds <= 0:
+            logger.info("miniflux_refresh_wait_disabled")
+            return False
+
+        endpoint = f"{self.base_url}/v1/entries"
+        deadline = time.monotonic() + max_wait_seconds
+        attempt = 0
+        while time.monotonic() < deadline:
+            attempt += 1
+            try:
+                response = self._request(
+                    "get",
+                    endpoint,
+                    headers={"X-Auth-Token": token},
+                    params={"limit": 1, "offset": 0, "order": "published_at", "direction": "desc", "status": "unread"},
+                )
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "miniflux_refresh_wait_retrying reason=request_error attempt=%s endpoint=%s error=%s",
+                    attempt,
+                    endpoint,
+                    exc,
+                )
+                time.sleep(max(retry_interval_seconds, 1))
+                continue
+
+            if response.status_code != 200:
+                logger.warning(
+                    "miniflux_refresh_wait_retrying reason=unexpected_status attempt=%s status=%s endpoint=%s body=%s",
+                    attempt,
+                    response.status_code,
+                    endpoint,
+                    response.text[:300],
+                )
+                time.sleep(max(retry_interval_seconds, 1))
+                continue
+
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                logger.warning(
+                    "miniflux_refresh_wait_retrying reason=invalid_json attempt=%s endpoint=%s error=%s",
+                    attempt,
+                    endpoint,
+                    exc,
+                )
+                time.sleep(max(retry_interval_seconds, 1))
+                continue
+            entries = payload.get("entries") if isinstance(payload, dict) else None
+            if isinstance(entries, list) and entries:
+                logger.info("miniflux_refresh_entries_available attempts=%s", attempt)
+                return True
+
+            logger.debug("miniflux_refresh_waiting_for_entries attempt=%s endpoint=%s", attempt, endpoint)
+            time.sleep(max(retry_interval_seconds, 1))
+
+        logger.warning(
+            "miniflux_refresh_wait_empty max_wait_seconds=%s endpoint=%s",
+            max_wait_seconds,
+            endpoint,
+        )
+        return False
 
 
 def _write_token_file(path: Path, token: str) -> None:
@@ -425,6 +488,8 @@ def main() -> None:
     timeout_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_TIMEOUT_SECONDS", "10"))
     max_wait_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_WAIT_SECONDS", "240"))
     retry_interval_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_RETRY_INTERVAL_SECONDS", "3"))
+    request_retries = int(os.getenv("MINIFLUX_BOOTSTRAP_REQUEST_RETRIES", "1"))
+    refresh_wait_seconds = int(os.getenv("MINIFLUX_BOOTSTRAP_REFRESH_WAIT_SECONDS", "45"))
     allow_private_feed_urls = _env_bool("ROUNDUP_ALLOW_PRIVATE_FEED_URLS", False)
 
     logger.info(
@@ -448,6 +513,7 @@ def main() -> None:
         admin_username=admin_username,
         admin_password=admin_password,
         timeout_seconds=timeout_seconds,
+        request_retries=request_retries,
     )
     try:
         bootstrap.wait_until_ready(
@@ -475,6 +541,11 @@ def main() -> None:
             failed,
         )
         bootstrap.trigger_refresh(token)
+        bootstrap.wait_for_entries_after_refresh(
+            token,
+            max_wait_seconds=refresh_wait_seconds,
+            retry_interval_seconds=retry_interval_seconds,
+        )
 
         if failed == len(feeds):
             raise RuntimeError("All feed imports failed; Miniflux bootstrap cannot proceed with zero active seeds.")

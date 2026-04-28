@@ -34,6 +34,7 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
                 base_url=settings.miniflux_base_url,
                 api_token=settings.miniflux_api_token_resolved,
                 timeout_seconds=min(settings.miniflux_timeout_seconds, 2),
+                request_retries=0,
             )
             miniflux_reachable = client.check_service_reachable()
             miniflux_usable = settings.has_miniflux_credentials and client.check_credentials()
@@ -42,7 +43,7 @@ def get_health(db: Session = Depends(get_db_session)) -> HealthResponse:
 
     status = "ok"
     if db_status != "ok":
-        status = "degraded"
+        status = "error"
     elif not settings.demo_mode and not miniflux_usable:
         status = "degraded"
 

@@ -13,6 +13,7 @@ SECRET_FIELD_NAMES = {
     "apikey",
     "authorization",
     "auth_token",
+    "key",
     "miniflux_api_key",
     "miniflux_api_token",
     "password",
@@ -23,11 +24,13 @@ SECRET_FIELD_NAMES = {
 }
 
 SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(api[_-]?key|auth[_-]?token|authorization|miniflux[_-]?api[_-]?(?:key|token)|password|secret|token)"
+    r"(?i)\b(api[_-]?key|auth[_-]?token|authorization|key|miniflux[_-]?api[_-]?(?:key|token)|password|secret|token)"
     r"(\s*[=:]\s*)"
     r"([^,\s&]+)"
 )
-URL_CREDENTIAL_RE = re.compile(r"(?i)(https?://)[^/\s:@]+:[^/\s@]+@")
+AUTHORIZATION_VALUE_RE = re.compile(r"(?i)\b(authorization\s*[=:]\s*)(?:bearer|basic|token)\s+[^,\s&]+")
+BEARER_TOKEN_RE = re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}")
+URL_CREDENTIAL_RE = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
 
 
 def redact_secrets(value: object) -> object:
@@ -47,6 +50,8 @@ def redact_secrets(value: object) -> object:
         return value
 
     redacted = URL_CREDENTIAL_RE.sub(r"\1<redacted>@", value)
+    redacted = AUTHORIZATION_VALUE_RE.sub(lambda match: f"{match.group(1)}<redacted>", redacted)
+    redacted = BEARER_TOKEN_RE.sub(lambda match: f"{match.group(1)} <redacted>", redacted)
     return SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{match.group(2)}<redacted>", redacted)
 
 

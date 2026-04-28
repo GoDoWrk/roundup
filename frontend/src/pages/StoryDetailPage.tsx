@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiErrorKind, describeApiError, fetchClusterDetail } from "../api/client";
+import { apiErrorDetails, fetchClusterDetail, type ApiErrorDetails } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import { useSavedStories } from "../context/SavedStoriesContext";
@@ -250,8 +250,7 @@ export function StoryDetailPage() {
   const { isSaved, toggleSaved } = useSavedStories();
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [errorKind, setErrorKind] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("timeline");
   const [visibleTimelineCount, setVisibleTimelineCount] = useState(INITIAL_TIMELINE_COUNT);
   const [relatedClusters, setRelatedClusters] = useState<StoryCluster[]>([]);
@@ -260,21 +259,27 @@ export function StoryDetailPage() {
   const load = useCallback(async () => {
     if (!clusterId) {
       setLoading(false);
-      setError("Missing story id.");
+      setErrorDetails({
+        kind: "unknown",
+        title: "Missing story id",
+        message: "Missing story id.",
+        action: "Open a story from the live feed.",
+        endpoint: null,
+        status: null
+      });
       return;
     }
 
     setLoading(true);
-    setError(null);
+    setErrorDetails(null);
 
     try {
       const result = await fetchClusterDetail(clusterId);
       setCluster(result);
-      setErrorKind(null);
+      setErrorDetails(null);
     } catch (err) {
       setCluster(null);
-      setError(describeApiError(err));
-      setErrorKind(apiErrorKind(err));
+      setErrorDetails(apiErrorDetails(err));
     } finally {
       setLoading(false);
     }
@@ -339,6 +344,7 @@ export function StoryDetailPage() {
   const lastUpdatedFallback = cluster ? formatTimestamp(cluster.last_updated) : "";
   const relativeUpdated = cluster ? formatRelativeTime(cluster.last_updated) : "";
   const saved = cluster ? isSaved(cluster.cluster_id) : false;
+  const error = errorDetails?.message ?? null;
 
   return (
     <div className="public-page story-detail story-detail--tabbed">
@@ -394,9 +400,15 @@ export function StoryDetailPage() {
 
         {!loading && error && (
           <section className="state-panel state-panel--error" role="alert">
-            <p className="eyebrow">{errorKind === "network" ? "Backend unavailable" : "API error"}</p>
-            <h2>{errorKind === "network" ? "Could not reach Roundup" : "Could not load the story"}</h2>
-            <p>{error}</p>
+            <p className="eyebrow">{errorDetails?.title ?? "API error"}</p>
+            <h2>{errorDetails?.kind === "network" ? "Could not reach Roundup" : "Could not load the story"}</h2>
+            <p>{errorDetails?.message}</p>
+            {errorDetails?.endpoint && (
+              <p className="muted">
+                Endpoint: <code>{errorDetails.endpoint}</code>
+              </p>
+            )}
+            {errorDetails?.action && <p>{errorDetails.action}</p>}
           </section>
         )}
 

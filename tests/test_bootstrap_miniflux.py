@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import socket
 import sys
 from pathlib import Path
 
@@ -16,15 +17,29 @@ def _load_bootstrap_module():
     return module
 
 
-def test_load_seed_feeds_skips_obviously_unsafe_urls(tmp_path: Path) -> None:
+def _mock_public_dns(monkeypatch) -> None:
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        if str(host).rstrip(".").lower() in {"example.com", "news.google.com"}:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 0))]
+        raise socket.gaierror
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+
+
+def test_load_seed_feeds_skips_obviously_unsafe_urls(tmp_path: Path, monkeypatch) -> None:
+    _mock_public_dns(monkeypatch)
     module = _load_bootstrap_module()
     seed_file = tmp_path / "feeds.json"
     seed_file.write_text(
         json.dumps(
             [
                 "https://example.com/feed.xml",
+                "https://example.com/fragment-feed.xml#section",
                 "http://localhost/feed.xml",
+                "http://localhost./feed.xml",
                 "http://127.0.0.1/internal",
+                "http://[::1]/internal",
+                "http://169.254.169.254/latest/meta-data",
                 "https://user:password@example.com/feed.xml",
                 "https://example.com/feed.xml?token=secret",
                 "ftp://example.com/feed.xml",
@@ -35,7 +50,10 @@ def test_load_seed_feeds_skips_obviously_unsafe_urls(tmp_path: Path) -> None:
 
     feeds = module._load_seed_feeds(seed_file, "Roundup")
 
-    assert [feed.url for feed in feeds] == ["https://example.com/feed.xml"]
+    assert [feed.url for feed in feeds] == [
+        "https://example.com/feed.xml",
+        "https://example.com/fragment-feed.xml",
+    ]
     assert feeds[0].category == "Roundup"
     assert feeds[0].priority == "normal"
     assert feeds[0].allow_service_content is False
@@ -50,6 +68,7 @@ def test_load_seed_feeds_allows_private_urls_only_when_explicitly_enabled(tmp_pa
             [
                 "http://localhost/feed.xml",
                 "http://127.0.0.1/internal",
+                "http://[::1]/internal",
                 "https://user:password@example.com/feed.xml",
                 "https://example.com/feed.xml?token=secret",
             ]
@@ -62,10 +81,12 @@ def test_load_seed_feeds_allows_private_urls_only_when_explicitly_enabled(tmp_pa
     assert [feed.url for feed in feeds] == [
         "http://localhost/feed.xml",
         "http://127.0.0.1/internal",
+        "http://[::1]/internal",
     ]
 
 
-def test_load_seed_feeds_accepts_optional_quality_controls(tmp_path: Path) -> None:
+def test_load_seed_feeds_accepts_optional_quality_controls(tmp_path: Path, monkeypatch) -> None:
+    _mock_public_dns(monkeypatch)
     module = _load_bootstrap_module()
     seed_file = tmp_path / "feeds.json"
     seed_file.write_text(
@@ -111,6 +132,39 @@ def test_seed_feeds_counts_request_errors_without_aborting() -> None:
     )
 
     assert (imported, skipped, failed) == (0, 0, 1)
+
+
+def test_seed_feeds_retries_transient_create_feed_errors() -> None:
+    module = _load_bootstrap_module()
+    calls = 0
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+    class FakeClient:
+        def post(self, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise module.httpx.ReadTimeout("timed out")
+            return FakeResponse()
+
+    bootstrap = object.__new__(module.MinifluxBootstrap)
+    bootstrap.base_url = "http://miniflux:8080"
+    bootstrap.client = FakeClient()
+    bootstrap.request_retries = 1
+    bootstrap._get_categories = lambda token: {"News": 1}
+    bootstrap._existing_feed_urls = lambda token: set()
+    bootstrap._ensure_category = lambda token, title, existing: 1
+
+    imported, skipped, failed = bootstrap.seed_feeds(
+        "token",
+        [module.SeedFeed(url="https://example.com/feed.xml", category="News")],
+    )
+
+    assert (imported, skipped, failed) == (1, 0, 0)
+    assert calls == 2
 
 
 def test_seed_feeds_counts_category_errors_without_aborting() -> None:
@@ -163,3 +217,33 @@ def test_trigger_refresh_request_error_warns_without_aborting() -> None:
     bootstrap.client = FakeClient()
 
     bootstrap.trigger_refresh("token")
+
+
+def test_wait_for_entries_after_refresh_returns_when_entries_appear(monkeypatch) -> None:
+    module = _load_bootstrap_module()
+    calls = 0
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        def __init__(self, entries):
+            self._entries = entries
+
+        def json(self):
+            return {"entries": self._entries}
+
+    class FakeClient:
+        def get(self, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return FakeResponse([] if calls == 1 else [{"id": 1}])
+
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+    bootstrap = object.__new__(module.MinifluxBootstrap)
+    bootstrap.base_url = "http://miniflux:8080"
+    bootstrap.client = FakeClient()
+    bootstrap.request_retries = 0
+
+    assert bootstrap.wait_for_entries_after_refresh("token", max_wait_seconds=10, retry_interval_seconds=1) is True
+    assert calls == 2

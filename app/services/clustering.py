@@ -161,6 +161,7 @@ class CandidateEvaluation:
     title_primary_entity_overlap: bool
     near_duplicate_title: bool
     same_source_update_chain: bool
+    primary_entity_conflict: bool
     article_content_class: str
     cluster_content_class: str
     score: float
@@ -264,6 +265,7 @@ def _membership_rejection_status(
         return "rejected_content_class_mismatch"
     if candidate_rejection_reason in {
         "missing_primary_entity_overlap",
+        "distinct_primary_entities",
         "location_conflict_without_entity_overlap",
         "distinct_event_signatures",
         "generic_keyword_only_overlap",
@@ -446,6 +448,11 @@ def _evaluate_candidate(
     location_overlap = len(article.locations.intersection(cluster_features.locations))
     source_match = bool(article.publishers.intersection(cluster_features.publishers))
     primary_entity_overlap = bool(article.primary_entities.intersection(cluster_features.primary_entities))
+    primary_entity_conflict = bool(
+        article.primary_entities
+        and cluster_features.primary_entities
+        and not article.primary_entities.intersection(cluster_features.primary_entities)
+    )
     near_duplicate_title = title_similarity >= settings.cluster_min_title_signal
     shared_title_tokens = article.title_tokens.intersection(cluster_features.title_tokens)
     title_token_overlap = len(shared_title_tokens)
@@ -547,6 +554,9 @@ def _evaluate_candidate(
     elif time_proximity <= 0 and not near_duplicate_title:
         signal_gate_passed = False
         rejection_reason = "story_window_expired"
+    elif primary_entity_conflict and not same_source_update_chain:
+        signal_gate_passed = False
+        rejection_reason = "distinct_primary_entities"
     elif (
         primary_entity_overlap
         and not title_primary_entity_overlap
@@ -598,6 +608,7 @@ def _evaluate_candidate(
         title_primary_entity_overlap=title_primary_entity_overlap,
         near_duplicate_title=near_duplicate_title,
         same_source_update_chain=same_source_update_chain,
+        primary_entity_conflict=primary_entity_conflict,
         article_content_class=article.content_class,
         cluster_content_class=cluster_features.content_class,
         score=score,
@@ -845,6 +856,7 @@ def _build_heuristic_breakdown(
         title_primary_entity_overlap = False
         near_duplicate_title = False
         same_source_update_chain = False
+        primary_entity_conflict = False
     else:
         components = {
             "title_similarity": evaluation.title_similarity,
@@ -870,6 +882,7 @@ def _build_heuristic_breakdown(
         title_primary_entity_overlap = evaluation.title_primary_entity_overlap
         near_duplicate_title = evaluation.near_duplicate_title
         same_source_update_chain = evaluation.same_source_update_chain
+        primary_entity_conflict = evaluation.primary_entity_conflict
 
     topic_match = evaluation.topic_match if evaluation is not None else False
     selected_topic = evaluation.cluster.topic if evaluation is not None else None
@@ -899,7 +912,38 @@ def _build_heuristic_breakdown(
         "attach_override_met": attach_override_met,
         "near_duplicate_title_met": near_duplicate_title,
         "same_source_update_chain_met": same_source_update_chain,
+        "primary_entity_conflict_met": primary_entity_conflict,
     }
+
+    matched_features: list[str] = []
+    ignored_features: list[str] = []
+    if topic_match:
+        matched_features.append("topic_match")
+    else:
+        ignored_features.append("topic_mismatch")
+    if thresholds_met["title_signal_met"]:
+        matched_features.append("title_similarity")
+    if thresholds_met["entity_overlap_met"]:
+        matched_features.append("entity_overlap")
+    if thresholds_met["primary_entity_overlap_met"]:
+        matched_features.append("primary_entity_overlap")
+    if thresholds_met["keyword_overlap_met"]:
+        matched_features.append("keyword_overlap")
+    if overlap_counts["location_overlap"] > 0:
+        matched_features.append("location_overlap")
+    if thresholds_met["near_duplicate_title_met"]:
+        matched_features.append("near_duplicate_title")
+    if thresholds_met["same_source_update_chain_met"]:
+        matched_features.append("same_source_update_chain")
+    if thresholds_met["primary_entity_conflict_met"]:
+        ignored_features.append("primary_entity_conflict")
+    if components["time_proximity"] > 0:
+        if signal_gate_passed:
+            matched_features.append("time_proximity_support")
+        else:
+            ignored_features.append("time_proximity_without_signal")
+    if candidate_rejection_reason:
+        ignored_features.append(candidate_rejection_reason)
 
     score_formula = "0.45*title_similarity + 0.25*entity_jaccard + 0.20*keyword_jaccard + 0.10*time_proximity"
     semantic_formula = "0.50*title_similarity + 0.30*entity_jaccard + 0.20*keyword_jaccard"
@@ -940,6 +984,8 @@ def _build_heuristic_breakdown(
         "thresholds": thresholds,
         "thresholds_met": thresholds_met,
         "signal_reasons": list(signal_reasons),
+        "matched_features": sorted(set(matched_features)),
+        "ignored_features": sorted(set(ignored_features)),
         "source_quality_reasons": list(source_quality_reasons),
         "source_trust": source_trust,
         "candidate_rejection_reason": candidate_rejection_reason,
@@ -1283,6 +1329,8 @@ def cluster_new_articles(session: Session, settings: Settings, article_ids: list
             "time_proximity": breakdown["components"]["time_proximity"],
             "signal_gate_passed": breakdown["thresholds_met"]["signal_gate_passed"],
             "signal_reasons": breakdown["signal_reasons"],
+            "matched_features": breakdown["matched_features"],
+            "ignored_features": breakdown["ignored_features"],
             "warnings": breakdown["warnings"],
             "source_quality_reasons": breakdown["source_quality_reasons"],
             "source_trust": breakdown["source_trust"],

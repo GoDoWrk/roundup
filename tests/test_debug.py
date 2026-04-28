@@ -113,6 +113,8 @@ def test_debug_clusters_includes_explainability_object(client, db_session: Sessi
     join = explanation["recent_join_decisions"][0]
     assert "semantic_score" in join
     assert "signal_reasons" in join
+    assert "matched_features" in join
+    assert "ignored_features" in join
     assert "location_overlap" in join
     assert "source_match" in join
     assert "source_quality_reasons" in join

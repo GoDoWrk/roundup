@@ -10,6 +10,15 @@ import type {
 
 type ApiErrorKind = "http" | "network" | "invalid_json" | "invalid_response";
 
+export interface ApiErrorDetails {
+  kind: ApiErrorKind | "unknown";
+  title: string;
+  message: string;
+  action: string;
+  endpoint: string | null;
+  status: number | null;
+}
+
 export class RoundupApiError extends Error {
   endpoint: string;
   kind: ApiErrorKind;
@@ -46,6 +55,32 @@ async function responseText(response: Response): Promise<string> {
 function unavailableMessage(endpoint: string): string {
   const target = API_BASE_URL || "the local Roundup API proxy";
   return `Roundup API is unavailable at ${target}. Check that Docker Compose is running and ${endpoint} is reachable.`;
+}
+
+function isLocalProxyUnavailable(status: number, message: string): boolean {
+  return status === 502 && message.toLowerCase().includes("roundup api proxy could not reach");
+}
+
+async function throwHttpError(endpoint: string, response: Response): Promise<never> {
+  const message = await responseText(response);
+  const statusText = response.statusText ? ` ${response.statusText}` : "";
+
+  if (isLocalProxyUnavailable(response.status, message)) {
+    throw new RoundupApiError(
+      `Roundup API is unavailable through the local proxy for ${endpoint}: ${message || `${response.status}${statusText}`}`,
+      {
+        endpoint,
+        kind: "network",
+        status: response.status
+      }
+    );
+  }
+
+  throw new RoundupApiError(`${endpoint} returned ${response.status}${statusText}: ${message || "no response body"}`, {
+    endpoint,
+    kind: "http",
+    status: response.status
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -127,13 +162,7 @@ async function fetchJson<T>(endpoint: string): Promise<T> {
   }
 
   if (!response.ok) {
-    const message = await responseText(response);
-    const statusText = response.statusText ? ` ${response.statusText}` : "";
-    throw new RoundupApiError(`${endpoint} returned ${response.status}${statusText}: ${message || "no response body"}`, {
-      endpoint,
-      kind: "http",
-      status: response.status
-    });
+    await throwHttpError(endpoint, response);
   }
 
   try {
@@ -161,14 +190,60 @@ export function apiErrorKind(error: unknown): ApiErrorKind | "unknown" {
   return error instanceof RoundupApiError ? error.kind : "unknown";
 }
 
+export function apiErrorDetails(error: unknown): ApiErrorDetails {
+  const message = describeApiError(error);
+
+  if (!(error instanceof RoundupApiError)) {
+    return {
+      kind: "unknown",
+      title: "Unexpected frontend error",
+      message,
+      action: "Retry the request. If it repeats, check the browser console for details.",
+      endpoint: null,
+      status: null
+    };
+  }
+
+  if (error.kind === "network") {
+    return {
+      kind: error.kind,
+      title: "Backend unavailable",
+      message,
+      action: "Start the Roundup stack with docker compose up --build, then retry this page.",
+      endpoint: error.endpoint,
+      status: error.status
+    };
+  }
+
+  if (error.kind === "http") {
+    return {
+      kind: error.kind,
+      title: "API returned an error",
+      message,
+      action: "The backend responded but rejected this request. Check API logs for the endpoint below.",
+      endpoint: error.endpoint,
+      status: error.status
+    };
+  }
+
+  return {
+    kind: error.kind,
+    title: "API contract mismatch",
+    message,
+    action: "The backend responded, but not with the shape the frontend expects.",
+    endpoint: error.endpoint,
+    status: error.status
+  };
+}
+
 export async function fetchText(endpoint: string): Promise<string> {
   let response: Response;
   try {
     response = await fetch(apiUrl(endpoint), {
-    headers: {
-      Accept: "text/plain"
-    }
-  });
+      headers: {
+        Accept: "text/plain"
+      }
+    });
   } catch {
     throw new RoundupApiError(unavailableMessage(endpoint), {
       endpoint,
@@ -178,13 +253,7 @@ export async function fetchText(endpoint: string): Promise<string> {
   }
 
   if (!response.ok) {
-    const message = await responseText(response);
-    const statusText = response.statusText ? ` ${response.statusText}` : "";
-    throw new RoundupApiError(`${endpoint} returned ${response.status}${statusText}: ${message || "no response body"}`, {
-      endpoint,
-      kind: "http",
-      status: response.status
-    });
+    await throwHttpError(endpoint, response);
   }
 
   return await response.text();
@@ -222,13 +291,7 @@ export async function fetchClusterDetail(clusterId: string): Promise<StoryCluste
   }
 
   if (!response.ok) {
-    const message = await responseText(response);
-    const statusText = response.statusText ? ` ${response.statusText}` : "";
-    throw new RoundupApiError(`${endpoint} returned ${response.status}${statusText}: ${message || "no response body"}`, {
-      endpoint,
-      kind: "http",
-      status: response.status
-    });
+    await throwHttpError(endpoint, response);
   }
 
   try {

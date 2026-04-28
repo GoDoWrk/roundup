@@ -773,6 +773,9 @@ def test_cluster_article_decision_log_is_structured(caplog, db_session: Session)
     assert "candidate_cluster_id" in payload
     assert payload["time_proximity"] > 0
     assert payload["signal_gate_passed"] is True
+    assert "matched_features" in payload
+    assert "ignored_features" in payload
+    assert "primary_entity_overlap" in payload["matched_features"]
     assert payload["reason"] in {"attached_to_existing_cluster", "attached_to_existing_cluster_via_override"}
 
 
@@ -954,6 +957,45 @@ def test_topic_mismatch_forces_new_cluster(db_session: Session) -> None:
 
     assert result.created_count == 2
     assert db_session.query(Cluster).count() == 2
+
+
+def test_near_duplicate_title_does_not_override_distinct_primary_entities(db_session: Session) -> None:
+    now = datetime.now(timezone.utc)
+    first = _article(
+        dedupe_hash="entity-conflict-1",
+        title="Mayor announces emergency budget plan after storm damage",
+        normalized_title="mayor announces emergency budget plan after storm damage",
+        keywords=["emergency", "budget", "plan", "storm", "damage"],
+        entities=["Phoenix Mayor"],
+        published_at=now - timedelta(minutes=20),
+        publisher="City Desk",
+    )
+    first.topic = "Emergency Budget"
+    second = _article(
+        dedupe_hash="entity-conflict-2",
+        title="Governor announces emergency budget plan after storm damage",
+        normalized_title="governor announces emergency budget plan after storm damage",
+        keywords=["emergency", "budget", "plan", "storm", "damage"],
+        entities=["Arizona Governor"],
+        published_at=now - timedelta(minutes=10),
+        publisher="State Wire",
+    )
+    second.topic = "Emergency Budget"
+    db_session.add(first)
+    db_session.add(second)
+    db_session.commit()
+
+    result = cluster_new_articles(db_session, _settings())
+    db_session.commit()
+
+    assert result.created_count == 2
+    assert result.attach_decisions == 0
+    links = list(db_session.scalars(select(ClusterArticle).order_by(ClusterArticle.id.asc())).all())
+    second_breakdown = links[-1].heuristic_breakdown
+    assert second_breakdown["candidate_rejection_reason"] == "distinct_primary_entities"
+    assert second_breakdown["thresholds_met"]["near_duplicate_title_met"] is True
+    assert second_breakdown["thresholds_met"]["primary_entity_conflict_met"] is True
+    assert "primary_entity_conflict" in second_breakdown["ignored_features"]
 
 
 def _cluster_with_sources(
@@ -1162,6 +1204,7 @@ def test_mali_camara_story_rejects_gaza_yemen_hezbollah_but_keeps_related_update
     gaza_breakdown = by_article["Mediators push for Gaza ceasefire after overnight strikes"].heuristic_breakdown
     assert gaza_breakdown["decision"] == "create_new_cluster"
     assert gaza_breakdown["candidate_rejection_reason"] in {
+        "distinct_primary_entities",
         "location_conflict_without_entity_overlap",
         "distinct_event_signatures",
     }

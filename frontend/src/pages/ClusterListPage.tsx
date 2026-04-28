@@ -1,6 +1,12 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { describeApiError, fetchClusterList, fetchDebugClusters, fetchHealth } from "../api/client";
+import {
+  apiErrorDetails as getApiErrorDetails,
+  fetchClusterList,
+  fetchDebugClusters,
+  fetchHealth,
+  type ApiErrorDetails
+} from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
 import type { ClusterDebugItem, ClusterListResponse, HealthResponse } from "../types";
 import { toClusterListRows } from "../utils/clusterView";
@@ -10,13 +16,18 @@ function statusLabel(active: boolean): string {
   return active ? "OK" : "Needs attention";
 }
 
-function RuntimeHealthPanel({ health }: { health: HealthResponse | null }) {
+function RuntimeHealthPanel({ health, error }: { health: HealthResponse | null; error: ApiErrorDetails | null }) {
   if (!health) {
     return (
       <section className="section inspector-health" aria-labelledby="inspector-health-heading">
         <div className="dashboard-section__header">
           <h2 id="inspector-health-heading">System Health</h2>
-          <p>Health diagnostics are unavailable. Use Refresh to try again.</p>
+          <p>{error ? error.title : "Health diagnostics are unavailable"}. Use Refresh to try again.</p>
+          {error && (
+            <p className="error">
+              {error.message} {error.endpoint ? `(endpoint: ${error.endpoint})` : ""}
+            </p>
+          )}
         </div>
       </section>
     );
@@ -80,15 +91,17 @@ export function ClusterListPage() {
   const [debugClusters, setDebugClusters] = useState<ClusterDebugItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [debugError, setDebugError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<ApiErrorDetails | null>(null);
+  const [clusterApiErrorDetails, setClusterApiErrorDetails] = useState<ApiErrorDetails | null>(null);
+  const [debugErrorDetails, setDebugErrorDetails] = useState<ApiErrorDetails | null>(null);
+  const [healthErrorDetails, setHealthErrorDetails] = useState<ApiErrorDetails | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    setApiError(null);
-    setDebugError(null);
+    setErrorDetails(null);
+    setClusterApiErrorDetails(null);
+    setDebugErrorDetails(null);
+    setHealthErrorDetails(null);
 
     try {
       const [clusterList, debug, healthStatus] = await Promise.allSettled([
@@ -101,19 +114,24 @@ export function ClusterListPage() {
         setClusters(clusterList.value);
       } else {
         setClusters(null);
-        setApiError(describeApiError(clusterList.reason));
+        setClusterApiErrorDetails(getApiErrorDetails(clusterList.reason));
       }
 
       if (debug.status === "fulfilled") {
         setDebugClusters(debug.value.items);
       } else {
         setDebugClusters([]);
-        setDebugError(describeApiError(debug.reason));
+        setDebugErrorDetails(getApiErrorDetails(debug.reason));
       }
 
-      setHealth(healthStatus.status === "fulfilled" ? healthStatus.value : null);
+      if (healthStatus.status === "fulfilled") {
+        setHealth(healthStatus.value);
+      } else {
+        setHealth(null);
+        setHealthErrorDetails(getApiErrorDetails(healthStatus.reason));
+      }
     } catch (err) {
-      setError(describeApiError(err));
+      setErrorDetails(getApiErrorDetails(err));
     } finally {
       setLoading(false);
     }
@@ -130,6 +148,9 @@ export function ClusterListPage() {
   );
   const apiIds = new Set(apiRows.map((row) => row.clusterId));
   const invalidRows = debugClusters.filter((item) => item.validation_error || !apiIds.has(item.cluster_id));
+  const error = errorDetails?.message ?? null;
+  const apiError = clusterApiErrorDetails?.message ?? null;
+  const debugError = debugErrorDetails?.message ?? null;
 
   function isRecentlyPromoted(promotedAt: string | null): boolean {
     if (!promotedAt) {
@@ -144,7 +165,7 @@ export function ClusterListPage() {
 
   return (
     <div>
-      <RuntimeHealthPanel health={health} />
+      <RuntimeHealthPanel health={health} error={healthErrorDetails} />
 
       <section className="section">
         <div className="controls">
@@ -156,8 +177,16 @@ export function ClusterListPage() {
         <p className="muted">Shows clusters currently eligible from the main API.</p>
 
         {error && <p className="error">{error}</p>}
-        {apiError && <p className="error">Main cluster API unavailable: {apiError}</p>}
-        {debugError && <p className="error">Debug cluster API unavailable: {debugError}</p>}
+        {clusterApiErrorDetails && (
+          <p className="error">
+            Main cluster API unavailable: {clusterApiErrorDetails.title}. {apiError}
+          </p>
+        )}
+        {debugErrorDetails && (
+          <p className="error">
+            Debug cluster API unavailable: {debugErrorDetails.title}. {debugError}
+          </p>
+        )}
         {!error && loading && <p>Loading clusters...</p>}
         {!error && !apiError && !loading && apiRows.length === 0 && <p>No API-eligible clusters found.</p>}
 

@@ -171,6 +171,8 @@ def _build_debug_explanation(cluster: Cluster) -> ClusterDebugExplanation:
                 time_proximity=round(float(component_values.get("time_proximity") or 0.0), 4),
                 signal_gate_passed=bool(met.get("signal_gate_passed")),
                 signal_reasons=[str(item) for item in breakdown.get("signal_reasons") or [] if str(item)],
+                matched_features=[str(item) for item in breakdown.get("matched_features") or [] if str(item)],
+                ignored_features=[str(item) for item in breakdown.get("ignored_features") or [] if str(item)],
                 source_quality_reasons=source_quality_reasons,
                 source_trust=source_trust,
                 article_content_class=article_content_class,

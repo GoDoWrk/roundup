@@ -4,13 +4,12 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from ipaddress import ip_address
-from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.config import Settings
+from app.core.url_security import safe_feed_url
 from app.db.models import Article
 from app.schemas.source import SourceHealthItem, SourceListResponse
 from app.services.miniflux_client import MinifluxClient, MinifluxClientError
@@ -18,17 +17,6 @@ from app.services.miniflux_client import MinifluxClient, MinifluxClientError
 logger = logging.getLogger(__name__)
 
 RECENT_ARTICLE_WINDOW_DAYS = 7
-SECRET_QUERY_KEYS = {
-    "access_token",
-    "api_key",
-    "apikey",
-    "auth",
-    "auth_token",
-    "key",
-    "password",
-    "secret",
-    "token",
-}
 
 
 @dataclass
@@ -49,46 +37,8 @@ def _normalize_lookup_key(value: object) -> str:
     return str(value or "").strip().casefold()
 
 
-def _is_public_hostname(hostname: str) -> bool:
-    normalized = hostname.strip().lower()
-    if not normalized or normalized == "localhost" or normalized.endswith(".localhost"):
-        return False
-
-    try:
-        address = ip_address(normalized)
-    except ValueError:
-        return True
-
-    return not (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_reserved
-        or address.is_multicast
-        or address.is_unspecified
-    )
-
-
 def _safe_public_feed_url(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-
-    candidate = value.strip()
-    if not candidate:
-        return None
-
-    parsed = urlparse(candidate)
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
-        return None
-
-    if parsed.username or parsed.password or not _is_public_hostname(parsed.hostname or ""):
-        return None
-
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    if any(key.strip().lower() in SECRET_QUERY_KEYS for key, _ in query_pairs):
-        return None
-
-    return urlunparse(parsed._replace(fragment=""))
+    return safe_feed_url(value, allow_private_network=False)
 
 
 def _feed_id_from_raw_payload(raw_payload: dict) -> str:
@@ -109,7 +59,10 @@ def _recent_article_stats(session: Session) -> tuple[dict[str, SourceArticleStat
     cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_ARTICLE_WINDOW_DAYS)
     rows = list(
         session.scalars(
-            select(Article).where(Article.fetched_at >= cutoff).order_by(Article.fetched_at.desc(), Article.id.desc())
+            select(Article)
+            .options(load_only(Article.fetched_at, Article.raw_payload, Article.publisher))
+            .where(Article.fetched_at >= cutoff)
+            .order_by(Article.fetched_at.desc(), Article.id.desc())
         ).all()
     )
     by_feed_id: dict[str, SourceArticleStats] = defaultdict(SourceArticleStats)

@@ -1,65 +1,5 @@
 [
   {
-    "url": "https://feeds.apnews.com/apnews/topnews",
-    "category": "Top News"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/worldnews",
-    "category": "World News"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/usnews",
-    "category": "U.S. News"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/politics",
-    "category": "Politics"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/business",
-    "category": "Business"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/science",
-    "category": "Science"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/technology",
-    "category": "Technology"
-  },
-  {
-    "url": "https://feeds.apnews.com/apnews/health",
-    "category": "Health"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=top-news&post_type=best",
-    "category": "Top News"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=world&post_type=best",
-    "category": "World News"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
-    "category": "Politics"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best",
-    "category": "Business"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=tech&post_type=best",
-    "category": "Technology"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=health&post_type=best",
-    "category": "Health"
-  },
-  {
-    "url": "https://www.reutersagency.com/feed/?best-topics=environment&post_type=best",
-    "category": "Climate & Environment"
-  },
-  {
     "url": "https://feeds.bbci.co.uk/news/rss.xml",
     "category": "Top News"
   },
@@ -88,10 +28,6 @@
     "category": "World News"
   },
   {
-    "url": "https://www.aljazeera.com/xml/rss/middleeast.xml",
-    "category": "World News"
-  },
-  {
     "url": "https://feeds.npr.org/1001/rss.xml",
     "category": "Top News"
   },
@@ -110,10 +46,6 @@
   {
     "url": "https://feeds.npr.org/1006/rss.xml",
     "category": "Business"
-  },
-  {
-    "url": "https://feeds.npr.org/1007/rss.xml",
-    "category": "Science"
   },
   {
     "url": "https://feeds.npr.org/1019/rss.xml",
@@ -164,10 +96,6 @@
     "category": "Politics"
   },
   {
-    "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
-    "category": "Business"
-  },
-  {
     "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     "category": "Technology"
   },
@@ -212,14 +140,6 @@
     "category": "Science"
   },
   {
-    "url": "https://www.theatlantic.com/feed/all/",
-    "category": "Analysis"
-  },
-  {
-    "url": "https://www.newyorker.com/feed/news",
-    "category": "Analysis"
-  },
-  {
     "url": "https://www.cbsnews.com/latest/rss/main",
     "category": "Top News"
   },
@@ -233,22 +153,6 @@
   },
   {
     "url": "https://www.cbsnews.com/latest/rss/politics",
-    "category": "Politics"
-  },
-  {
-    "url": "https://www.nbcnews.com/id/3032091/device/rss/rss.xml",
-    "category": "Top News"
-  },
-  {
-    "url": "https://www.nbcnews.com/id/3032525/device/rss/rss.xml",
-    "category": "U.S. News"
-  },
-  {
-    "url": "https://www.nbcnews.com/id/3032506/device/rss/rss.xml",
-    "category": "World News"
-  },
-  {
-    "url": "https://www.nbcnews.com/id/3032553/device/rss/rss.xml",
     "category": "Politics"
   },
   {
@@ -292,10 +196,6 @@
     "category": "Technology"
   },
   {
-    "url": "https://feeds.marketwatch.com/marketwatch/topstories/",
-    "category": "Business"
-  },
-  {
     "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
     "category": "Business"
   },
@@ -312,19 +212,7 @@
     "category": "Technology"
   },
   {
-    "url": "https://www.ft.com/rss/home/us",
-    "category": "Business"
-  },
-  {
     "url": "https://www.theverge.com/rss/index.xml",
-    "category": "Technology"
-  },
-  {
-    "url": "https://www.wired.com/feed/rss",
-    "category": "Technology"
-  },
-  {
-    "url": "https://feeds.arstechnica.com/arstechnica/index",
     "category": "Technology"
   },
   {
@@ -364,10 +252,6 @@
     "category": "Science"
   },
   {
-    "url": "https://www.scientificamerican.com/feed/",
-    "category": "Science"
-  },
-  {
     "url": "https://www.nasa.gov/rss/dyn/breaking_news.rss",
     "category": "Science"
   },
@@ -376,32 +260,12 @@
     "category": "Climate & Environment"
   },
   {
-    "url": "https://www.nih.gov/news-events/news-releases/feed.xml",
-    "category": "Health"
-  },
-  {
-    "url": "https://www.cdc.gov/media/rss.htm",
-    "category": "Health"
-  },
-  {
-    "url": "https://www.who.int/feeds/entity/csr/don/en/rss.xml",
-    "category": "Health"
-  },
-  {
     "url": "https://www.statnews.com/feed/",
     "category": "Health"
   },
   {
-    "url": "https://insideclimatenews.org/feed/",
-    "category": "Climate & Environment"
-  },
-  {
     "url": "https://grist.org/feed/",
     "category": "Climate & Environment"
-  },
-  {
-    "url": "https://usa.streetsblog.org/feed",
-    "category": "Transportation & Cities"
   },
   {
     "url": "https://www.planetizen.com/frontpage/feed",
@@ -420,39 +284,11 @@
     "category": "Transportation & Cities"
   },
   {
-    "url": "https://www.transit.dot.gov/rss.xml",
-    "category": "Transportation & Cities"
-  },
-  {
-    "url": "https://www.fhwa.dot.gov/pressroom/rss.cfm",
-    "category": "Transportation & Cities"
-  },
-  {
-    "url": "https://www.nhtsa.gov/rss.xml",
-    "category": "Transportation & Cities"
-  },
-  {
-    "url": "https://www.azcentral.com/news/rss/",
-    "category": "Arizona & Phoenix"
-  },
-  {
-    "url": "https://www.azfamily.com/search/?f=rss&t=article&c=news&l=50&s=start_time&sd=desc",
-    "category": "Arizona & Phoenix"
-  },
-  {
     "url": "https://www.abc15.com/news.rss",
     "category": "Arizona & Phoenix"
   },
   {
     "url": "https://www.fox10phoenix.com/rss/category/news",
-    "category": "Arizona & Phoenix"
-  },
-  {
-    "url": "https://kjzz.org/rss.xml",
-    "category": "Arizona & Phoenix"
-  },
-  {
-    "url": "https://www.phoenix.gov/newsroom/rss",
     "category": "Arizona & Phoenix"
   },
   {

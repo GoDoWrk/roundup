@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiErrorKind, describeApiError, fetchHomepageClusters } from "../api/client";
+import { apiErrorDetails, fetchHomepageClusters, type ApiErrorDetails } from "../api/client";
 import { ClusterCard } from "../components/ClusterCard";
 import { FeedControls } from "../components/FeedControls";
 import type { HomepageClustersResponse, StoryCluster } from "../types";
@@ -51,8 +51,7 @@ export function HomePage() {
   const [homepageData, setHomepageData] = useState<HomepageClustersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errorKind, setErrorKind] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("top");
   const [topicFilter, setTopicFilter] = useState("all");
@@ -94,11 +93,9 @@ export function HomePage() {
       setLastLoadedAt(Date.now());
       setHighlightedClusterIds(changedIds);
       setUpdatedSinceLastRefresh(changedIds.size);
-      setError(null);
-      setErrorKind(null);
+      setErrorDetails(null);
     } catch (err) {
-      setError(describeApiError(err));
-      setErrorKind(apiErrorKind(err));
+      setErrorDetails(apiErrorDetails(err));
       if (!background) {
         setClusters([]);
         setHomepageData(null);
@@ -125,6 +122,7 @@ export function HomePage() {
   }, [load]);
 
   const topics = useMemo(() => collectTopics(clusters), [clusters]);
+  const error = errorDetails?.message ?? null;
 
   useEffect(() => {
     if (topicFilter !== "all" && !topics.includes(topicFilter)) {
@@ -261,7 +259,9 @@ export function HomePage() {
           <section className="state-panel">
             <p className="eyebrow">Nothing to show yet</p>
             <h2>No stories available yet</h2>
-            <p>The API is reachable, but no public or candidate clusters are available from the latest response.</p>
+            <p>
+              The API is reachable, but <code>/api/clusters/homepage</code> returned no public or candidate clusters.
+            </p>
           </section>
         )}
 
@@ -278,9 +278,15 @@ export function HomePage() {
 
         {!loading && !hasStories && error && (
           <section className="state-panel state-panel--error" role="alert">
-            <p className="eyebrow">{errorKind === "network" ? "Backend unavailable" : "API error"}</p>
-            <h2>{errorKind === "network" ? "Could not reach Roundup" : "Could not load live stories"}</h2>
-            <p>{error}</p>
+            <p className="eyebrow">{errorDetails?.title ?? "API error"}</p>
+            <h2>{errorDetails?.kind === "network" ? "Could not reach Roundup" : "Could not load live stories"}</h2>
+            <p>{errorDetails?.message}</p>
+            {errorDetails?.endpoint && (
+              <p className="muted">
+                Endpoint: <code>{errorDetails.endpoint}</code>
+              </p>
+            )}
+            {errorDetails?.action && <p>{errorDetails.action}</p>}
           </section>
         )}
 

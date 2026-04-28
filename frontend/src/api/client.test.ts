@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchClusterList, fetchHomepageClusters, RoundupApiError } from "./client";
+import { apiErrorDetails, fetchClusterList, fetchHomepageClusters, RoundupApiError } from "./client";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -39,6 +39,22 @@ describe("api client", () => {
     });
   });
 
+  it("describes network failures without exposing raw browser fetch wording", async () => {
+    const error = new RoundupApiError("Roundup API is unavailable at the local Roundup API proxy.", {
+      endpoint: "/api/clusters/homepage",
+      kind: "network",
+      status: null
+    });
+
+    const details = apiErrorDetails(error);
+
+    expect(details.title).toBe("Backend unavailable");
+    expect(details.kind).toBe("network");
+    expect(details.endpoint).toBe("/api/clusters/homepage");
+    expect(details.action).toContain("docker compose up --build");
+    expect(details.message).not.toContain("Failed to fetch");
+  });
+
   it("keeps HTTP API failures separate from backend unavailable failures", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("server error", { status: 500, statusText: "Server Error" })));
 
@@ -46,6 +62,31 @@ describe("api client", () => {
       name: "RoundupApiError",
       kind: "http",
       status: 500
+    });
+  });
+
+  it("treats gateway proxy failures as backend unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Roundup API proxy could not reach http://localhost:8000.", { status: 502 }))
+    );
+
+    await expect(fetchHomepageClusters()).rejects.toMatchObject({
+      name: "RoundupApiError",
+      kind: "network",
+      status: 502,
+      endpoint: "/api/clusters/homepage"
+    });
+  });
+
+  it("keeps API 503 responses as HTTP errors", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("temporarily unavailable", { status: 503 })));
+
+    await expect(fetchHomepageClusters()).rejects.toMatchObject({
+      name: "RoundupApiError",
+      kind: "http",
+      status: 503,
+      endpoint: "/api/clusters/homepage"
     });
   });
 

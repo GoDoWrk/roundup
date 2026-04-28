@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import socket
 
 import pytest
 from sqlalchemy.orm import Session
@@ -9,6 +10,15 @@ from app.core.config import Settings, get_settings
 from app.db.models import Article
 from app.main import app
 from app.services.miniflux_client import MinifluxRequestError
+
+
+def _mock_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        if str(host).rstrip(".").lower() == "example.com":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 0))]
+        raise socket.gaierror
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 
 
 def _settings(**overrides: object) -> Settings:
@@ -59,6 +69,7 @@ def test_sources_endpoint_returns_miniflux_metadata_and_article_counts(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _mock_public_dns(monkeypatch)
     now = datetime.now(timezone.utc)
     db_session.add(_article(1, now, publisher="Example Feed", feed={"id": 42, "title": "Example Feed"}))
     db_session.commit()
@@ -124,6 +135,13 @@ def test_sources_endpoint_sanitizes_unsafe_feed_urls(
                 "checked_at": None,
                 "disabled": False,
             },
+            {
+                "id": 3,
+                "title": "Metadata Feed",
+                "feed_url": "http://169.254.169.254/latest/meta-data",
+                "checked_at": None,
+                "disabled": False,
+            },
         ],
     )
 
@@ -131,7 +149,7 @@ def test_sources_endpoint_sanitizes_unsafe_feed_urls(
 
     assert response.status_code == 200
     payload = response.json()
-    assert [item["feed_url"] for item in payload["items"]] == [None, None]
+    assert [item["feed_url"] for item in payload["items"]] == [None, None, None]
     assert {item["provider_label"] for item in payload["items"]} == {"Miniflux feed"}
 
 

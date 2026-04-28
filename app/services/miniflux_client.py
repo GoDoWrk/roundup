@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -25,7 +26,7 @@ class MinifluxClient:
     base_url: str
     api_token: str
     timeout_seconds: int = 20
-    request_retries: int = 1
+    request_retries: int = 2
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -58,6 +59,7 @@ class MinifluxClient:
 
     def _get_json(self, endpoint: str, params: dict | None = None) -> object:
         attempts = max(1, self.request_retries + 1)
+        transient_statuses = {408, 425, 429, 500, 502, 503, 504}
         for attempt in range(1, attempts + 1):
             try:
                 with httpx.Client(timeout=self.timeout_seconds) as client:
@@ -65,8 +67,19 @@ class MinifluxClient:
                     response.raise_for_status()
                     return response.json()
             except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                if status_code in transient_statuses and attempt < attempts:
+                    logger.warning(
+                        "miniflux_request_retrying endpoint=%s attempt=%s max_attempts=%s status=%s",
+                        endpoint,
+                        attempt,
+                        attempts,
+                        status_code,
+                    )
+                    time.sleep(1)
+                    continue
                 raise MinifluxRequestError(
-                    f"Miniflux API returned HTTP {exc.response.status_code} from {endpoint}."
+                    f"Miniflux API returned HTTP {status_code} from {endpoint}."
                 ) from exc
             except httpx.RequestError as exc:
                 if attempt < attempts:
@@ -77,6 +90,7 @@ class MinifluxClient:
                         attempts,
                         exc,
                     )
+                    time.sleep(1)
                     continue
                 raise MinifluxRequestError(f"Miniflux request to {endpoint} failed: {exc}") from exc
             except ValueError as exc:

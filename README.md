@@ -54,12 +54,14 @@ Important ingestion settings:
 - `MINIFLUX_API_KEY` optional manual override
 - `MINIFLUX_API_KEY_FILE` auto-generated in Docker flow
 - `MINIFLUX_TIMEOUT_SECONDS`
+- `MINIFLUX_REQUEST_RETRIES`: transient Miniflux request retries used by the worker. Default `2`.
 - `ROUNDUP_INGEST_MAX_TOTAL_ARTICLES`: max entries sent into one ingestion run after per-feed/category balancing. Default `1000`. Legacy `MINIFLUX_FETCH_LIMIT` is still accepted as an alias.
 - `ROUNDUP_INGEST_MAX_ARTICLES_PER_FEED`: max recent entries considered from each active Miniflux feed. Default `10`.
 - `ROUNDUP_INGEST_LOOKBACK_HOURS`: ignore feed entries older than this window. Default `24`.
 - `ROUNDUP_INGEST_MAX_PAGES`: max Miniflux pages to request per feed. Default `10`.
 - `ROUNDUP_INGEST_CATEGORY_QUOTAS_ENABLED`: round-robin candidate selection across feed categories before applying the total cap. Default `true`.
 - `ROUNDUP_ALLOW_PRIVATE_FEED_URLS`: allows localhost/private-network feed URLs during bootstrap when set to `true`. Keep `false` unless you intentionally ingest from internal RSS services.
+- `MINIFLUX_BOOTSTRAP_REFRESH_WAIT_SECONDS`: after seed import, wait briefly for Miniflux to expose at least one refreshed entry. Empty results warn and continue. Default `45`.
 - `DEMO_MODE`
 
 Security notes:

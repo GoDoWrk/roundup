@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+psycopg2://roundup:roundup@db:5432/roundup"
+    database_url: str = "postgresql+psycopg2://roundup:roundup_local_password_change_me@db:5432/roundup"
 
     miniflux_base_url: str = Field(
         default="http://miniflux:8080",
@@ -58,6 +58,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ROUNDUP_INGEST_CATEGORY_QUOTAS_ENABLED", "ingest_category_quotas_enabled"),
     )
     miniflux_timeout_seconds: int = 20
+    miniflux_request_retries: int = Field(
+        default=2,
+        validation_alias=AliasChoices("MINIFLUX_REQUEST_RETRIES", "miniflux_request_retries"),
+    )
     allow_private_feed_urls: bool = Field(
         default=False,
         validation_alias=AliasChoices("ROUNDUP_ALLOW_PRIVATE_FEED_URLS", "allow_private_feed_urls"),
@@ -166,6 +170,8 @@ class Settings(BaseSettings):
             errors.append("ROUNDUP_INGEST_MAX_PAGES must be greater than 0.")
         if self.miniflux_timeout_seconds <= 0:
             errors.append("MINIFLUX_TIMEOUT_SECONDS must be greater than 0.")
+        if self.miniflux_request_retries < 0:
+            errors.append("MINIFLUX_REQUEST_RETRIES must be greater than or equal to 0.")
         if self.api_workers <= 0:
             errors.append("API_WORKERS must be greater than 0.")
         if self.ingestion_concurrency <= 0:
@@ -176,6 +182,29 @@ class Settings(BaseSettings):
             errors.append("CLUSTERING_BATCH_SIZE must be greater than 0.")
         if self.clustering_concurrency <= 0:
             errors.append("CLUSTERING_CONCURRENCY must be greater than 0.")
+        clustering_thresholds = {
+            "CLUSTER_SCORE_THRESHOLD": self.cluster_score_threshold,
+            "CLUSTER_MIN_TITLE_SIGNAL": self.cluster_min_title_signal,
+            "CLUSTER_MIN_TOPIC_SEMANTIC_SCORE": self.cluster_min_topic_semantic_score,
+            "CLUSTER_ATTACH_OVERRIDE_MIN_TITLE_SIMILARITY": self.cluster_attach_override_min_title_similarity,
+            "CLUSTER_ATTACH_OVERRIDE_MIN_TIME_PROXIMITY": self.cluster_attach_override_min_time_proximity,
+            "TIMELINE_DEDUPE_TITLE_SIMILARITY": self.timeline_dedupe_title_similarity,
+        }
+        for name, value in clustering_thresholds.items():
+            if not 0 <= value <= 1:
+                errors.append(f"{name} must be between 0 and 1.")
+        if self.cluster_time_window_hours <= 0:
+            errors.append("CLUSTER_TIME_WINDOW_HOURS must be greater than 0.")
+        if self.cluster_stale_hours <= 0:
+            errors.append("CLUSTER_STALE_HOURS must be greater than 0.")
+        if self.cluster_emerging_hours <= 0:
+            errors.append("CLUSTER_EMERGING_HOURS must be greater than 0.")
+        if self.timeline_dedupe_window_hours <= 0:
+            errors.append("TIMELINE_DEDUPE_WINDOW_HOURS must be greater than 0.")
+        if self.cluster_min_entity_overlap <= 0:
+            errors.append("CLUSTER_MIN_ENTITY_OVERLAP must be greater than 0.")
+        if self.cluster_min_keyword_overlap <= 0:
+            errors.append("CLUSTER_MIN_KEYWORD_OVERLAP must be greater than 0.")
         if self.cluster_min_distinct_sources_for_api <= 0:
             errors.append("CLUSTER_MIN_DISTINCT_SOURCES_FOR_API must be greater than 0.")
         if self.inspector_worker_processes <= 0:

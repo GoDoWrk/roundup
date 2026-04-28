@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { describeApiError, fetchClusterDetail, fetchDebugClusters } from "../api/client";
+import { apiErrorDetails, fetchClusterDetail, fetchDebugClusters, type ApiErrorDetails } from "../api/client";
 import { QualityBadges } from "../components/QualityBadges";
 import type { ClusterDebugItem, StoryCluster } from "../types";
 import { formatScore, formatTimestamp } from "../utils/format";
@@ -11,8 +11,8 @@ export function ClusterDetailPage() {
   const [cluster, setCluster] = useState<StoryCluster | null>(null);
   const [debugRows, setDebugRows] = useState<ClusterDebugItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [debugError, setDebugError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<ApiErrorDetails | null>(null);
+  const [debugErrorDetails, setDebugErrorDetails] = useState<ApiErrorDetails | null>(null);
 
   const load = useCallback(async () => {
     if (!clusterId) {
@@ -20,8 +20,8 @@ export function ClusterDetailPage() {
     }
 
     setLoading(true);
-    setError(null);
-    setDebugError(null);
+    setErrorDetails(null);
+    setDebugErrorDetails(null);
 
     try {
       const [clusterData, debugData] = await Promise.allSettled([fetchClusterDetail(clusterId), fetchDebugClusters()]);
@@ -29,16 +29,16 @@ export function ClusterDetailPage() {
         setCluster(clusterData.value);
       } else {
         setCluster(null);
-        setError(describeApiError(clusterData.reason));
+        setErrorDetails(apiErrorDetails(clusterData.reason));
       }
       if (debugData.status === "fulfilled") {
         setDebugRows(debugData.value.items);
       } else {
         setDebugRows([]);
-        setDebugError(describeApiError(debugData.reason));
+        setDebugErrorDetails(apiErrorDetails(debugData.reason));
       }
     } catch (err) {
-      setError(describeApiError(err));
+      setErrorDetails(apiErrorDetails(err));
     } finally {
       setLoading(false);
     }
@@ -49,6 +49,8 @@ export function ClusterDetailPage() {
   }, [load]);
 
   const debugItem = useMemo(() => debugRows.find((row) => row.cluster_id === clusterId) || null, [clusterId, debugRows]);
+  const error = errorDetails?.message ?? null;
+  const debugError = debugErrorDetails?.message ?? null;
 
   if (!clusterId) {
     return <p className="error">Missing cluster id.</p>;
@@ -66,7 +68,11 @@ export function ClusterDetailPage() {
         </div>
 
         {error && <p className="error">{error}</p>}
-        {debugError && <p className="error">Debug cluster API unavailable: {debugError}</p>}
+        {debugErrorDetails && (
+          <p className="error">
+            Debug cluster API unavailable: {debugErrorDetails.title}. {debugError}
+          </p>
+        )}
         {!error && loading && <p>Loading cluster...</p>}
 
         {!error && !loading && cluster && (

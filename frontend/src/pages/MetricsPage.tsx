@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useState } from "react";
-import { describeApiError, fetchMetricsText } from "../api/client";
+import { apiErrorDetails, fetchMetricsText, type ApiErrorDetails } from "../api/client";
 import type { ParsedMetrics } from "../types";
 import { formatTimestamp } from "../utils/format";
 import { parsePrometheusMetrics } from "../utils/metrics";
@@ -9,18 +9,18 @@ const REFRESH_INTERVAL_MS = 15000;
 export function MetricsPage() {
   const [metrics, setMetrics] = useState<ParsedMetrics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setErrorDetails(null);
 
     try {
       const raw = await fetchMetricsText();
       setMetrics(parsePrometheusMetrics(raw));
     } catch (err) {
-      setError(describeApiError(err));
+      setErrorDetails(apiErrorDetails(err));
     } finally {
       setLoading(false);
     }
@@ -48,6 +48,8 @@ export function MetricsPage() {
     }
     return String(value);
   }
+
+  const error = errorDetails?.message ?? null;
 
   const metricRows: Array<[string, number | null, "number" | "time", string]> = metrics
     ? [
@@ -110,7 +112,11 @@ export function MetricsPage() {
 
       <p className="muted">Parsed from live `/metrics` Prometheus text output.</p>
 
-      {error && <p className="error">{error}</p>}
+      {errorDetails && (
+        <p className="error">
+          {errorDetails.title}: {error}
+        </p>
+      )}
       {!error && loading && <p>Loading metrics...</p>}
 
       {!error && metrics && (
