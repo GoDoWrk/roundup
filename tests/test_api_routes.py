@@ -162,7 +162,7 @@ def test_root_index_lists_debug_endpoints(client) -> None:
     assert payload["endpoints"]["metrics"] == "/metrics"
 
 
-def test_homepage_clusters_sections_promoted_and_candidate_stories(
+def test_homepage_clusters_sections_promoted_and_latest_public_stories(
     client,
     db_session: Session,
     monkeypatch,
@@ -174,7 +174,7 @@ def test_homepage_clusters_sections_promoted_and_candidate_stories(
         cluster_min_sources_for_top_stories=2,
         cluster_min_sources_for_developing_stories=2,
         cluster_homepage_top_limit=1,
-        cluster_homepage_developing_limit=2,
+        cluster_homepage_developing_limit=1,
         cluster_homepage_just_in_limit=4,
         cluster_show_just_in_single_source=True,
     )
@@ -198,6 +198,22 @@ def test_homepage_clusters_sections_promoted_and_candidate_stories(
         db_session.flush()
         db_session.add(ClusterArticle(cluster_id=developing.id, article_id=article.id, similarity_score=0.72, heuristic_breakdown={}))
 
+    latest_public = _cluster("homepage-latest", now - timedelta(minutes=5))
+    latest_public.score = 0.61
+    latest_public.headline = "Latest Public Transit Story"
+    db_session.add(latest_public)
+    db_session.flush()
+    for idx, publisher in enumerate(["Daily Three", "Daily Four"], start=1):
+        article = _article(idx, latest_public.id, now, publisher)
+        article.dedupe_hash = f"{latest_public.id}-{idx}"
+        article.url = f"https://example.com/{latest_public.id}/{idx}"
+        article.canonical_url = article.url
+        db_session.add(article)
+        db_session.flush()
+        db_session.add(
+            ClusterArticle(cluster_id=latest_public.id, article_id=article.id, similarity_score=0.61, heuristic_breakdown={})
+        )
+
     candidate = _cluster("homepage-candidate", now - timedelta(minutes=20))
     candidate.status = "hidden"
     candidate.score = 1.0
@@ -219,16 +235,19 @@ def test_homepage_clusters_sections_promoted_and_candidate_stories(
     payload = response.json()
     assert [item["cluster_id"] for item in payload["sections"]["top_stories"]] == ["homepage-top"]
     assert [item["cluster_id"] for item in payload["sections"]["developing_stories"]] == ["homepage-developing"]
-    assert [item["cluster_id"] for item in payload["sections"]["just_in"]] == ["homepage-candidate"]
-    assert payload["sections"]["just_in"][0]["visibility"] == "candidate"
-    assert payload["sections"]["just_in"][0]["visibility_label"] == "Single source"
-    assert payload["sections"]["just_in"][0]["is_single_source"] is True
-    assert payload["status"]["visible_clusters"] == 2
+    assert [item["cluster_id"] for item in payload["sections"]["just_in"]] == ["homepage-latest"]
+    assert payload["sections"]["just_in"][0]["visibility"] == "public"
+    assert payload["sections"]["just_in"][0]["visibility_label"] == "Latest update"
+    assert payload["sections"]["just_in"][0]["is_single_source"] is False
+    assert payload["status"]["visible_clusters"] == 3
     assert payload["status"]["candidate_clusters"] == 1
 
-    detail_response = client.get("/api/clusters/homepage-candidate")
+    detail_response = client.get("/api/clusters/homepage-latest")
     assert detail_response.status_code == 200
-    assert detail_response.json()["cluster_id"] == "homepage-candidate"
+    assert detail_response.json()["cluster_id"] == "homepage-latest"
+
+    hidden_detail_response = client.get("/api/clusters/homepage-candidate")
+    assert hidden_detail_response.status_code == 404
 
 
 def test_api_cluster_detail_visible_when_homepage_developing_threshold_is_met(

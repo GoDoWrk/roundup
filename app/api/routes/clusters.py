@@ -75,16 +75,16 @@ def _visibility_label(cluster: Cluster, fallback: str) -> str:
 
 
 def _is_detail_visible(cluster: Cluster, source_count: int, settings) -> bool:
+    if cluster.status == "hidden":
+        return False
+
     if cluster.validation_error is not None and not _is_legacy_source_count_validation_error(cluster.validation_error, settings):
         return False
 
     if cluster.status != "hidden" and source_count >= settings.cluster_min_sources_for_developing_stories:
         return True
 
-    candidate_min_sources = 1 if settings.cluster_show_just_in_single_source else 2
-    return source_count >= candidate_min_sources and (
-        cluster.status == "hidden" or source_count < settings.cluster_min_sources_for_top_stories
-    )
+    return False
 
 
 @router.get("", response_model=ClusterListResponse)
@@ -165,18 +165,14 @@ def homepage_clusters(db: Session = Depends(get_db_session)) -> HomepageClusters
     ][: settings.cluster_homepage_developing_limit]
     used_ids = top_ids.union(cluster.id for cluster in developing_rows)
 
-    candidate_min_sources = 1 if settings.cluster_show_just_in_single_source else 2
     just_in_rows = [
         cluster
         for cluster in _load_section_clusters(
             db,
             filters=(
-                source_count >= candidate_min_sources,
+                Cluster.status != "hidden",
+                source_count >= settings.cluster_min_sources_for_developing_stories,
                 valid_or_legacy_source_count,
-                or_(
-                    Cluster.status == "hidden",
-                    source_count < settings.cluster_min_sources_for_top_stories,
-                ),
             ),
             order_by=(Cluster.last_updated.desc(), Cluster.id.asc()),
             limit=settings.cluster_homepage_just_in_limit + len(used_ids),
@@ -184,6 +180,7 @@ def homepage_clusters(db: Session = Depends(get_db_session)) -> HomepageClusters
         if cluster.id not in used_ids
     ][: settings.cluster_homepage_just_in_limit]
 
+    candidate_min_sources = 1 if settings.cluster_show_just_in_single_source else 2
     visible_clusters = int(
         db.scalar(select(func.count()).select_from(Cluster).where(*public_filters)) or 0
     )
@@ -217,8 +214,8 @@ def homepage_clusters(db: Session = Depends(get_db_session)) -> HomepageClusters
             just_in=[
                 build_story_cluster(
                     cluster,
-                    visibility="candidate",
-                    visibility_label=_visibility_label(cluster, "Candidate"),
+                    visibility="public",
+                    visibility_label=_visibility_label(cluster, "Latest update"),
                 )
                 for cluster in just_in_rows
             ],

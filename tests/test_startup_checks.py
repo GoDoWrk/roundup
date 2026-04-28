@@ -90,6 +90,16 @@ def test_settings_accept_new_miniflux_env_aliases() -> None:
     assert settings.miniflux_fetch_limit == 123
 
 
+def test_compose_passes_matching_miniflux_admin_defaults_to_bootstrap() -> None:
+    compose_text = Path("docker-compose.yml").read_text(encoding="utf-8")
+    bootstrap_text = Path("scripts/bootstrap_miniflux.py").read_text(encoding="utf-8")
+
+    expected_password_default = "change_this_roundup_admin_password"
+    assert f"ADMIN_PASSWORD: ${{MINIFLUX_ADMIN_PASSWORD:-{expected_password_default}}}" in compose_text
+    assert f"MINIFLUX_ADMIN_PASSWORD: ${{MINIFLUX_ADMIN_PASSWORD:-{expected_password_default}}}" in compose_text
+    assert f'_required_env("MINIFLUX_ADMIN_PASSWORD", "{expected_password_default}")' in bootstrap_text
+
+
 def test_startup_check_rejects_invalid_runtime_limits() -> None:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",

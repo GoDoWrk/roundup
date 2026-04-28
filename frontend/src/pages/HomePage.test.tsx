@@ -139,7 +139,7 @@ function homepageResponse(sections: {
     status: {
       ...clusterResponse(items).status,
       visible_clusters: (sections.top_stories ?? []).length + (sections.developing_stories ?? []).length,
-      candidate_clusters: (sections.just_in ?? []).length
+      candidate_clusters: 0
     }
   };
 }
@@ -175,7 +175,24 @@ describe("HomePage", () => {
     expect(await screen.findByText("No stories available yet")).toBeInTheDocument();
     expect(screen.getByText(/The API is reachable/i)).toBeInTheDocument();
     expect(screen.getByText("/api/clusters/homepage")).toBeInTheDocument();
-    expect(screen.getByText(/returned no public or candidate clusters/i)).toBeInTheDocument();
+    expect(screen.getByText(/returned no public stories/i)).toBeInTheDocument();
+  });
+
+  it("renders the public empty state even when hidden candidates exist", async () => {
+    mockFetch({
+      status: 200,
+      body: {
+        ...clusterResponse([]),
+        status: {
+          ...clusterResponse([]).status,
+          candidate_clusters: 12
+        }
+      }
+    });
+
+    renderHome();
+    expect(await screen.findByText("No stories available yet")).toBeInTheDocument();
+    expect(screen.getByText(/returned no public stories/i)).toBeInTheDocument();
   });
 
   it("distinguishes backend unavailable from an empty response", async () => {
@@ -308,16 +325,15 @@ describe("HomePage", () => {
     expect(cards[2]).toHaveTextContent("Recent active");
   });
 
-  it("renders just in candidate stories with a public detail link", async () => {
+  it("renders just in public stories with a detail link", async () => {
     mockFetch({
       status: 200,
       body: homepageResponse({
         just_in: [
-          buildCluster("candidate-1", "Single source item", 1, "2026-04-23T04:00:00Z", {
-            status: "hidden",
-            visibility: "candidate",
-            visibility_label: "Single source",
-            is_single_source: true
+          buildCluster("latest-1", "Latest public item", 1, "2026-04-23T04:00:00Z", {
+            source_count: 2,
+            visibility: "public",
+            visibility_label: "Latest update"
           })
         ]
       })
@@ -327,15 +343,15 @@ describe("HomePage", () => {
 
     const justIn = await screen.findByRole("region", { name: "Just In" });
     const card = within(justIn).getByTestId("story-card");
-    expect(card).toHaveTextContent("Single source item");
-    expect(card).toHaveTextContent("Single source");
-    expect(within(card).getByRole("link", { name: /single source item/i })).toHaveAttribute(
+    expect(card).toHaveTextContent("Latest public item");
+    expect(card).not.toHaveTextContent("Single source");
+    expect(within(card).getByRole("link", { name: /latest public item/i })).toHaveAttribute(
       "href",
-      "/story/candidate-1"
+      "/story/latest-1"
     );
   });
 
-  it("does not render clusters without thumbnails on the homepage", async () => {
+  it("renders clusters without thumbnails using the shared fallback", async () => {
     mockFetch({
       status: 200,
       body: clusterResponse([
@@ -347,11 +363,10 @@ describe("HomePage", () => {
     });
 
     renderHome();
-    expect(await screen.findByText("Clusters loaded, but none have usable images")).toBeInTheDocument();
-    expect(screen.queryByText("Image missing story")).not.toBeInTheDocument();
+    expect(await screen.findByText("Image missing story")).toBeInTheDocument();
   });
 
-  it("expands all fetched clusters from the View all clusters action", async () => {
+  it("does not render the operator-style all clusters expansion on the public homepage", async () => {
     const items = [
       buildCluster("cluster-1", "Story one", 0.99, "2026-04-23T00:00:00Z"),
       buildCluster("cluster-2", "Story two", 0.9, "2026-04-23T01:00:00Z"),
@@ -361,12 +376,8 @@ describe("HomePage", () => {
 
     renderHome();
     await screen.findByText("Story one");
+    expect(screen.queryByRole("button", { name: "View all clusters" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "All Clusters" })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "View all clusters" }));
-
-    const allClusters = await screen.findByRole("region", { name: "All Clusters" });
-    expect(within(allClusters).getAllByTestId("story-card")).toHaveLength(3);
   });
 
   it("refreshes the feed on an interval", async () => {

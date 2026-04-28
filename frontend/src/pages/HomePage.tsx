@@ -8,7 +8,6 @@ import {
   collectTopics,
   compareDevelopingClusters,
   getChangedClusterIds,
-  hasClusterImage,
   getFilteredClusters,
   sortClustersByLatestUpdates,
   sortClustersForHomepage
@@ -55,7 +54,6 @@ export function HomePage() {
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("top");
   const [topicFilter, setTopicFilter] = useState("all");
-  const [showAllClusters, setShowAllClusters] = useState(false);
   const [highlightedClusterIds, setHighlightedClusterIds] = useState<Set<string>>(new Set());
   const [updatedSinceLastRefresh, setUpdatedSinceLastRefresh] = useState(0);
   const requestInFlight = useRef(false);
@@ -140,11 +138,11 @@ export function HomePage() {
       };
     }
 
-    const imageReady = (items: StoryCluster[]) => getFilteredClusters(items, topicFilter).filter(hasClusterImage);
+    const visibleItems = (items: StoryCluster[]) => getFilteredClusters(items, topicFilter);
     const rank = sortMode === "latest" ? sortClustersByLatestUpdates : sortClustersForHomepage;
-    const topStories = rank(imageReady(homepageData.sections.top_stories));
-    const developingStories = [...imageReady(homepageData.sections.developing_stories)].sort(compareDevelopingClusters);
-    const justIn = sortClustersByLatestUpdates(imageReady(homepageData.sections.just_in));
+    const topStories = rank(visibleItems(homepageData.sections.top_stories));
+    const developingStories = [...visibleItems(homepageData.sections.developing_stories)].sort(compareDevelopingClusters);
+    const justIn = sortClustersByLatestUpdates(visibleItems(homepageData.sections.just_in));
     const allClusters = [...topStories, ...developingStories, ...justIn];
     return { topStories, developingStories, justIn, allClusters };
   }, [homepageData, sortMode, topicFilter]);
@@ -162,14 +160,12 @@ export function HomePage() {
   const hasNoApiClusters =
     homepageData !== null &&
     rawSectionCount === 0 &&
-    homepageData.status.visible_clusters === 0 &&
-    homepageData.status.candidate_clusters === 0;
-  const hasOnlyNonImageReadyClusters = homepageData !== null && rawSectionCount > 0 && visibleCount === 0;
+    homepageData.status.visible_clusters === 0;
   const topicFilterLabel = topicFilter === "all" ? "All topics" : topicFilter;
   const lastCheckedReadable = lastLoadedAt ? formatReadableTimestamp(lastLoadedAt) : null;
   const lastIngestionLabel = homepageData?.status.last_ingestion
-    ? `Last ingestion ${formatRelativeTime(homepageData.status.last_ingestion, Date.now())}`
-    : "Last ingestion unavailable";
+    ? `Latest scan ${formatRelativeTime(homepageData.status.last_ingestion, Date.now())}`
+    : "Latest scan unavailable";
   const lastCheckedLabel = lastLoadedAt
     ? `Updated ${formatRelativeTime(lastLoadedAt, Date.now())}${lastCheckedReadable ? ` | ${lastCheckedReadable}` : ""}`
     : "Waiting for live data";
@@ -178,9 +174,7 @@ export function HomePage() {
       ? hasLoadedData && topicFilter !== "all"
         ? `No stories in ${topicFilterLabel}`
         : "No live stories"
-      : homepageData && topicFilter === "all"
-        ? `${homepageData.status.visible_clusters} visible | ${homepageData.status.candidate_clusters} candidates`
-        : `${visibleCount} live ${visibleCount === 1 ? "cluster" : "clusters"}`;
+      : `${visibleCount} public ${visibleCount === 1 ? "story" : "stories"}`;
   const sortLabel = sortMode === "latest" ? "Latest Updates" : "Top Stories";
 
   return (
@@ -189,7 +183,7 @@ export function HomePage() {
         <div className="public-hero__copy">
           <p className="eyebrow">Updated live</p>
           <h1>Top Stories</h1>
-          <p>Current Roundup clusters organized into a fast, consumer-ready news dashboard.</p>
+          <p>Current verified reporting from Roundup's live feed.</p>
         </div>
 
         <div className="public-hero__actions">
@@ -200,9 +194,7 @@ export function HomePage() {
 
         <div className="public-hero__meta" aria-live="polite">
           <span>{liveCountLabel}</span>
-          {homepageData && <span>{homepageData.status.articles_stored_latest_run} stored latest run</span>}
-          {homepageData && <span>{homepageData.status.active_sources} active sources</span>}
-          {homepageData && <span>{homepageData.status.articles_pending} articles pending</span>}
+          {homepageData && <span>{homepageData.status.active_sources} sources monitored</span>}
           <span>{lastIngestionLabel}</span>
           <span>{lastCheckedLabel}</span>
           <span>{refreshing ? "Live refresh in progress" : "Auto refresh every 5m"}</span>
@@ -260,18 +252,7 @@ export function HomePage() {
             <p className="eyebrow">Nothing to show yet</p>
             <h2>No stories available yet</h2>
             <p>
-              The API is reachable, but <code>/api/clusters/homepage</code> returned no public or candidate clusters.
-            </p>
-          </section>
-        )}
-
-        {!loading && !error && !hasStories && hasLoadedData && topicFilter === "all" && hasOnlyNonImageReadyClusters && (
-          <section className="state-panel">
-            <p className="eyebrow">No image-ready stories</p>
-            <h2>Clusters loaded, but none have usable images</h2>
-            <p>
-              The API returned {rawSectionCount} {rawSectionCount === 1 ? "cluster" : "clusters"}. The public feed hides
-              image-less stories; Inspector can still show them.
+              The API is reachable, but <code>/api/clusters/homepage</code> returned no public stories.
             </p>
           </section>
         )}
@@ -345,7 +326,7 @@ export function HomePage() {
                 <SectionHeader
                   id="just-in-heading"
                   title="Just In"
-                  detail="Candidate activity, including single-source stories, kept separate from promoted stories."
+                  detail="Newly updated public stories from the live feed."
                 />
                 <div className="just-in-grid">
                   {sections.justIn.map((cluster) => (
@@ -361,31 +342,6 @@ export function HomePage() {
               </section>
             )}
 
-            <div className="dashboard-actions">
-              <button type="button" className="secondary-button" onClick={() => setShowAllClusters((current) => !current)}>
-                {showAllClusters ? "Hide all clusters" : "View all clusters"}
-              </button>
-            </div>
-
-            {showAllClusters && (
-              <section className="dashboard-section" aria-labelledby="all-clusters-heading">
-                <SectionHeader
-                  id="all-clusters-heading"
-                  title="All Clusters"
-                  detail="Full fetched result set from the current API request."
-                />
-                <div className="story-grid">
-                  {sections.allClusters.map((cluster) => (
-                    <ClusterCard
-                      key={cluster.cluster_id}
-                      cluster={cluster}
-                      to={cluster.visibility === "candidate" ? undefined : `/story/${cluster.cluster_id}`}
-                      highlighted={highlightedClusterIds.has(cluster.cluster_id)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
           </>
         )}
       </main>

@@ -64,6 +64,8 @@ services:
       PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg2://${ROUNDUP_DB_USER:-roundup}:${ROUNDUP_DB_PASSWORD:-roundup_local_password_change_me}@db:5432/${ROUNDUP_DB_NAME:-roundup}
       MINIFLUX_URL: ${MINIFLUX_URL:-http://miniflux:8080}
+      MINIFLUX_ADMIN_USERNAME: ${MINIFLUX_ADMIN_USERNAME:-roundup_admin}
+      MINIFLUX_ADMIN_PASSWORD: ${MINIFLUX_ADMIN_PASSWORD:-change_this_roundup_admin_password}
       MINIFLUX_API_KEY_FILE: /miniflux-bootstrap/miniflux_api_key
       MINIFLUX_BOOTSTRAP_FEEDS_FILE: ${MINIFLUX_BOOTSTRAP_FEEDS_FILE:-/app/data/miniflux_seed_feeds.json}
       MINIFLUX_BOOTSTRAP_DEFAULT_CATEGORY: ${MINIFLUX_BOOTSTRAP_DEFAULT_CATEGORY:-Roundup Starter Feeds}

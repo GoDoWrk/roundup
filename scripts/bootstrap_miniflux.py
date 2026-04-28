@@ -480,7 +480,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 def main() -> None:
     base_url = _required_env("MINIFLUX_URL", "http://miniflux:8080")
     admin_username = _required_env("MINIFLUX_ADMIN_USERNAME", "roundup_admin")
-    admin_password = _required_env("MINIFLUX_ADMIN_PASSWORD", "roundup_admin_change_me")
+    admin_password = _required_env("MINIFLUX_ADMIN_PASSWORD", "change_this_roundup_admin_password")
     token_file = Path(_required_env("MINIFLUX_API_KEY_FILE", "/miniflux-bootstrap/miniflux_api_key"))
     feed_seed_file = Path(_required_env("MINIFLUX_BOOTSTRAP_FEEDS_FILE", "/app/data/miniflux_seed_feeds.json"))
     api_key_description = _required_env("MINIFLUX_API_KEY_DESCRIPTION", "Roundup ingestion API key")
